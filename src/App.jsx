@@ -400,7 +400,7 @@ function AdminDashboard({ trucks, jobs, updates, tickets, onAddTruck, onDeleteTr
   const handleAddTruck = () => { onAddTruck({ ...truckForm }); setTruckForm({ name: "", members: "" }); setShowAddTruck(false); };
   const handleTicketUpdate = () => { onUpdateTicket(activeTicket.id, { status: ticketStatus, adminNote: ticketNote }); setActiveTicket(null); setTicketStatus("acknowledged"); setTicketNote(""); };
 
-  const recentUpdates = [...updates].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 30);
+  const recentUpdates = [...updates].filter((u) => u.status !== "completed").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 30);
   const tabStyle = (active) => ({ padding: "10px 18px", background: active ? theme.accent : "transparent", color: active ? "#000" : theme.textMuted, border: "none", borderRadius: "6px", fontSize: "13px", fontWeight: 600, cursor: "pointer", letterSpacing: "0.5px", textTransform: "uppercase", fontFamily: "inherit", position: "relative" });
 
   return (
