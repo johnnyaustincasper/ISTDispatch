@@ -330,7 +330,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
           <>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Select Your Crew</label>
             <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "20px" }}>
-              {[...trucks].sort(naturalSort).map((tr) => (
+              {[...trucks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((tr) => (
                 <Card key={tr.id} onClick={() => setSelected(tr.id)} style={{ padding: "12px 16px", cursor: "pointer", borderColor: selected === tr.id ? t.accent : t.border, background: selected === tr.id ? t.accentBg : "#fff" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
                     <div style={{ width: "32px", height: "32px", borderRadius: "6px", background: selected === tr.id ? t.accent : t.bg, color: selected === tr.id ? "#fff" : t.textMuted, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -497,7 +497,7 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
 }
 
 // ─── Admin Dashboard ───
-function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, onAddTruck, onDeleteTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onLogout }) {
+function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
   const [showAddTruck, setShowAddTruck] = useState(false);
@@ -521,9 +521,21 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
     if (prioOrder[a.priority] !== prioOrder[b.priority]) return prioOrder[a.priority] - prioOrder[b.priority];
     return new Date(b.timestamp) - new Date(a.timestamp);
   });
+  const orderSort = (a, b) => (a.order ?? 999) - (b.order ?? 999) || naturalSort(a, b);
+  const sortedTrucks = [...trucks].sort(orderSort);
+
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
   const handleAddJob = () => { onAddJob({ ...jobForm }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ")"); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", date: selectedDate, notes: "" }); setShowAddJob(false); };
-  const handleAddTruck = () => { onAddTruck({ ...truckForm }); onLogAction("Added crew: " + truckForm.name); setTruckForm({ name: "", members: "" }); setShowAddTruck(false); };
+  const handleAddTruck = () => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, order: maxOrder + 1 }); onLogAction("Added crew: " + truckForm.name); setTruckForm({ name: "", members: "" }); setShowAddTruck(false); };
+  const handleMoveTruck = (truckId, direction) => {
+    const idx = sortedTrucks.findIndex((tr) => tr.id === truckId);
+    const swapIdx = idx + direction;
+    if (swapIdx < 0 || swapIdx >= sortedTrucks.length) return;
+    const a = sortedTrucks[idx];
+    const b = sortedTrucks[swapIdx];
+    onReorderTruck(a.id, b.order ?? swapIdx);
+    onReorderTruck(b.id, a.order ?? idx);
+  };
   const handleTicketUpdate = () => { onUpdateTicket(activeTicket.id, { status: ticketStatus, adminNote: ticketNote }); onLogAction("Updated ticket for " + activeTicket.truckName + " to " + ticketStatus); setActiveTicket(null); setTicketStatus("acknowledged"); setTicketNote(""); };
   const openEditJob = (job) => { setEditingJob(job); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", date: job.date, notes: job.notes || "" }); };
   const handleSaveEdit = () => { onEditJob(editingJob.id, { ...editForm }); onLogAction("Edited job: " + editForm.address); setEditingJob(null); };
@@ -691,13 +703,21 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         {view === "trucks" && (
           <>
             <SectionHeader title="Crews" right={<Button onClick={() => setShowAddTruck(true)}>+ Add Crew</Button>} />
-            {trucks.length === 0 ? <EmptyState text="No crews yet. Add one to get started." /> : [...trucks].sort(naturalSort).map((tr) => {
+            {trucks.length === 0 ? <EmptyState text="No crews yet. Add one to get started." /> : sortedTrucks.map((tr, idx) => {
               const truckJobs = jobs.filter((j) => j.truckId === tr.id && j.date === todayStr());
               const truckTickets = tickets.filter((tk) => tk.truckId === tr.id && tk.status !== "resolved");
               return (
                 <Card key={tr.id}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                        <button onClick={() => handleMoveTruck(tr.id, -1)} disabled={idx === 0} style={{ background: "none", border: "1px solid " + (idx === 0 ? t.borderLight : t.border), borderRadius: "4px", width: "24px", height: "20px", cursor: idx === 0 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: idx === 0 ? 0.3 : 1, color: t.textMuted }}>
+                          <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M18 15l-6-6-6 6"/></svg>
+                        </button>
+                        <button onClick={() => handleMoveTruck(tr.id, 1)} disabled={idx === sortedTrucks.length - 1} style={{ background: "none", border: "1px solid " + (idx === sortedTrucks.length - 1 ? t.borderLight : t.border), borderRadius: "4px", width: "24px", height: "20px", cursor: idx === sortedTrucks.length - 1 ? "default" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", opacity: idx === sortedTrucks.length - 1 ? 0.3 : 1, color: t.textMuted }}>
+                          <svg width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>
+                        </button>
+                      </div>
                       <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center" }}>
                         <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
                       </div>
@@ -744,7 +764,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
           <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign to Crew" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...[...trucks].sort(naturalSort).map((tr) => ({ value: tr.id, label: tr.name }))]} />
+          <Select label="Assign to Crew" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
             <input type="date" value={jobForm.date} onChange={(e) => setJobForm({ ...jobForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
@@ -785,7 +805,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign to Crew" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...[...trucks].sort(naturalSort).map((tr) => ({ value: tr.id, label: tr.name }))]} />
+          <Select label="Assign to Crew" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
             <input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
@@ -824,6 +844,7 @@ export default function App() {
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
   const handleDeleteTruck = async (id) => { await deleteDoc(doc(db, "trucks", id)); };
+  const handleReorderTruck = async (id, newOrder) => { await updateDoc(doc(db, "trucks", id), { order: newOrder }); };
   const handleAddJob = async (data) => { await addDoc(collection(db, "jobs"), data); };
   const handleDeleteJob = async (id) => {
     await deleteDoc(doc(db, "jobs", id));
@@ -848,6 +869,6 @@ export default function App() {
     if (!truck) return <CrewLogin trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} jobs={jobs} updates={updates} tickets={tickets} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onLogout={() => { setAdminName(null); setRole(null); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
 }
