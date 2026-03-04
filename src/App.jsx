@@ -412,8 +412,9 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
                 <Card key={job.id}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                     <div>
-                      <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.address}</div>
-                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.builder && (job.builder + " — ")}{job.type}</div>
+                      <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.builder || "No Customer Listed"}</div>
+                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.address}</div>
+                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.type}</div>
                     </div>
                     <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
                   </div>
@@ -470,7 +471,7 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
 
       {activeJob && (
         <Modal title="Job Update" onClose={() => setActiveJob(null)}>
-          <div style={{ fontSize: "13.5px", color: t.textMuted, marginBottom: "18px" }}><strong style={{ color: t.text }}>{activeJob.address}</strong> — {activeJob.type}</div>
+          <div style={{ fontSize: "13.5px", color: t.textMuted, marginBottom: "18px" }}><strong style={{ color: t.text }}>{activeJob.builder || "No Customer"}</strong><br />{activeJob.address} — {activeJob.type}</div>
           <Select label="Status" value={status} onChange={(e) => setStatus(e.target.value)} options={STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }))} />
           <Input label="Time Estimate" placeholder="e.g. 2 more hours, done by 3pm" value={eta} onChange={(e) => setEta(e.target.value)} />
           <TextArea label="Notes" placeholder="Issues, material needs, progress details..." value={notes} onChange={(e) => setNotes(e.target.value)} />
@@ -586,48 +587,61 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 <button onClick={() => setTruckFilter(null)} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontWeight: 700, fontSize: "14px", fontFamily: "inherit", padding: "0 4px" }}>✕</button>
               </div>
             )}
-            {todaysJobs.length === 0 ? <EmptyState text={"No jobs scheduled for " + (selectedDate === todayStr() ? "today" : selectedDate) + "."} /> : todaysJobs.map((job) => {
-              const truck = trucks.find((tr) => tr.id === job.truckId);
-              const latest = getLatestUpdate(job.id);
-              const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
-              const jobUpdates = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-              return (
-                <Card key={job.id}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.address}</div>
-                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.builder && (job.builder + " — ")}{job.type}</div>
-                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "3px" }}>{truck ? truck.name : "Unassigned"}</div>
-                    </div>
-                    <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
-                      <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
-                      <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Edit</Button>
-                      <Button variant="danger" onClick={() => handleRemoveJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Remove</Button>
-                    </div>
+            {todaysJobs.length === 0 ? <EmptyState text={"No jobs scheduled for " + (selectedDate === todayStr() ? "today" : selectedDate) + "."} /> : (() => {
+              const unassigned = todaysJobs.filter((j) => !j.truckId);
+              const crewGroups = sortedTrucks.filter((tr) => !truckFilter || tr.id === truckFilter).map((tr) => ({ crew: tr, jobs: todaysJobs.filter((j) => j.truckId === tr.id) })).filter((g) => g.jobs.length > 0);
+              if (unassigned.length > 0) crewGroups.push({ crew: { id: "_unassigned", name: "Unassigned" }, jobs: unassigned });
+              return crewGroups.map((group) => (
+                <div key={group.crew.id} style={{ marginBottom: "20px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
+                    <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{group.crew.name}</div>
+                    {group.crew.members && <span style={{ fontSize: "12px", color: t.textMuted }}>— {group.crew.members}</span>}
+                    <Badge>{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
                   </div>
-                  {job.notes && <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "8px", fontStyle: "italic" }}>Notes: {job.notes}</div>}
-                  {jobUpdates.length > 0 && (
-                    <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
-                      <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Crew Updates</div>
-                      {jobUpdates.map((u) => {
-                        const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
-                        return (
-                          <div key={u.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
-                            <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                              <span style={{ color: t.textMuted }}>{u.timeStr}</span>
-                              <strong style={{ color: t.text }}>{u.crewName}</strong>
-                              <Badge color={uStatus?.color} bg={uStatus?.bg}>{uStatus?.label}</Badge>
-                              {u.eta && <span>— ETA: {u.eta}</span>}
-                            </div>
-                            {u.notes && <div style={{ marginTop: "3px", color: t.textMuted, paddingLeft: "2px" }}>{u.notes}</div>}
+                  {group.jobs.map((job) => {
+                    const latest = getLatestUpdate(job.id);
+                    const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
+                    const jobUpdates = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    return (
+                      <Card key={job.id} style={{ marginLeft: "8px" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.builder || "No Customer Listed"}</div>
+                            <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.address}</div>
+                            <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.type}</div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </Card>
-              );
-            })}
+                          <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
+                            <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
+                            <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Edit</Button>
+                            <Button variant="danger" onClick={() => handleRemoveJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Remove</Button>
+                          </div>
+                        </div>
+                        {job.notes && <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "8px", fontStyle: "italic" }}>Notes: {job.notes}</div>}
+                        {jobUpdates.length > 0 && (
+                          <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                            <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Crew Updates</div>
+                            {jobUpdates.map((u) => {
+                              const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
+                              return (
+                                <div key={u.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
+                                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                                    <span style={{ color: t.textMuted }}>{u.timeStr}</span>
+                                    <strong style={{ color: t.text }}>{u.crewName}</strong>
+                                    <Badge color={uStatus?.color} bg={uStatus?.bg}>{uStatus?.label}</Badge>
+                                    {u.eta && <span>— ETA: {u.eta}</span>}
+                                  </div>
+                                  {u.notes && <div style={{ marginTop: "3px", color: t.textMuted, paddingLeft: "2px" }}>{u.notes}</div>}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </Card>
+                    );
+                  })}
+                </div>
+              ));
+            })()}
           </>
         )}
 
@@ -642,7 +656,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 <Card key={u.id}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "6px" }}>
                     <div style={{ flex: 1 }}>
-                      <div style={{ fontWeight: 600, color: t.text, fontSize: "14px" }}>{u.crewName} — {truck?.name || "Unknown"}</div>
+                      <div style={{ fontWeight: 600, color: t.text, fontSize: "14px" }}>{job?.builder || "No Customer"} — {truck?.name || "Unknown"}</div>
                       <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job?.address || "Unknown"} — {job?.type}</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
@@ -761,8 +775,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
       {showAddJob && (
         <Modal title="Add Job" onClose={() => setShowAddJob(false)}>
-          <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
           <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} />
+          <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
           <Select label="Assign to Crew" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
           <div style={{ marginBottom: "16px" }}>
@@ -802,8 +816,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
       {editingJob && (
         <Modal title="Edit Job" onClose={() => setEditingJob(null)}>
-          <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
+          <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
           <Select label="Assign to Crew" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
           <div style={{ marginBottom: "16px" }}>
