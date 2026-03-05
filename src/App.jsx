@@ -731,7 +731,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                         <div style={{ fontSize: "12px", fontWeight: isToday ? 700 : 400, color: isToday ? t.accent : t.textMuted, marginBottom: "3px", textAlign: "right", paddingRight: "4px" }}>{day}</div>
                         {crewKeys.map((key) => (
                           <div key={key} style={{ marginBottom: "3px" }}>
-                            <div style={{ fontSize: "9px", fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.3px", padding: "0 2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{grouped[key].name}</div>
+                            <div style={{ fontSize: "9px", fontWeight: 700, color: t.text, textTransform: "uppercase", letterSpacing: "0.3px", padding: "0 2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{grouped[key].name}</div>
                             {grouped[key].jobs.map((j) => {
                               const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
                               const isDone = lat && lat.status === "completed";
