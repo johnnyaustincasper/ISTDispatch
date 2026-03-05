@@ -748,7 +748,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                               const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
                               const isDone = lat && lat.status === "completed";
                               return (
-                                <div key={j.id} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "1px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }} title={(j.builder || "No Customer") + " — " + j.address + " — " + j.type + (j.jobCategory ? " — " + j.jobCategory : "")} onClick={() => setCalViewJob(j)}>
+                                <div key={j.id} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "1px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer", borderLeft: j.jobChecked === "Yes" ? "3px solid #15803d" : "3px solid #dc2626" }} title={(j.builder || "No Customer") + " — " + j.address + " — " + j.type + (j.jobCategory ? " — " + j.jobCategory : "") + " — PM: " + (j.jobChecked === "Yes" ? "Checked" : "Not Checked")} onClick={() => setCalViewJob(j)}>
                                   {isDone && "✓ "}{j.builder || j.address}
                                 </div>
                               );
@@ -766,6 +766,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#fee2e2", display: "inline-block" }}></span> New Construction</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#dbeafe", display: "inline-block" }}></span> Uncategorized</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>✓ = Completed</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#15803d", display: "inline-block" }}></span> PM Checked</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#dc2626", display: "inline-block" }}></span> Not Checked</div>
             </div>
           </>
         )}
@@ -1020,6 +1022,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
             <div style={{ display: "flex", gap: "10px" }}>
               <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1 }}>Close</Button>
+              <Button onClick={() => { setPmJob(calViewJob); setPmChecked(calViewJob.jobChecked || "No"); setCalViewJob(null); }} style={{ flex: 1 }}>PM Note</Button>
               <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Edit Job</Button>
             </div>
           </Modal>
