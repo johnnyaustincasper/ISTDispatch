@@ -501,7 +501,7 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
 }
 
 // ─── Admin Dashboard ───
-function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onLogout }) {
+function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
   const [showAddTruck, setShowAddTruck] = useState(false);
@@ -514,6 +514,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const [editingJob, setEditingJob] = useState(null);
   const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", date: "", notes: "" });
   const [truckFilter, setTruckFilter] = useState(null);
+  const [pmJob, setPmJob] = useState(null);
+  const [pmNote, setPmNote] = useState("");
 
   const activeJobs = jobs.filter((j) => {
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
@@ -547,6 +549,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const openEditJob = (job) => { setEditingJob(job); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", date: job.date, notes: job.notes || "" }); };
   const handleSaveEdit = () => { onEditJob(editingJob.id, { ...editForm }); onLogAction("Edited job: " + editForm.address); setEditingJob(null); };
   const handleRemoveJob = (job) => { onDeleteJob(job.id); onLogAction("Removed job: " + job.address + " (" + job.type + ")"); };
+  const handlePmSubmit = () => { onSubmitPmUpdate({ jobId: pmJob.id, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr() }); onLogAction("PM update on " + (pmJob.builder || pmJob.address)); setPmJob(null); setPmNote(""); };
   const handleRemoveTruck = (tr) => { onDeleteTruck(tr.id); onLogAction("Removed crew: " + tr.name); };
   const recentUpdates = [...updates].filter((u) => u.status !== "completed").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)).slice(0, 30);
   const sortedLog = [...activityLog].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -603,6 +606,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                     const latest = getLatestUpdate(job.id);
                     const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
                     const jobUpdates = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const jobPmUpdates = pmUpdates.filter((p) => p.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     return (
                       <Card key={job.id} style={{ marginLeft: "8px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
@@ -613,15 +617,16 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                           </div>
                           <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
                             <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
+                            <Button variant="secondary" onClick={() => setPmJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>PM Note</Button>
                             <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Edit</Button>
                             <Button variant="danger" onClick={() => handleRemoveJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Remove</Button>
                           </div>
                         </div>
                         {job.notes && <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "8px", fontStyle: "italic" }}>Notes: {job.notes}</div>}
-                        {jobUpdates.length > 0 && (
-                          <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
-                            <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Crew Updates</div>
-                            {jobUpdates.map((u) => {
+                        <div style={{ display: "flex", gap: "16px", marginTop: "12px", flexWrap: "wrap" }}>
+                          <div style={{ flex: "1 1 45%", minWidth: "200px" }}>
+                            <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>Crew Updates</div>
+                            {jobUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobUpdates.map((u) => {
                               const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
                               return (
                                 <div key={u.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
@@ -636,7 +641,19 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                               );
                             })}
                           </div>
-                        )}
+                          <div style={{ flex: "1 1 45%", minWidth: "200px" }}>
+                            <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "#dc2626", marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>Project Manager Updates</div>
+                            {jobPmUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobPmUpdates.map((p) => (
+                              <div key={p.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
+                                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                                  <span style={{ color: t.textMuted }}>{p.timeStr}</span>
+                                  <strong style={{ color: t.text }}>{p.user}</strong>
+                                </div>
+                                <div style={{ marginTop: "3px", color: t.text, paddingLeft: "2px" }}>{p.note}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       </Card>
                     );
                   })}
@@ -832,10 +849,20 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           </div>
         </Modal>
       )}
+
+      {pmJob && (
+        <Modal title="Project Manager Update" onClose={() => { setPmJob(null); setPmNote(""); }}>
+          <div style={{ fontSize: "13.5px", color: t.textMuted, marginBottom: "18px" }}><strong style={{ color: t.text }}>{pmJob.builder || "No Customer"}</strong><br />{pmJob.address} — {pmJob.type}</div>
+          <TextArea label="Your update" placeholder="Add notes, instructions, status info for this job..." value={pmNote} onChange={(e) => setPmNote(e.target.value)} style={{ minHeight: "100px" }} />
+          <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
+            <Button variant="secondary" onClick={() => { setPmJob(null); setPmNote(""); }} style={{ flex: 1 }}>Cancel</Button>
+            <Button onClick={handlePmSubmit} disabled={!pmNote.trim()} style={{ flex: 1 }}>Submit Update</Button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
-
 // ─── Main App ───
 export default function App() {
   const [loading, setLoading] = useState(true);
@@ -847,6 +874,7 @@ export default function App() {
   const [updates, setUpdates] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
+  const [pmUpdates, setPmUpdates] = useState([]);
 
   useEffect(() => {
     const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
@@ -854,7 +882,8 @@ export default function App() {
     const unsubUpdates = onSnapshot(collection(db, "updates"), (snap) => { setUpdates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubTickets = onSnapshot(collection(db, "tickets"), (snap) => { setTickets(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); setLoading(false); });
     const unsubLog = onSnapshot(collection(db, "activityLog"), (snap) => { setActivityLog(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); };
+    const unsubPm = onSnapshot(collection(db, "pmUpdates"), (snap) => { setPmUpdates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); };
   }, []);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
@@ -865,12 +894,15 @@ export default function App() {
     await deleteDoc(doc(db, "jobs", id));
     const updatesSnap = await getDocs(query(collection(db, "updates"), where("jobId", "==", id)));
     updatesSnap.forEach(async (d) => { await deleteDoc(doc(db, "updates", d.id)); });
+    const pmSnap = await getDocs(query(collection(db, "pmUpdates"), where("jobId", "==", id)));
+    pmSnap.forEach(async (d) => { await deleteDoc(doc(db, "pmUpdates", d.id)); });
   };
   const handleSubmitUpdate = async (data) => { await addDoc(collection(db, "updates"), { ...data, createdAt: serverTimestamp() }); };
   const handleEditJob = async (id, data) => { await updateDoc(doc(db, "jobs", id), data); };
   const handleSubmitTicket = async (data) => { await addDoc(collection(db, "tickets"), { ...data, createdAt: serverTimestamp() }); };
   const handleUpdateTicket = async (id, data) => { await updateDoc(doc(db, "tickets", id), data); };
   const handleLogAction = async (action) => { await addDoc(collection(db, "activityLog"), { user: adminName, action, timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
+  const handleSubmitPmUpdate = async (data) => { await addDoc(collection(db, "pmUpdates"), { ...data, createdAt: serverTimestamp() }); };
   const handleCrewLogin = (truckId, crewName) => { setCrewSession({ truckId, crewName }); setRole("crew"); };
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
@@ -884,6 +916,6 @@ export default function App() {
     if (!truck) return <CrewLogin trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} jobs={jobs} updates={updates} tickets={tickets} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onLogout={() => { setAdminName(null); setRole(null); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
 }
