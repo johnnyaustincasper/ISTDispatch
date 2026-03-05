@@ -354,8 +354,11 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 
 // ─── Crew Dashboard ───
 function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate, onSubmitTicket, onLogout }) {
-  const today = todayStr();
-  const myJobs = jobs.filter((j) => j.truckId === truck.id && j.date === today);
+  const myJobs = jobs.filter((j) => {
+    if (j.truckId !== truck.id) return false;
+    const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+    return !latest || latest.status !== "completed";
+  });
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("jobs");
   const [activeJob, setActiveJob] = useState(null);
@@ -403,8 +406,8 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
       <div style={{ padding: "20px", maxWidth: "600px", margin: "0 auto" }}>
         {crewView === "jobs" && (
           <>
-            <SectionHeader title="Today's Jobs" right={<span style={{ fontSize: "13px", color: t.textMuted }}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</span>} />
-            {myJobs.length === 0 ? <EmptyState text="No jobs scheduled for today." sub="Check back or contact the office." /> : myJobs.map((job) => {
+            <SectionHeader title="Your Jobs" />
+            {myJobs.length === 0 ? <EmptyState text="No active jobs assigned to you." sub="Check back or contact the office." /> : myJobs.map((job) => {
               const latestStatus = getLatestStatus(job.id);
               const statusObj = STATUS_OPTIONS.find((s) => s.value === latestStatus);
               const jobUpdates = getJobUpdates(job.id);
