@@ -517,6 +517,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const [pmJob, setPmJob] = useState(null);
   const [pmNote, setPmNote] = useState("");
   const [pmChecked, setPmChecked] = useState("No");
+  const [calViewJob, setCalViewJob] = useState(null);
 
   const activeJobs = jobs.filter((j) => {
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
@@ -736,7 +737,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                               const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
                               const isDone = lat && lat.status === "completed";
                               return (
-                                <div key={j.id} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "1px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }} title={(j.builder || "No Customer") + " — " + j.address + " — " + j.type + (j.jobCategory ? " — " + j.jobCategory : "")} onClick={() => openEditJob(j)}>
+                                <div key={j.id} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "1px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer" }} title={(j.builder || "No Customer") + " — " + j.address + " — " + j.type + (j.jobCategory ? " — " + j.jobCategory : "")} onClick={() => setCalViewJob(j)}>
                                   {isDone && "✓ "}{j.builder || j.address}
                                 </div>
                               );
@@ -949,6 +950,70 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           </div>
         </Modal>
       )}
+
+      {calViewJob && (() => {
+        const crew = trucks.find((tr) => tr.id === calViewJob.truckId);
+        const jobPm = pmUpdates.filter((p) => p.jobId === calViewJob.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const jobCrew = updates.filter((u) => u.jobId === calViewJob.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const latestStatus = jobCrew.length > 0 ? jobCrew[0].status : "not_started";
+        const statusObj = STATUS_OPTIONS.find((s) => s.value === latestStatus);
+        return (
+          <Modal title="Job Details" onClose={() => setCalViewJob(null)}>
+            <div style={{ marginBottom: "18px" }}>
+              <div style={{ fontWeight: 600, color: t.text, fontSize: "17px" }}>{calViewJob.builder || "No Customer Listed"}</div>
+              <div style={{ fontSize: "13.5px", color: t.textMuted, marginTop: "3px" }}>{calViewJob.address}</div>
+              <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "8px", flexWrap: "wrap" }}>
+                <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
+                <span style={{ fontSize: "12.5px", color: t.textMuted }}>{calViewJob.type}</span>
+                {calViewJob.jobCategory && <span style={{ fontSize: "12.5px", fontWeight: 600, color: calViewJob.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{calViewJob.jobCategory}</span>}
+                <span style={{ fontSize: "12.5px", color: t.textMuted }}>{new Date(calViewJob.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+              </div>
+              {crew && <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "6px" }}>Crew: {crew.name}</div>}
+              {calViewJob.notes && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginTop: "10px", borderLeft: "3px solid " + t.accent }}>Office: {calViewJob.notes}</div>}
+            </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Project Manager Updates</div>
+              <div style={{ fontSize: "12.5px", display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
+                <span style={{ fontWeight: 600, color: "#dc2626" }}>Job Checked?</span>
+                <span style={{ fontWeight: 600, color: calViewJob.jobChecked === "Yes" ? "#15803d" : t.textMuted }}>{calViewJob.jobChecked || "No"}</span>
+              </div>
+              {jobPm.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>No PM notes.</div> : jobPm.map((p) => (
+                <div key={p.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <span style={{ color: t.textMuted }}>{p.timeStr}</span>
+                    <strong style={{ color: t.text }}>{p.user}</strong>
+                  </div>
+                  <div style={{ marginTop: "3px", color: t.text }}>{p.note}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ fontSize: "12px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Crew Updates</div>
+              {jobCrew.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>No crew updates.</div> : jobCrew.map((u) => {
+                const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
+                return (
+                  <div key={u.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                      <span style={{ color: t.textMuted }}>{u.timeStr}</span>
+                      <strong style={{ color: t.text }}>{u.crewName}</strong>
+                      <Badge color={uStatus?.color} bg={uStatus?.bg}>{uStatus?.label}</Badge>
+                      {u.eta && <span>— ETA: {u.eta}</span>}
+                    </div>
+                    {u.notes && <div style={{ marginTop: "3px", color: t.textMuted }}>{u.notes}</div>}
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={{ display: "flex", gap: "10px" }}>
+              <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1 }}>Close</Button>
+              <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Edit Job</Button>
+            </div>
+          </Modal>
+        );
+      })()}
     </div>
   );
 }
