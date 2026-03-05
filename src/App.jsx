@@ -517,7 +517,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
   const [pmJob, setPmJob] = useState(null);
   const [pmNote, setPmNote] = useState("");
-  const [pmChecked, setPmChecked] = useState("No");
+  const [pmCheckedAM, setPmCheckedAM] = useState("No");
+  const [pmCheckedPM, setPmCheckedPM] = useState("No");
   const [calViewJob, setCalViewJob] = useState(null);
 
   const activeJobs = jobs.filter((j) => {
@@ -555,10 +556,13 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const handlePmSubmit = () => {
     const jobLabel = pmJob.builder || pmJob.address;
     if (pmNote.trim()) { onSubmitPmUpdate({ jobId: pmJob.id, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr() }); onLogAction("PM note on " + jobLabel + ": \"" + pmNote.trim().slice(0, 80) + (pmNote.trim().length > 80 ? "..." : "") + "\""); }
-    const prevChecked = pmJob.jobChecked || "No";
-    if (pmChecked !== prevChecked) { onEditJob(pmJob.id, { jobChecked: pmChecked }); onLogAction("Marked Job Checked: " + pmChecked + " on " + jobLabel); }
-    else { onEditJob(pmJob.id, { jobChecked: pmChecked }); }
-    setPmJob(null); setPmNote(""); setPmChecked("No");
+    const prevAM = pmJob.jobCheckedAM || "No";
+    const prevPM = pmJob.jobCheckedPM || "No";
+    const changes = {};
+    if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
+    if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
+    onEditJob(pmJob.id, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
+    setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No");
   };
   const handleRemoveTruck = (tr) => { onDeleteTruck(tr.id); onLogAction("Removed crew: " + tr.name); };
   const sortedLog = [...activityLog].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -615,7 +619,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
         {view === "schedule" && (
           <>
-            {(() => { const uncheckedCount = activeJobs.filter((j) => j.jobChecked !== "Yes").length; return (
+            {(() => { const uncheckedCount = activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes").length; return (
             <SectionHeader title="Schedule" right={<>
               {uncheckedCount > 0 && <button onClick={() => setShowUncheckedOnly(!showUncheckedOnly)} style={{ padding: "6px 12px", border: "1px solid " + (showUncheckedOnly ? t.danger : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showUncheckedOnly ? t.dangerBg : "#fff", color: showUncheckedOnly ? t.danger : t.textMuted }}>{showUncheckedOnly ? "Show All" : uncheckedCount + " Unchecked"}</button>}
               <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr() }); setShowAddJob(true); }}>+ Add Job</Button>
@@ -628,7 +632,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               </div>
             )}
             {(() => {
-              const displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobChecked !== "Yes") : activeJobs;
+              const displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
               if (displayJobs.length === 0) return <EmptyState text={showUncheckedOnly ? "All jobs have been checked." : "No active jobs."} />;
               const unassigned = displayJobs.filter((j) => !j.truckId);
               const crewGroups = sortedTrucks.filter((tr) => !truckFilter || tr.id === truckFilter).map((tr) => ({ crew: tr, jobs: displayJobs.filter((j) => j.truckId === tr.id) })).filter((g) => g.jobs.length > 0);
@@ -645,9 +649,10 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                     const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
                     const jobUpdates = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     const jobPmUpdates = pmUpdates.filter((p) => p.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                    const isChecked = job.jobChecked === "Yes";
+                    const isChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
+                    const partialCheck = job.jobCheckedAM === "Yes" || job.jobCheckedPM === "Yes";
                     return (
-                      <Card key={job.id} style={{ marginLeft: "8px", borderLeft: isChecked ? "3px solid #15803d" : "3px solid #dc2626" }}>
+                      <Card key={job.id} style={{ marginLeft: "8px", borderLeft: isChecked ? "3px solid #15803d" : partialCheck ? "3px solid #f59e0b" : "3px solid #dc2626" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.builder || "No Customer Listed"}</div>
@@ -655,9 +660,10 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                             <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.type} — {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}{job.jobCategory && <span style={{ marginLeft: "8px", fontWeight: 600, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}</div>
                           </div>
                           <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
-                            <span style={{ fontSize: "11px", fontWeight: 600, color: isChecked ? "#15803d" : "#dc2626" }}>{isChecked ? "Checked" : "Not Checked"}</span>
+                            <span style={{ fontSize: "10px", fontWeight: 600, color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM</span>
+                            <span style={{ fontSize: "10px", fontWeight: 600, color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM</span>
                             <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
-                            <Button variant="secondary" onClick={() => { setPmJob(job); setPmChecked(job.jobChecked || "No"); }} style={{ padding: "4px 8px", fontSize: "11px" }}>PM Note</Button>
+                            <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "4px 8px", fontSize: "11px" }}>PM Note</Button>
                             <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Edit</Button>
                             <Button variant="danger" onClick={() => handleRemoveJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Remove</Button>
                           </div>
@@ -681,7 +687,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                               );
                             })}
                           </div>
-                          <div style={{ flex: "1 1 45%", minWidth: "200px", cursor: "pointer", borderRadius: "6px", padding: "4px", margin: "-4px", transition: "background 0.15s ease" }} onClick={() => { setPmJob(job); setPmChecked(job.jobChecked || "No"); }} onMouseEnter={(e) => e.currentTarget.style.background = t.bg} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                          <div style={{ flex: "1 1 45%", minWidth: "200px", cursor: "pointer", borderRadius: "6px", padding: "4px", margin: "-4px", transition: "background 0.15s ease" }} onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} onMouseEnter={(e) => e.currentTarget.style.background = t.bg} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
                             <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "#dc2626", marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                               <span>Project Manager Updates</span>
                               <span style={{ fontSize: "10px", color: t.textMuted, fontWeight: 500, textTransform: "none" }}>Click to update</span>
@@ -695,9 +701,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                                 <div style={{ marginTop: "3px", color: t.text, paddingLeft: "2px" }}>{p.note}</div>
                               </div>
                             ))}
-                            <div style={{ marginTop: "10px", fontSize: "12.5px", display: "flex", alignItems: "center", gap: "6px" }}>
-                              <span style={{ fontWeight: 600, color: "#dc2626" }}>Job Checked?</span>
-                              <span style={{ fontWeight: 600, color: job.jobChecked === "Yes" ? "#15803d" : t.textMuted }}>{job.jobChecked || "No"}</span>
+                            <div style={{ marginTop: "10px", fontSize: "12.5px", display: "flex", alignItems: "center", gap: "10px" }}>
+                              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ fontWeight: 600, color: "#dc2626" }}>AM:</span><span style={{ fontWeight: 600, color: job.jobCheckedAM === "Yes" ? "#15803d" : t.textMuted }}>{job.jobCheckedAM || "No"}</span></span>
+                              <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ fontWeight: 600, color: "#dc2626" }}>PM:</span><span style={{ fontWeight: 600, color: job.jobCheckedPM === "Yes" ? "#15803d" : t.textMuted }}>{job.jobCheckedPM || "No"}</span></span>
                             </div>
                           </div>
                         </div>
@@ -748,7 +754,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                               const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
                               const isDone = lat && lat.status === "completed";
                               return (
-                                <div key={j.id} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "1px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer", borderLeft: j.jobChecked === "Yes" ? "3px solid #15803d" : "3px solid #dc2626" }} title={(j.builder || "No Customer") + " — " + j.address + " — " + j.type + (j.jobCategory ? " — " + j.jobCategory : "") + " — PM: " + (j.jobChecked === "Yes" ? "Checked" : "Not Checked")} onClick={() => setCalViewJob(j)}>
+                                <div key={j.id} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "1px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer", borderLeft: (j.jobCheckedAM === "Yes" && j.jobCheckedPM === "Yes") ? "3px solid #15803d" : (j.jobCheckedAM === "Yes" || j.jobCheckedPM === "Yes") ? "3px solid #f59e0b" : "3px solid #dc2626" }} title={(j.builder || "No Customer") + " — " + j.address + " — " + j.type + (j.jobCategory ? " — " + j.jobCategory : "") + " — AM: " + (j.jobCheckedAM || "No") + " / PM: " + (j.jobCheckedPM || "No")} onClick={() => setCalViewJob(j)}>
                                   {isDone && "✓ "}{j.builder || j.address}
                                 </div>
                               );
@@ -766,7 +772,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#fee2e2", display: "inline-block" }}></span> New Construction</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#dbeafe", display: "inline-block" }}></span> Uncategorized</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>✓ = Completed</div>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#15803d", display: "inline-block" }}></span> PM Checked</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#15803d", display: "inline-block" }}></span> Both Checked</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#f59e0b", display: "inline-block" }}></span> Partial (AM or PM)</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#dc2626", display: "inline-block" }}></span> Not Checked</div>
             </div>
           </>
@@ -953,12 +960,19 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
       )}
 
       {pmJob && (
-        <Modal title="Project Manager Update" onClose={() => { setPmJob(null); setPmNote(""); setPmChecked("No"); }}>
+        <Modal title="Project Manager Update" onClose={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }}>
           <div style={{ fontSize: "13.5px", color: t.textMuted, marginBottom: "18px" }}><strong style={{ color: t.text }}>{pmJob.builder || "No Customer"}</strong><br />{pmJob.address} — {pmJob.type}</div>
           <TextArea label="Your update" placeholder="Add notes, instructions, status info for this job..." value={pmNote} onChange={(e) => setPmNote(e.target.value)} style={{ minHeight: "100px" }} />
-          <Select label="Job Checked?" value={pmChecked} onChange={(e) => setPmChecked(e.target.value)} options={[{ value: "No", label: "No" }, { value: "Yes", label: "Yes" }]} />
+          <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
+            <div style={{ flex: 1 }}>
+              <Select label="AM Check" value={pmCheckedAM} onChange={(e) => setPmCheckedAM(e.target.value)} options={[{ value: "No", label: "No" }, { value: "Yes", label: "Yes" }]} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <Select label="PM Check" value={pmCheckedPM} onChange={(e) => setPmCheckedPM(e.target.value)} options={[{ value: "No", label: "No" }, { value: "Yes", label: "Yes" }]} />
+            </div>
+          </div>
           <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-            <Button variant="secondary" onClick={() => { setPmJob(null); setPmNote(""); setPmChecked("No"); }} style={{ flex: 1 }}>Cancel</Button>
+            <Button variant="secondary" onClick={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }} style={{ flex: 1 }}>Cancel</Button>
             <Button onClick={handlePmSubmit} style={{ flex: 1 }}>Submit</Button>
           </div>
         </Modal>
@@ -987,9 +1001,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "12px", fontWeight: 600, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Project Manager Updates</div>
-              <div style={{ fontSize: "12.5px", display: "flex", alignItems: "center", gap: "6px", marginBottom: "8px" }}>
-                <span style={{ fontWeight: 600, color: "#dc2626" }}>Job Checked?</span>
-                <span style={{ fontWeight: 600, color: calViewJob.jobChecked === "Yes" ? "#15803d" : t.textMuted }}>{calViewJob.jobChecked || "No"}</span>
+              <div style={{ fontSize: "12.5px", display: "flex", alignItems: "center", gap: "10px", marginBottom: "8px" }}>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ fontWeight: 600, color: "#dc2626" }}>AM:</span><span style={{ fontWeight: 600, color: calViewJob.jobCheckedAM === "Yes" ? "#15803d" : t.textMuted }}>{calViewJob.jobCheckedAM || "No"}</span></span>
+                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ fontWeight: 600, color: "#dc2626" }}>PM:</span><span style={{ fontWeight: 600, color: calViewJob.jobCheckedPM === "Yes" ? "#15803d" : t.textMuted }}>{calViewJob.jobCheckedPM || "No"}</span></span>
               </div>
               {jobPm.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>No PM notes.</div> : jobPm.map((p) => (
                 <div key={p.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
@@ -1022,7 +1036,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
             <div style={{ display: "flex", gap: "10px" }}>
               <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1 }}>Close</Button>
-              <Button onClick={() => { setPmJob(calViewJob); setPmChecked(calViewJob.jobChecked || "No"); setCalViewJob(null); }} style={{ flex: 1 }}>PM Note</Button>
+              <Button onClick={() => { setPmJob(calViewJob); setPmCheckedAM(calViewJob.jobCheckedAM || "No"); setPmCheckedPM(calViewJob.jobCheckedPM || "No"); setCalViewJob(null); }} style={{ flex: 1 }}>PM Note</Button>
               <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Edit Job</Button>
             </div>
           </Modal>
