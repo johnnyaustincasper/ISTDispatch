@@ -317,6 +317,7 @@ function AdminLogin({ onLogin, onBack }) {
 function CrewLogin({ trucks, onLogin, onBack }) {
   const [selected, setSelected] = useState("");
   const [crewName, setCrewName] = useState("");
+  const [email, setEmail] = useState("");
   return (
     <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
       <div style={{ maxWidth: "380px", width: "100%" }}>
@@ -324,6 +325,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
         <h1 style={{ fontSize: "22px", fontWeight: 600, color: t.text, margin: "0 0 6px" }}>Crew Login</h1>
         <p style={{ color: t.textMuted, fontSize: "13.5px", margin: "0 0 24px" }}>Select your crew and enter your name</p>
         <Input label="Your Name" placeholder="Enter your name" value={crewName} onChange={(e) => setCrewName(e.target.value)} />
+        <Input label="Your Email (for job notifications)" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
         {trucks.length === 0 ? (
           <EmptyState text="No crews set up yet." sub="Ask the office to add your crew." />
         ) : (
@@ -346,7 +348,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
             </div>
           </>
         )}
-        <Button onClick={() => onLogin(selected, crewName)} disabled={!selected || !crewName.trim()} style={{ width: "100%" }}>Log In</Button>
+        <Button onClick={() => onLogin(selected, crewName, email)} disabled={!selected || !crewName.trim()} style={{ width: "100%" }}>Log In</Button>
       </div>
     </div>
   );
@@ -1116,7 +1118,13 @@ export default function App() {
   const handleUpdateTicket = async (id, data) => { await updateDoc(doc(db, "tickets", id), data); };
   const handleLogAction = async (action) => { await addDoc(collection(db, "activityLog"), { user: adminName, action, timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
   const handleSubmitPmUpdate = async (data) => { await addDoc(collection(db, "pmUpdates"), { ...data, createdAt: serverTimestamp() }); };
-  const handleCrewLogin = (truckId, crewName) => { setCrewSession({ truckId, crewName }); setRole("crew"); };
+  const handleCrewLogin = (truckId, crewName, email) => {
+    setCrewSession({ truckId, crewName });
+    setRole("crew");
+    if (email && email.trim()) {
+      updateDoc(doc(db, "trucks", truckId), { email: email.trim() });
+    }
+  };
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
   if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ fontSize: "20px", fontWeight: 600, color: t.textMuted, letterSpacing: "2px" }}>IST</div></div>;
