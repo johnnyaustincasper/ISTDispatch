@@ -824,7 +824,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, paddingBottom: "72px" }}>
+    <div style={{ minHeight: "100vh", background: t.bg, paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Top header — title + logout only */}
       <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "900px", margin: "0 auto" }}>
@@ -837,7 +837,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: t.surface, borderTop: "1px solid " + t.border, display: "flex", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: t.surface, borderTop: "1px solid " + t.border, display: "flex", flexDirection: "column" }}>
+        <div style={{ display: "flex" }}>
         {NAV_ITEMS.map(item => (
           <button key={item.key} onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 4px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", position: "relative", gap: "2px" }}>
             <span style={{ lineHeight: 1, color: view === item.key ? t.accent : "rgba(100,116,139,0.7)" }}>{NAV_ICONS[item.key]}</span>
@@ -846,6 +847,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
             {view === item.key && <div style={{ position: "absolute", top: 0, left: "15%", right: "15%", height: "2px", background: t.accent, borderRadius: "0 0 2px 2px" }} />}
           </button>
         ))}
+        </div>
+        <div style={{ height: "env(safe-area-inset-bottom, 0px)", background: t.surface }} />
       </div>
 
       <div style={{ padding: "20px", maxWidth: "900px", margin: "0 auto" }}>
