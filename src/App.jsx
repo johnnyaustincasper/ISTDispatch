@@ -1063,7 +1063,6 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                       </div>
                       <div>
                         <div style={{ fontWeight: 600, color: t.text, fontSize: "14.5px" }}>{tr.members || tr.name}</div>
-                        {tr.name && <div style={{ fontSize: "12.5px", color: t.textMuted }}>{tr.name}</div>}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
