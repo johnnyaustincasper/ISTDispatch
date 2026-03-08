@@ -806,13 +806,21 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
   const tabStyle = (active) => ({ padding: "8px 16px", background: active ? t.accent : "transparent", color: active ? "#fff" : t.textMuted, border: active ? "none" : "1px solid " + t.border, borderRadius: "6px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", position: "relative" });
 
+  const NAV_ICONS = {
+    schedule: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>,
+    calendar: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h8M8 18h5"/></svg>,
+    tickets: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V15a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V9z"/></svg>,
+    trucks: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
+    roster: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg>,
+    log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
+  };
   const NAV_ITEMS = [
-    { key: "schedule", label: "Schedule", icon: "📋" },
-    { key: "calendar", label: "Calendar", icon: "📅" },
-    { key: "tickets", label: "Tickets", icon: "🎫", badge: openTicketCount },
-    { key: "trucks", label: "Trucks", icon: "🚛" },
-    { key: "roster", label: "Roster", icon: "👥" },
-    { key: "log", label: "Log", icon: "📝" },
+    { key: "schedule", label: "Schedule" },
+    { key: "calendar", label: "Calendar" },
+    { key: "tickets", label: "Tickets", badge: openTicketCount },
+    { key: "trucks", label: "Trucks" },
+    { key: "roster", label: "Roster" },
+    { key: "log", label: "Log" },
   ];
 
   return (
@@ -832,7 +840,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
       <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: t.surface, borderTop: "1px solid " + t.border, display: "flex", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
         {NAV_ITEMS.map(item => (
           <button key={item.key} onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 4px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", position: "relative", gap: "2px" }}>
-            <span style={{ fontSize: "20px", lineHeight: 1 }}>{item.icon}</span>
+            <span style={{ lineHeight: 1, color: view === item.key ? t.accent : "rgba(100,116,139,0.7)" }}>{NAV_ICONS[item.key]}</span>
             <span style={{ fontSize: "10px", fontWeight: view === item.key ? 700 : 400, color: view === item.key ? t.accent : t.textMuted }}>{item.label}</span>
             {item.badge > 0 && <span style={{ position: "absolute", top: "4px", right: "calc(50% - 16px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "50%", width: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</span>}
             {view === item.key && <div style={{ position: "absolute", top: 0, left: "15%", right: "15%", height: "2px", background: t.accent, borderRadius: "0 0 2px 2px" }} />}
