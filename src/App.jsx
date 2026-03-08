@@ -830,19 +830,15 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
       {/* Top header — title + logout only */}
       <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "900px", margin: "0 auto" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {/* IST Dispatch logo mark */}
-            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
-              {/* Hexagon background */}
-              <polygon points="14,2 25,8 25,20 14,26 3,20 3,8" fill="#2563eb" />
-              {/* Lightning bolt */}
-              <polygon points="16,5 10,15 14,15 12,23 18,13 14,13" fill="white" />
-            </svg>
-            <div>
-              <div style={{ fontSize: "13px", fontWeight: 800, color: t.text, letterSpacing: "0.5px", lineHeight: 1.1 }}>IST</div>
-              <div style={{ fontSize: "9px", fontWeight: 600, color: t.textMuted, letterSpacing: "1.5px", textTransform: "uppercase", lineHeight: 1.1 }}>Dispatch</div>
-            </div>
-          </div>
+          <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg">
+            <rect width="360" height="100" fill="#0f172a" rx="8"/>
+            <rect x="18" y="14" width="4" height="72" fill="#2563eb" rx="2"/>
+            <text x="32" y="80" fontFamily="Arial Black,sans-serif" fontSize="72" fontWeight="900" fill="white" letterSpacing="-3">IST</text>
+            <line x1="168" y1="16" x2="168" y2="84" stroke="#1e3a5f" strokeWidth="1.5"/>
+            <text x="180" y="38" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">INSULATION</text>
+            <text x="180" y="56" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">SERVICES</text>
+            <text x="180" y="74" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">OF TULSA</text>
+          </svg>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "12.5px", color: t.textMuted }}>{adminName}</span>
             <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
