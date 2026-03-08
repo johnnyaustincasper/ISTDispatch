@@ -830,7 +830,19 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
       {/* Top header — title + logout only */}
       <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "900px", margin: "0 auto" }}>
-          <div style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>IST Dispatch</div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            {/* IST Dispatch logo mark */}
+            <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg">
+              {/* Hexagon background */}
+              <polygon points="14,2 25,8 25,20 14,26 3,20 3,8" fill="#2563eb" />
+              {/* Lightning bolt */}
+              <polygon points="16,5 10,15 14,15 12,23 18,13 14,13" fill="white" />
+            </svg>
+            <div>
+              <div style={{ fontSize: "13px", fontWeight: 800, color: t.text, letterSpacing: "0.5px", lineHeight: 1.1 }}>IST</div>
+              <div style={{ fontSize: "9px", fontWeight: 600, color: t.textMuted, letterSpacing: "1.5px", textTransform: "uppercase", lineHeight: 1.1 }}>Dispatch</div>
+            </div>
+          </div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "12.5px", color: t.textMuted }}>{adminName}</span>
             <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
