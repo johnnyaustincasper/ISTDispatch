@@ -659,41 +659,57 @@ function RosterView({ trucks }) {
 
       {members.length === 0 ? (
         <EmptyState text="No crew members yet." sub="Add your first crew member above." />
-      ) : (
-        members.sort((a,b) => a.name.localeCompare(b.name)).map(member => (
-          <Card key={member.id} style={{ marginBottom: 8 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{member.name}</div>
-                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                  {member.email ? `📧 ${member.email}` : "No email yet"}
-                </div>
-                {member.pin ? (
-                  <div style={{ fontSize: 11, color: t.green, marginTop: 2 }}>✓ PIN set</div>
-                ) : (
-                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>No PIN yet</div>
-                )}
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                {assigning === member.id ? (
-                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                    <select onChange={e => assignTruck(member.id, e.target.value)} defaultValue={member.truckId || ""} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit" }}>
-                      <option value="">Unassigned</option>
-                      {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.members || tr.name}</option>)}
-                    </select>
-                    <button onClick={() => setAssigning(null)} style={{ fontSize: 11, color: t.textMuted, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
-                  </div>
-                ) : (
-                  <button onClick={() => setAssigning(member.id)} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + t.border, background: member.truckId ? t.accentBg : t.bg, color: member.truckId ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
-                    {getTruckName(member.truckId)}
-                  </button>
-                )}
-                <button onClick={() => removeMember(member.id)} style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>✕</button>
-              </div>
+      ) : (() => {
+        // Group by truck
+        const sortedTrucks = [...trucks].sort((a,b) => (a.order ?? 999) - (b.order ?? 999));
+        const unassigned = members.filter(m => !m.truckId);
+        const groups = [
+          ...sortedTrucks.map(tr => ({ truck: tr, members: members.filter(m => m.truckId === tr.id).sort((a,b) => a.name.localeCompare(b.name)) })).filter(g => g.members.length > 0),
+          ...(unassigned.length > 0 ? [{ truck: null, members: unassigned.sort((a,b) => a.name.localeCompare(b.name)) }] : []),
+        ];
+
+        return groups.map(({ truck, members: groupMembers }) => (
+          <div key={truck?.id || "unassigned"} style={{ marginBottom: 20 }}>
+            {/* Truck header */}
+            <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid " + t.borderLight }}>
+              {truck ? (truck.members || truck.name) : "Unassigned"}
             </div>
-          </Card>
-        ))
-      )}
+            {groupMembers.map(member => (
+              <Card key={member.id} style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{member.name}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                      {member.email ? `📧 ${member.email}` : "No email yet"}
+                    </div>
+                    {member.pin ? (
+                      <div style={{ fontSize: 11, color: t.green, marginTop: 2 }}>✓ PIN set</div>
+                    ) : (
+                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>No PIN yet</div>
+                    )}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    {assigning === member.id ? (
+                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                        <select onChange={e => assignTruck(member.id, e.target.value)} defaultValue={member.truckId || ""} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit" }}>
+                          <option value="">Unassigned</option>
+                          {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.members || tr.name}</option>)}
+                        </select>
+                        <button onClick={() => setAssigning(null)} style={{ fontSize: 11, color: t.textMuted, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setAssigning(member.id)} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + t.border, background: member.truckId ? t.accentBg : t.bg, color: member.truckId ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
+                        {getTruckName(member.truckId)}
+                      </button>
+                    )}
+                    <button onClick={() => removeMember(member.id)} style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>✕</button>
+                  </div>
+                </div>
+              </Card>
+            ))}
+          </div>
+        ));
+      })()}
     </div>
   );
 }
