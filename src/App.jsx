@@ -1082,7 +1082,11 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 export default function App() {
   const [loading, setLoading] = useState(true);
   const [minLoadDone, setMinLoadDone] = useState(false);
-  useEffect(() => { setTimeout(() => setMinLoadDone(true), 3500); }, []);
+  const [fadeOut, setFadeOut] = useState(false);
+  useEffect(() => {
+    setTimeout(() => setFadeOut(true), 3000);
+    setTimeout(() => setMinLoadDone(true), 3600);
+  }, []);
   const [role, setRole] = useState(null);
   const [crewSession, setCrewSession] = useState(null);
   const [adminName, setAdminName] = useState(null);
@@ -1130,7 +1134,7 @@ export default function App() {
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
   if (loading || !minLoadDone) return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #0a0f1e 0%, #1a2035 40%, #2d3a1e 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #0a0f1e 0%, #1a2035 40%, #2d3a1e 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative", transition: "opacity 0.6s ease", opacity: fadeOut ? 0 : 1 }}>
       <style>{`
         @keyframes skyFlash {
           0%,90%,100% { opacity: 0; }
