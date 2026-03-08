@@ -843,7 +843,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           <button key={item.key} onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 4px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", position: "relative", gap: "2px" }}>
             <span style={{ lineHeight: 1, color: view === item.key ? t.accent : "rgba(100,116,139,0.7)" }}>{NAV_ICONS[item.key]}</span>
             <span style={{ fontSize: "10px", fontWeight: view === item.key ? 700 : 400, color: view === item.key ? t.accent : t.textMuted }}>{item.label}</span>
-            {item.badge > 0 && <span style={{ position: "absolute", top: "4px", right: "calc(50% - 16px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "50%", width: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</span>}
+            {item.badge > 0 && <span style={{ position: "absolute", top: "4px", right: "calc(50% - 16px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "50%", width: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
             {view === item.key && <div style={{ position: "absolute", top: 0, left: "15%", right: "15%", height: "2px", background: t.accent, borderRadius: "0 0 2px 2px" }} />}
           </button>
         ))}
