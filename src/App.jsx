@@ -790,27 +790,38 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
   const tabStyle = (active) => ({ padding: "8px 16px", background: active ? t.accent : "transparent", color: active ? "#fff" : t.textMuted, border: active ? "none" : "1px solid " + t.border, borderRadius: "6px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", position: "relative" });
 
+  const NAV_ITEMS = [
+    { key: "schedule", label: "Schedule", icon: "📋" },
+    { key: "calendar", label: "Calendar", icon: "📅" },
+    { key: "tickets", label: "Tickets", icon: "🎫", badge: openTicketCount },
+    { key: "trucks", label: "Trucks", icon: "🚛" },
+    { key: "roster", label: "Roster", icon: "👥" },
+    { key: "log", label: "Log", icon: "📝" },
+  ];
+
   return (
-    <div style={{ minHeight: "100vh", background: t.bg }}>
+    <div style={{ minHeight: "100vh", background: t.bg, paddingBottom: "72px" }}>
+      {/* Top header — title + logout only */}
       <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "900px", margin: "0 auto" }}>
-          <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>IST Dispatch</div>
+          <div style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>IST Dispatch</div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "12.5px", color: t.textMuted }}>{adminName}</span>
             <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "6px", marginTop: "10px", maxWidth: "900px", margin: "10px auto 0", flexWrap: "wrap" }}>
-          <button style={tabStyle(view === "schedule")} onClick={() => { setTruckFilter(null); setView("schedule"); }}>Schedule</button>
-          <button style={tabStyle(view === "calendar")} onClick={() => { setView("calendar"); }}>Calendar</button>
-          <button style={tabStyle(view === "tickets")} onClick={() => { setTruckFilter(null); setView("tickets"); }}>
-            Tickets
-            {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
+      </div>
+
+      {/* Bottom nav */}
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: t.surface, borderTop: "1px solid " + t.border, display: "flex", paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
+        {NAV_ITEMS.map(item => (
+          <button key={item.key} onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 4px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", position: "relative", gap: "2px" }}>
+            <span style={{ fontSize: "20px", lineHeight: 1 }}>{item.icon}</span>
+            <span style={{ fontSize: "10px", fontWeight: view === item.key ? 700 : 400, color: view === item.key ? t.accent : t.textMuted }}>{item.label}</span>
+            {item.badge > 0 && <span style={{ position: "absolute", top: "4px", right: "calc(50% - 16px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "50%", width: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</span>}
+            {view === item.key && <div style={{ position: "absolute", top: 0, left: "15%", right: "15%", height: "2px", background: t.accent, borderRadius: "0 0 2px 2px" }} />}
           </button>
-          <button style={tabStyle(view === "trucks")} onClick={() => setView("trucks")}>Trucks</button>
-          <button style={tabStyle(view === "roster")} onClick={() => setView("roster")}>Roster</button>
-          <button style={tabStyle(view === "log")} onClick={() => setView("log")}>Activity Log</button>
-        </div>
+        ))}
       </div>
 
       <div style={{ padding: "20px", maxWidth: "900px", margin: "0 auto" }}>
