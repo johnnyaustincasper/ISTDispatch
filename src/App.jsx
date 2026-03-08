@@ -640,7 +640,7 @@ function RosterView({ trucks }) {
     await deleteDoc(doc(db, "crewMembers", id));
   };
 
-  const getTruckName = (truckId) => trucks.find(t => t.id === truckId)?.name || "Unassigned";
+  const getTruckName = (truckId) => trucks.find(tr => tr.id === truckId)?.name || "Unassigned";
 
   return (
     <div>
