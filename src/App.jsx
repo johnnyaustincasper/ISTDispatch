@@ -935,7 +935,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 dayJobs.forEach((j) => {
                   const crew = trucks.find((tr) => tr.id === j.truckId);
                   const key = crew ? crew.id : "_unassigned";
-                  if (!grouped[key]) grouped[key] = { name: crew ? crew.name : "Unassigned", jobs: [] };
+                  if (!grouped[key]) grouped[key] = { name: crew ? (crew.members || crew.name) : "Unassigned", jobs: [] };
                   grouped[key].jobs.push(j);
                 });
                 const crewKeys = Object.keys(grouped).sort((a, b) => {
@@ -944,7 +944,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                   return (grouped[a].name).localeCompare(grouped[b].name);
                 });
                 return (
-                  <div key={i} style={{ background: day ? (isToday ? t.accentBg : "#fff") : t.bg, padding: "4px", minHeight: "90px", verticalAlign: "top" }}>
+                  <div key={i} style={{ background: day ? (isToday ? t.accentBg : "#fff") : t.bg, padding: "4px", minHeight: "110px", verticalAlign: "top" }}>
                     {day && (
                       <>
                         <div style={{ fontSize: "12px", fontWeight: isToday ? 700 : 400, color: isToday ? t.accent : t.textMuted, marginBottom: "3px", textAlign: "right", paddingRight: "4px" }}>{day}</div>
