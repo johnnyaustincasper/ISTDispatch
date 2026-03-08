@@ -737,6 +737,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const [ticketStatus, setTicketStatus] = useState("acknowledged");
   const [ticketNote, setTicketNote] = useState("");
   const [ticketFilter, setTicketFilter] = useState("active");
+  const [ticketTypeTab, setTicketTypeTab] = useState("equipment");
   const [editingJob, setEditingJob] = useState(null);
   const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", date: "", notes: "", jobCategory: "" });
   const [truckFilter, setTruckFilter] = useState(null);
@@ -753,7 +754,11 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
     return !isCompleted && (!truckFilter || j.truckId === truckFilter);
   });
   const openTicketCount = tickets.filter((tk) => tk.status === "open").length;
-  const filteredTickets = (ticketFilter === "active" ? tickets.filter((tk) => tk.status !== "resolved") : tickets).filter((tk) => !truckFilter || tk.truckId === truckFilter);
+  const STATUS_SORT_ORDER = { open: 0, acknowledged: 1, in_progress: 2, resolved: 3 };
+  const filteredTickets = tickets
+    .filter((tk) => !truckFilter || tk.truckId === truckFilter)
+    .filter((tk) => (tk.ticketType || "equipment") === ticketTypeTab)
+    .sort((a, b) => (STATUS_SORT_ORDER[a.status] ?? 0) - (STATUS_SORT_ORDER[b.status] ?? 0) || new Date(b.timestamp) - new Date(a.timestamp));
   const truckFilterName = truckFilter ? trucks.find((tr) => tr.id === truckFilter)?.name : null;
   const sortedTickets = [...filteredTickets].sort((a, b) => {
     const prioOrder = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -1055,52 +1060,59 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
         {view === "tickets" && (
           <>
+            {/* Ticket type tab bar */}
+            {(() => {
+              const typeTabs = [
+                { key: "equipment", emoji: "🔧", label: "Equipment", accent: t.accent },
+                { key: "inventory", emoji: "📦", label: "Inventory", accent: "#f59e0b" },
+                { key: "timeoff",   emoji: "🗓",  label: "Time Off",  accent: "#8b5cf6" },
+              ];
+              return (
+                <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+                  {typeTabs.map((tab) => {
+                    const openCount = tickets.filter((tk) => (tk.ticketType || "equipment") === tab.key && tk.status !== "resolved" && (!truckFilter || tk.truckId === truckFilter)).length;
+                    const active = ticketTypeTab === tab.key;
+                    return (
+                      <button key={tab.key} onClick={() => setTicketTypeTab(tab.key)} style={{ flex: 1, padding: "10px 6px", border: active ? "2px solid " + tab.accent : "1px solid " + t.border, borderRadius: "8px", background: active ? tab.accent : t.surface, color: active ? "#fff" : t.textSecondary, fontWeight: 600, fontSize: "12px", cursor: "pointer", fontFamily: "inherit", position: "relative" }}>
+                        {tab.emoji} {tab.label}
+                        {openCount > 0 && <span style={{ position: "absolute", top: "-6px", right: "-4px", background: "#ef4444", color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "18px", height: "18px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openCount}</span>}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             {truckFilterName && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", padding: "8px 12px", background: t.accentBg, borderRadius: "6px", fontSize: "13px", color: t.accent, fontWeight: 500 }}>
                 Showing tickets for {truckFilterName}
                 <button onClick={() => setTruckFilter(null)} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontWeight: 700, fontSize: "14px", fontFamily: "inherit", padding: "0 4px" }}>✕</button>
               </div>
             )}
-            {(() => {
-              const renderTicketSection = (label, emoji, typeKey, accentColor) => {
-                const filtered = sortedTickets.filter((tk) => (tk.ticketType || "equipment") === typeKey);
-                const activeCount = filtered.filter((tk) => tk.status !== "resolved").length;
-                return (
-                  <div key={typeKey} style={{ marginBottom: "28px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", paddingBottom: "8px", borderBottom: "2px solid " + accentColor }}>
-                      <span style={{ fontSize: "16px" }}>{emoji}</span>
-                      <div style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>{label}</div>
-                      {activeCount > 0 && <Badge color="#b91c1c" bg="#fee2e2">{activeCount} open</Badge>}
-                      {filtered.length === 0 && <span style={{ fontSize: "12px", color: t.textMuted, marginLeft: "4px" }}>— None</span>}
-                    </div>
-                    {filtered.map((ticket) => {
-                      const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
-                      const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
-                      return (
-                        <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginLeft: "8px", marginBottom: "8px", border: ticket.status === "open" && !ticket.adminNote ? "2px solid #ef4444" : "1px solid #e5e7eb" }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
-                            <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
-                              {typeKey !== "timeoff" && <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>}
-                              <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
-                              <span style={{ fontSize: "11px", color: t.textMuted }}>{ticket.truckName || "Unknown Truck"}</span>
-                            </div>
-                            <span style={{ fontSize: "11.5px", color: t.textMuted, flexShrink: 0 }}>{dateStr(ticket.timestamp)}</span>
-                          </div>
-                          <div style={{ fontSize: "14px", color: t.text, lineHeight: 1.5 }}>{ticket.description}</div>
-                          <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "6px" }}>Submitted by {ticket.submittedBy}</div>
-                          {ticket.adminNote && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginTop: "8px", borderLeft: "3px solid #15803d" }}>Response: {ticket.adminNote}</div>}
-                        </Card>
-                      );
-                    })}
-                  </div>
-                );
-              };
-              return (<>
-                {renderTicketSection("Equipment Tickets", "🔧", "equipment", t.accent)}
-                {renderTicketSection("Inventory Tickets", "📦", "inventory", "#f59e0b")}
-                {renderTicketSection("Time Off Requests", "🗓", "timeoff", "#8b5cf6")}
-              </>);
-            })()}
+
+            {filteredTickets.length === 0
+              ? <EmptyState text="No tickets here." sub="Nothing submitted in this category yet." />
+              : filteredTickets.map((ticket) => {
+                  const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
+                  const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
+                  const isOpen = ticket.status === "open" && !ticket.adminNote;
+                  return (
+                    <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginBottom: "8px", border: isOpen ? "2px solid #ef4444" : "1px solid #e5e7eb", opacity: ticket.status === "resolved" ? 0.6 : 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
+                          {ticketTypeTab !== "timeoff" && <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>}
+                          <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
+                          <span style={{ fontSize: "11px", color: t.textMuted }}>{ticket.truckName || "Unknown Truck"}</span>
+                        </div>
+                        <span style={{ fontSize: "11.5px", color: t.textMuted, flexShrink: 0 }}>{dateStr(ticket.timestamp)}</span>
+                      </div>
+                      <div style={{ fontSize: "14px", color: t.text, lineHeight: 1.5 }}>{ticket.description}</div>
+                      <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "6px" }}>Submitted by {ticket.submittedBy}</div>
+                      {ticket.adminNote && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginTop: "8px", borderLeft: "3px solid #15803d" }}>Response: {ticket.adminNote}</div>}
+                    </Card>
+                  );
+                })
+            }
           </>
         )}
 
