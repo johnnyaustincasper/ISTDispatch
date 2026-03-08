@@ -1554,7 +1554,17 @@ export default function App() {
   if (role === "admin" && !adminName) return <AdminLogin onLogin={handleAdminLogin} onBack={() => setRole(null)} />;
   if (role === "crew" && !crewSession) return <CrewLogin trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
   if (role === "crew" && crewSession) {
-    const truck = trucks.find((tr) => tr.id === crewSession.truckId) || { id: null, name: "No Crew Assigned" };
+    const truck = trucks.find((tr) => tr.id === crewSession.truckId) || null;
+    if (!truck) return (
+      <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", fontFamily: "inherit" }}>
+        <div style={{ maxWidth: 360, textAlign: "center" }}>
+          <div style={{ fontSize: 32, marginBottom: 16 }}>🚛</div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: t.text, marginBottom: 8 }}>Not Assigned to a Truck</div>
+          <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 24 }}>Ask the office to assign you to a crew in the Roster tab.</div>
+          <button onClick={() => { setCrewSession(null); setRole(null); }} style={{ background: "none", border: "1px solid " + t.border, color: t.textMuted, padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>← Back</button>
+        </div>
+      </div>
+    );
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} jobs={jobs} updates={updates} tickets={tickets} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onLogout={() => { setAdminName(null); setRole(null); }} />;
