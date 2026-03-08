@@ -1318,8 +1318,8 @@ export default function App() {
   const [minLoadDone, setMinLoadDone] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
   useEffect(() => {
-    setTimeout(() => setFadeOut(true), 3000);
-    setTimeout(() => setMinLoadDone(true), 3600);
+    setTimeout(() => setFadeOut(true), 3400);
+    setTimeout(() => setMinLoadDone(true), 4000);
   }, []);
   const [role, setRole] = useState(null);
   const [crewSession, setCrewSession] = useState(null);
@@ -1456,12 +1456,42 @@ export default function App() {
           72% { opacity: 0.06; }
           75% { opacity: 0; }
         }
+        @keyframes lightning4 {
+          0%,100% { opacity: 0; }
+          52% { opacity: 0; }
+          53% { opacity: 1; }
+          54% { opacity: 0.15; }
+          55% { opacity: 1; }
+          57% { opacity: 0; }
+        }
+        @keyframes lightning5 {
+          0%,100% { opacity: 0; }
+          82% { opacity: 0; }
+          83% { opacity: 0.9; }
+          84% { opacity: 0.2; }
+          85% { opacity: 1; }
+          87% { opacity: 0; }
+        }
+        @keyframes skyFlash4 {
+          0%,100% { opacity: 0; }
+          53%,55% { opacity: 0.14; }
+          54% { opacity: 0.04; }
+          57% { opacity: 0; }
+        }
+        @keyframes skyFlash5 {
+          0%,100% { opacity: 0; }
+          83%,85% { opacity: 0.16; }
+          84% { opacity: 0.05; }
+          87% { opacity: 0; }
+        }
       `}</style>
 
       {/* Sky flash overlays — one per bolt */}
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(180,200,255,1)', animation: 'skyFlash1 5s linear infinite', pointerEvents: 'none' }} />
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(160,190,255,1)', animation: 'skyFlash2 5s linear infinite', pointerEvents: 'none' }} />
       <div style={{ position: 'absolute', inset: 0, background: 'rgba(200,210,255,1)', animation: 'skyFlash3 5s linear infinite', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(170,195,255,1)', animation: 'skyFlash4 5s linear infinite', pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', inset: 0, background: 'rgba(190,210,255,1)', animation: 'skyFlash5 5s linear infinite', pointerEvents: 'none' }} />
 
       {/* Lightning bolt 1 — left side, big branching bolt */}
       <div style={{ position: 'absolute', top: '5%', left: '15%', animation: 'lightning1 5s linear infinite', filter: 'drop-shadow(0 0 6px rgba(150,180,255,0.9))' }}>
@@ -1485,6 +1515,23 @@ export default function App() {
         <svg width="20" height="70" viewBox="0 0 20 70" fill="none">
           <polyline points="12,0 5,22 11,22 3,45 9,45 0,70" stroke="rgba(210,228,255,0.85)" strokeWidth="1.8" strokeLinejoin="round"/>
           <polyline points="3,45 14,60" stroke="rgba(190,215,255,0.4)" strokeWidth="1" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* Lightning bolt 4 — far left, wide branching */}
+      <div style={{ position: 'absolute', top: '2%', left: '3%', animation: 'lightning4 5s linear infinite', filter: 'drop-shadow(0 0 7px rgba(160,185,255,0.9))' }}>
+        <svg width="35" height="100" viewBox="0 0 35 100" fill="none">
+          <polyline points="20,0 12,30 20,30 8,58 18,58 2,100" stroke="rgba(225,235,255,0.92)" strokeWidth="2.2" strokeLinejoin="round"/>
+          <polyline points="8,58 22,75" stroke="rgba(200,220,255,0.5)" strokeWidth="1.4" strokeLinejoin="round"/>
+          <polyline points="18,58 30,80" stroke="rgba(200,220,255,0.45)" strokeWidth="1.2" strokeLinejoin="round"/>
+        </svg>
+      </div>
+
+      {/* Lightning bolt 5 — far right, short sharp */}
+      <div style={{ position: 'absolute', top: '5%', right: '4%', animation: 'lightning5 5s linear infinite', filter: 'drop-shadow(0 0 5px rgba(180,205,255,0.85))' }}>
+        <svg width="22" height="80" viewBox="0 0 22 80" fill="none">
+          <polyline points="14,0 6,24 13,24 3,52 11,52 0,80" stroke="rgba(228,238,255,0.9)" strokeWidth="2" strokeLinejoin="round"/>
+          <polyline points="3,52 16,68" stroke="rgba(205,222,255,0.5)" strokeWidth="1.3" strokeLinejoin="round"/>
         </svg>
       </div>
 
