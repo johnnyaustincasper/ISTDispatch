@@ -1518,8 +1518,8 @@ export default function App() {
         </svg>
       </div>
 
-      {/* Lightning bolt 4 — far left, wide branching */}
-      <div style={{ position: 'absolute', top: '2%', left: '3%', animation: 'lightning4 5s linear infinite', filter: 'drop-shadow(0 0 7px rgba(160,185,255,0.9))' }}>
+      {/* Lightning bolt 4 — under left cloud */}
+      <div style={{ position: 'absolute', top: '8%', left: '22%', animation: 'lightning4 5s linear infinite', filter: 'drop-shadow(0 0 7px rgba(160,185,255,0.9))' }}>
         <svg width="35" height="100" viewBox="0 0 35 100" fill="none">
           <polyline points="20,0 12,30 20,30 8,58 18,58 2,100" stroke="rgba(225,235,255,0.92)" strokeWidth="2.2" strokeLinejoin="round"/>
           <polyline points="8,58 22,75" stroke="rgba(200,220,255,0.5)" strokeWidth="1.4" strokeLinejoin="round"/>
