@@ -1365,7 +1365,7 @@ export default function App() {
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
   if (loading || !minLoadDone) return (
-    <div style={{ minHeight: "100vh", background: "linear-gradient(180deg, #0a0f1e 0%, #1a2035 40%, #2d3a1e 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative", transition: "opacity 0.6s ease", opacity: fadeOut ? 0 : 1 }}>
+    <div style={{ position: "fixed", inset: 0, background: "linear-gradient(180deg, #0a0f1e 0%, #1a2035 40%, #2d3a1e 100%)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", zIndex: 9999, transition: "opacity 0.6s ease", opacity: fadeOut ? 0 : 1 }}>
       <style>{`
         @keyframes skyFlash {
           0%,90%,100% { opacity: 0; }
