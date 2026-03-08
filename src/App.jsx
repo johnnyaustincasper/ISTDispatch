@@ -478,6 +478,38 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
   const [ticketDesc, setTicketDesc] = useState("");
   const [ticketPriority, setTicketPriority] = useState("medium");
   const [ticketType, setTicketType] = useState("equipment");
+  const [toCalMonth, setToCalMonth] = useState(new Date().getMonth());
+  const [toCalYear, setToCalYear] = useState(new Date().getFullYear());
+  const [toStart, setToStart] = useState(null);
+  const [toEnd, setToEnd] = useState(null);
+  const toMonthNames = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const toCalDays = () => {
+    const first = new Date(toCalYear, toCalMonth, 1);
+    const cells = [];
+    for (let i = 0; i < first.getDay(); i++) cells.push(null);
+    for (let d = 1; d <= new Date(toCalYear, toCalMonth + 1, 0).getDate(); d++) cells.push(d);
+    return cells;
+  };
+  const toDateStr = (y, m, d) => y + "-" + String(m + 1).padStart(2, "0") + "-" + String(d).padStart(2, "0");
+  const handleToDay = (day) => {
+    if (!day) return;
+    const ds = toDateStr(toCalYear, toCalMonth, day);
+    if (!toStart || (toStart && toEnd)) { setToStart(ds); setToEnd(null); }
+    else if (ds < toStart) { setToEnd(toStart); setToStart(ds); }
+    else { setToEnd(ds); }
+  };
+  const isInToRange = (day) => {
+    if (!day || !toStart) return false;
+    const ds = toDateStr(toCalYear, toCalMonth, day);
+    if (!toEnd) return ds === toStart;
+    return ds >= toStart && ds <= toEnd;
+  };
+  const isToStartOrEnd = (day) => {
+    if (!day || !toStart) return false;
+    const ds = toDateStr(toCalYear, toCalMonth, day);
+    return ds === toStart || ds === toEnd;
+  };
+  const formatToDate = (ds) => { if (!ds) return ""; const [y, m, d] = ds.split("-"); return toMonthNames[parseInt(m) - 1] + " " + parseInt(d); };
 
   const getJobUpdates = (jobId) => updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const getLatestStatus = (jobId) => { const u = getJobUpdates(jobId); return u.length > 0 ? u[0].status : "not_started"; };
@@ -487,8 +519,11 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
     setActiveJob(null); setStatus("in_progress"); setEta(""); setNotes("");
   };
   const handleTicketSubmit = () => {
-    onSubmitTicket({ truckId: truck.id, truckName: truck.name, submittedBy: crewName, description: ticketDesc, priority: ticketPriority, ticketType, status: "open", timestamp: new Date().toISOString() });
-    setTicketDesc(""); setTicketPriority("medium"); setTicketType("equipment"); setShowTicketForm(false);
+    const desc = ticketType === "timeoff"
+      ? (toStart ? (toEnd && toEnd !== toStart ? formatToDate(toStart) + " – " + formatToDate(toEnd) : formatToDate(toStart)) : "") + (ticketDesc.trim() ? (toStart ? " — " : "") + ticketDesc.trim() : "")
+      : ticketDesc;
+    onSubmitTicket({ truckId: truck.id, truckName: truck.name, submittedBy: crewName, description: desc, priority: ticketPriority, ticketType, timeOffStart: ticketType === "timeoff" ? toStart : null, timeOffEnd: ticketType === "timeoff" ? (toEnd || toStart) : null, status: "open", timestamp: new Date().toISOString() });
+    setTicketDesc(""); setTicketPriority("medium"); setTicketType("equipment"); setToStart(null); setToEnd(null); setShowTicketForm(false);
   };
 
   const tabStyle = (active) => ({ padding: "8px 16px", background: active ? t.accent : "transparent", color: active ? "#fff" : t.textMuted, border: active ? "none" : "1px solid " + t.border, borderRadius: "6px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", position: "relative" });
@@ -608,12 +643,50 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
               ))}
             </div>
           </div>
-          <TextArea label={ticketType === "equipment" ? "Describe the problem" : ticketType === "inventory" ? "What supplies do you need?" : "Dates and reason for time off"} placeholder={ticketType === "equipment" ? "e.g. spray gun leaking at the tip, generator won't start..." : ticketType === "inventory" ? "e.g. need more 2-part foam, running low on tarps..." : "e.g. March 15–16, family event"} value={ticketDesc} onChange={(e) => setTicketDesc(e.target.value)} style={{ minHeight: "100px" }} />
-          {ticketType !== "timeoff" && <Select label="Priority" value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} options={TICKET_PRIORITIES.map((p) => ({ value: p.value, label: p.label }))} />}
-          <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-            <Button variant="secondary" onClick={() => setShowTicketForm(false)} style={{ flex: 1 }}>Cancel</Button>
-            <Button onClick={handleTicketSubmit} disabled={!ticketDesc.trim()} style={{ flex: 1 }}>Submit</Button>
-          </div>
+          {ticketType === "timeoff" ? (
+            <>
+              {/* Mini inline calendar */}
+              <div style={{ marginBottom: "14px" }}>
+                <div style={{ fontSize: "13px", fontWeight: 600, color: t.text, marginBottom: "8px" }}>Select Dates</div>
+                <div style={{ background: t.bg, borderRadius: "10px", padding: "12px", border: "1px solid " + t.border }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                    <button onClick={() => { if (toCalMonth === 0) { setToCalMonth(11); setToCalYear(y => y - 1); } else setToCalMonth(m => m - 1); }} style={{ background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: "18px", padding: "0 6px" }}>‹</button>
+                    <span style={{ fontSize: "13px", fontWeight: 700, color: t.text }}>{toMonthNames[toCalMonth]} {toCalYear}</span>
+                    <button onClick={() => { if (toCalMonth === 11) { setToCalMonth(0); setToCalYear(y => y + 1); } else setToCalMonth(m => m + 1); }} style={{ background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: "18px", padding: "0 6px" }}>›</button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "2px", textAlign: "center" }}>
+                    {["S","M","T","W","T","F","S"].map((d, i) => <div key={i} style={{ fontSize: "10px", fontWeight: 700, color: t.textMuted, padding: "3px 0" }}>{d}</div>)}
+                    {toCalDays().map((day, i) => {
+                      const inRange = isInToRange(day);
+                      const isEdge = isToStartOrEnd(day);
+                      return (
+                        <div key={i} onClick={() => handleToDay(day)} style={{ padding: "6px 2px", borderRadius: "6px", fontSize: "12px", fontWeight: isEdge ? 700 : 400, background: isEdge ? "#2563eb" : inRange ? "#dbeafe" : "transparent", color: isEdge ? "#fff" : inRange ? "#1d4ed8" : day ? t.text : "transparent", cursor: day ? "pointer" : "default", userSelect: "none" }}>{day || ""}</div>
+                      );
+                    })}
+                  </div>
+                </div>
+                {(toStart) && (
+                  <div style={{ marginTop: "8px", fontSize: "13px", color: t.accent, fontWeight: 600, textAlign: "center" }}>
+                    {toEnd && toEnd !== toStart ? formatToDate(toStart) + " – " + formatToDate(toEnd) : formatToDate(toStart) + " (tap another date to set end)"}
+                  </div>
+                )}
+              </div>
+              <TextArea label="Reason (optional)" placeholder="e.g. family event, vacation, appointment..." value={ticketDesc} onChange={(e) => setTicketDesc(e.target.value)} style={{ minHeight: "70px" }} />
+              <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
+                <Button variant="secondary" onClick={() => setShowTicketForm(false)} style={{ flex: 1 }}>Cancel</Button>
+                <Button onClick={handleTicketSubmit} disabled={!toStart} style={{ flex: 1 }}>Submit</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <TextArea label={ticketType === "equipment" ? "Describe the problem" : "What supplies do you need?"} placeholder={ticketType === "equipment" ? "e.g. spray gun leaking at the tip, generator won't start..." : "e.g. need more 2-part foam, running low on tarps..."} value={ticketDesc} onChange={(e) => setTicketDesc(e.target.value)} style={{ minHeight: "100px" }} />
+              <Select label="Priority" value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} options={TICKET_PRIORITIES.map((p) => ({ value: p.value, label: p.label }))} />
+              <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
+                <Button variant="secondary" onClick={() => setShowTicketForm(false)} style={{ flex: 1 }}>Cancel</Button>
+                <Button onClick={handleTicketSubmit} disabled={!ticketDesc.trim()} style={{ flex: 1 }}>Submit</Button>
+              </div>
+            </>
+          )}
         </Modal>
       )}
     </div>
@@ -1009,6 +1082,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               {calDays().map((day, i) => {
                 const dayJobs = getJobsForDate(day);
                 const isToday = day === todayDay && calMonth === todayMonth && calYear === todayYear;
+                const calDayStr = day ? calYear + "-" + String(calMonth + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0") : null;
+                const dayTimeOff = calDayStr ? tickets.filter((tk) => tk.ticketType === "timeoff" && tk.timeOffStart && tk.status !== "resolved" && calDayStr >= tk.timeOffStart && calDayStr <= (tk.timeOffEnd || tk.timeOffStart)) : [];
                 const grouped = {};
                 dayJobs.forEach((j) => {
                   const crew = trucks.find((tr) => tr.id === j.truckId);
@@ -1040,6 +1115,11 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                             })}
                           </div>
                         ))}
+                        {dayTimeOff.map((tk) => (
+                          <div key={tk.id} title={"Time Off: " + tk.submittedBy + " (" + tk.truckName + ")"} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "2px", borderRadius: "3px", background: "#f3e8ff", color: "#7c3aed", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderLeft: "3px solid #8b5cf6", cursor: "pointer" }} onClick={() => { setTicketTypeTab("timeoff"); setView("tickets"); }}>
+                            🗓 {tk.submittedBy}
+                          </div>
+                        ))}
                       </>
                     )}
                   </div>
@@ -1054,6 +1134,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#15803d", display: "inline-block" }}></span> Both Checked</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#f59e0b", display: "inline-block" }}></span> Partial (AM or PM)</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#dc2626", display: "inline-block" }}></span> Not Checked</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#f3e8ff", display: "inline-block" }}></span> Time Off</div>
             </div>
           </>
         )}
