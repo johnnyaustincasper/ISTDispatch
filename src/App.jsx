@@ -318,6 +318,8 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   const [selected, setSelected] = useState("");
   const [crewName, setCrewName] = useState("");
   const [email, setEmail] = useState("");
+  const selectedTruck = trucks.find(tr => tr.id === selected);
+  const alreadyHasEmail = !!(selectedTruck && selectedTruck.email);
   return (
     <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
       <div style={{ maxWidth: "380px", width: "100%" }}>
@@ -325,7 +327,9 @@ function CrewLogin({ trucks, onLogin, onBack }) {
         <h1 style={{ fontSize: "22px", fontWeight: 600, color: t.text, margin: "0 0 6px" }}>Crew Login</h1>
         <p style={{ color: t.textMuted, fontSize: "13.5px", margin: "0 0 24px" }}>Select your crew and enter your name</p>
         <Input label="Your Name" placeholder="Enter your name" value={crewName} onChange={(e) => setCrewName(e.target.value)} />
-        <Input label="Your Email (for job notifications)" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        {!alreadyHasEmail && (
+          <Input label="Your Email (for job notifications)" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        )}
         {trucks.length === 0 ? (
           <EmptyState text="No crews set up yet." sub="Ask the office to add your crew." />
         ) : (
