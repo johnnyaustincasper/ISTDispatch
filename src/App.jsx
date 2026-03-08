@@ -315,44 +315,147 @@ function AdminLogin({ onLogin, onBack }) {
 }
 
 function CrewLogin({ trucks, onLogin, onBack }) {
-  const [selected, setSelected] = useState("");
-  const [crewName, setCrewName] = useState("");
+  const [members, setMembers] = useState([]);
+  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [step, setStep] = useState("pick"); // pick | pin | setup | confirm | email
+  const [selectedMember, setSelectedMember] = useState(null);
+  const [pin, setPin] = useState("");
+  const [setupPin, setSetupPin] = useState("");
   const [email, setEmail] = useState("");
-  const selectedTruck = trucks.find(tr => tr.id === selected);
-  const alreadyHasEmail = !!(selectedTruck && selectedTruck.email);
+  const [error, setError] = useState("");
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "crewMembers"), snap => {
+      setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoadingMembers(false);
+    });
+    return unsub;
+  }, []);
+
+  function handleSelectMember(member) {
+    setSelectedMember(member);
+    setPin(""); setSetupPin(""); setError("");
+    setStep(member.pin ? "pin" : "setup");
+  }
+
+  async function handlePinDigit(digit) {
+    if (checking) return;
+
+    if (step === "setup") {
+      const next = setupPin + digit;
+      if (next.length > 4) return;
+      setSetupPin(next);
+      if (next.length === 4) { setStep("confirm"); setPin(""); setError(""); }
+      return;
+    }
+
+    if (step === "confirm") {
+      const next = pin + digit;
+      if (next.length > 4) return;
+      setPin(next);
+      if (next.length === 4) {
+        if (next !== setupPin) {
+          setError("PINs don't match. Try again.");
+          setPin(""); setSetupPin(""); setStep("setup");
+          return;
+        }
+        setChecking(true);
+        await updateDoc(doc(db, "crewMembers", selectedMember.id), { pin: next });
+        setChecking(false);
+        if (!selectedMember.email) { setStep("email"); } else { finishLogin({ ...selectedMember, pin: next }); }
+      }
+      return;
+    }
+
+    // verify
+    const next = pin + digit;
+    if (next.length > 4) return;
+    setPin(next);
+    if (next.length === 4) {
+      if (selectedMember.pin === next) {
+        if (!selectedMember.email) { setStep("email"); } else { finishLogin(selectedMember); }
+      } else {
+        setError("Wrong PIN. Try again.");
+        setPin("");
+      }
+    }
+  }
+
+  function finishLogin(member) {
+    const truck = trucks.find(tr => tr.id === member.truckId) || null;
+    onLogin(member, truck);
+  }
+
+  async function handleEmailSubmit() {
+    if (email.trim()) {
+      await updateDoc(doc(db, "crewMembers", selectedMember.id), { email: email.trim() });
+    }
+    finishLogin({ ...selectedMember, email: email.trim() });
+  }
+
+  function handleBackspace() {
+    if (step === "setup") setSetupPin(p => p.slice(0,-1));
+    else setPin(p => p.slice(0,-1));
+    setError("");
+  }
+
+  const displayPin = step === "setup" ? setupPin : pin;
+  const title = step === "pick" ? "Who are you?" : step === "setup" ? "Create your PIN" : step === "confirm" ? "Confirm your PIN" : step === "email" ? "One more thing" : `Hi, ${selectedMember?.name}`;
+  const subtitle = step === "pick" ? "Select your name" : step === "setup" ? "You'll use this every time" : step === "confirm" ? "Enter your PIN again" : step === "email" ? "Add your email for job alerts (optional)" : "Enter your PIN";
+
   return (
     <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px" }}>
       <div style={{ maxWidth: "380px", width: "100%" }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
-        <h1 style={{ fontSize: "22px", fontWeight: 600, color: t.text, margin: "0 0 6px" }}>Crew Login</h1>
-        <p style={{ color: t.textMuted, fontSize: "13.5px", margin: "0 0 24px" }}>Select your crew and enter your name</p>
-        <Input label="Your Name" placeholder="Enter your name" value={crewName} onChange={(e) => setCrewName(e.target.value)} />
-        {!alreadyHasEmail && (
-          <Input label="Your Email (for job notifications)" placeholder="your@email.com" value={email} onChange={(e) => setEmail(e.target.value)} />
+        <h1 style={{ fontSize: "22px", fontWeight: 600, color: t.text, margin: "0 0 6px" }}>{title}</h1>
+        <p style={{ color: t.textMuted, fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
+
+        {step === "pick" && (
+          loadingMembers ? <EmptyState text="Loading..." /> :
+          members.length === 0 ? <EmptyState text="No crew members yet." sub="Ask the office to add you to the roster." /> :
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            {members.sort((a,b) => a.name.localeCompare(b.name)).map(m => (
+              <Card key={m.id} onClick={() => handleSelectMember(m)} style={{ padding: "14px 16px", cursor: "pointer" }}>
+                <div style={{ fontWeight: 600, fontSize: 15, color: t.text }}>{m.name}</div>
+                {m.truckId && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                  {trucks.find(tr => tr.id === m.truckId)?.name || ""}
+                </div>}
+                {!m.pin && <div style={{ fontSize: 11, color: t.accent, marginTop: 2 }}>First time — set PIN</div>}
+              </Card>
+            ))}
+          </div>
         )}
-        {trucks.length === 0 ? (
-          <EmptyState text="No crews set up yet." sub="Ask the office to add your crew." />
-        ) : (
+
+        {step === "email" && (
           <>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Select Your Crew</label>
-            <div style={{ display: "flex", flexDirection: "column", gap: "6px", marginBottom: "20px" }}>
-              {[...trucks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((tr) => (
-                <Card key={tr.id} onClick={() => setSelected(tr.id)} style={{ padding: "12px 16px", cursor: "pointer", borderColor: selected === tr.id ? t.accent : t.border, background: selected === tr.id ? t.accentBg : "#fff" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <div style={{ width: "32px", height: "32px", borderRadius: "6px", background: selected === tr.id ? t.accent : t.bg, color: selected === tr.id ? "#fff" : t.textMuted, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
-                    </div>
-                    <div>
-                      <div style={{ fontWeight: 500, color: t.text, fontSize: "14px" }}>{tr.name}</div>
-                      {tr.members && <div style={{ fontSize: "12px", color: t.textMuted }}>{tr.members}</div>}
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
+            <Input label="Your Email" placeholder="your@email.com" value={email} onChange={e => setEmail(e.target.value)} />
+            <Button onClick={handleEmailSubmit} style={{ width: "100%", marginTop: 8 }}>Continue</Button>
+            <button onClick={() => finishLogin(selectedMember)} style={{ width: "100%", marginTop: 8, background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Skip for now</button>
           </>
         )}
-        <Button onClick={() => onLogin(selected, crewName, email)} disabled={!selected || !crewName.trim()} style={{ width: "100%" }}>Log In</Button>
+
+        {(step === "pin" || step === "setup" || step === "confirm") && (
+          <>
+            <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 32 }}>
+              {[0,1,2,3].map(i => (
+                <div key={i} style={{ width: 18, height: 18, borderRadius: "50%", background: i < displayPin.length ? t.accent : "rgba(0,0,0,0.12)", transition: "background 0.15s" }} />
+              ))}
+            </div>
+            {error && <div style={{ textAlign: "center", color: "#ef4444", fontSize: 14, marginBottom: 16, fontWeight: 500 }}>{error}</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+              {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d, i) => {
+                if (d === "") return <div key={i} />;
+                return (
+                  <button key={i} onClick={() => d === "⌫" ? handleBackspace() : handlePinDigit(String(d))}
+                    disabled={checking}
+                    style={{ padding: "18px 0", borderRadius: 12, fontSize: d === "⌫" ? 20 : 22, fontWeight: 600, background: "#fff", border: "1.5px solid " + t.border, color: t.text, cursor: "pointer", fontFamily: "inherit", WebkitTapHighlightColor: "transparent" }}>{d}</button>
+                );
+              })}
+            </div>
+            <button onClick={() => { setStep("pick"); setPin(""); setSetupPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -507,6 +610,94 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
 }
 
 // ─── Admin Dashboard ───
+// ─── Roster View ─────────────────────────────────────────────────────────────
+function RosterView({ trucks }) {
+  const [members, setMembers] = useState([]);
+  const [showAdd, setShowAdd] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [assigning, setAssigning] = useState(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "crewMembers"), snap => {
+      setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, []);
+
+  const addMember = async () => {
+    if (!newName.trim()) return;
+    await addDoc(collection(db, "crewMembers"), { name: newName.trim(), truckId: null, email: null, createdAt: new Date().toISOString() });
+    setNewName(""); setShowAdd(false);
+  };
+
+  const assignTruck = async (memberId, truckId) => {
+    await updateDoc(doc(db, "crewMembers", memberId), { truckId: truckId || null });
+    setAssigning(null);
+  };
+
+  const removeMember = async (id) => {
+    if (!window.confirm("Remove this crew member?")) return;
+    await deleteDoc(doc(db, "crewMembers", id));
+  };
+
+  const getTruckName = (truckId) => trucks.find(t => t.id === truckId)?.name || "Unassigned";
+
+  return (
+    <div>
+      <SectionHeader title="Roster" right={<Button onClick={() => setShowAdd(true)}>+ Add Member</Button>} />
+
+      {showAdd && (
+        <Card style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 8 }}>New Crew Member</div>
+          <Input label="Name" placeholder="Full name" value={newName} onChange={e => setNewName(e.target.value)} />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <Button onClick={addMember} disabled={!newName.trim()}>Add</Button>
+            <Button variant="secondary" onClick={() => { setShowAdd(false); setNewName(""); }}>Cancel</Button>
+          </div>
+        </Card>
+      )}
+
+      {members.length === 0 ? (
+        <EmptyState text="No crew members yet." sub="Add your first crew member above." />
+      ) : (
+        members.sort((a,b) => a.name.localeCompare(b.name)).map(member => (
+          <Card key={member.id} style={{ marginBottom: 8 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{member.name}</div>
+                <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                  {member.email ? `📧 ${member.email}` : "No email yet"}
+                </div>
+                {member.pin ? (
+                  <div style={{ fontSize: 11, color: t.green, marginTop: 2 }}>✓ PIN set</div>
+                ) : (
+                  <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>No PIN yet</div>
+                )}
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                {assigning === member.id ? (
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                    <select onChange={e => assignTruck(member.id, e.target.value)} defaultValue={member.truckId || ""} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit" }}>
+                      <option value="">Unassigned</option>
+                      {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+                    </select>
+                    <button onClick={() => setAssigning(null)} style={{ fontSize: 11, color: t.textMuted, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
+                  </div>
+                ) : (
+                  <button onClick={() => setAssigning(member.id)} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + t.border, background: member.truckId ? t.accentBg : t.bg, color: member.truckId ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
+                    {getTruckName(member.truckId)}
+                  </button>
+                )}
+                <button onClick={() => removeMember(member.id)} style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>✕</button>
+              </div>
+            </div>
+          </Card>
+        ))
+      )}
+    </div>
+  );
+}
+
 function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
@@ -617,6 +808,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
           </button>
           <button style={tabStyle(view === "trucks")} onClick={() => setView("trucks")}>Crews</button>
+          <button style={tabStyle(view === "roster")} onClick={() => setView("roster")}>Roster</button>
           <button style={tabStyle(view === "log")} onClick={() => setView("log")}>Activity Log</button>
         </div>
       </div>
@@ -886,6 +1078,10 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           </>
         )}
 
+        {view === "roster" && (
+          <RosterView trucks={trucks} />
+        )}
+
         {view === "log" && (
           <>
             <SectionHeader title="Activity Log" right={<span style={{ fontSize: "12.5px", color: t.textMuted }}>Office actions only</span>} />
@@ -1128,12 +1324,9 @@ export default function App() {
   const handleUpdateTicket = async (id, data) => { await updateDoc(doc(db, "tickets", id), data); };
   const handleLogAction = async (action) => { await addDoc(collection(db, "activityLog"), { user: adminName, action, timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
   const handleSubmitPmUpdate = async (data) => { await addDoc(collection(db, "pmUpdates"), { ...data, createdAt: serverTimestamp() }); };
-  const handleCrewLogin = (truckId, crewName, email) => {
-    setCrewSession({ truckId, crewName });
+  const handleCrewLogin = (member, truck) => {
+    setCrewSession({ memberId: member.id, crewName: member.name, truckId: truck?.id || null });
     setRole("crew");
-    if (email && email.trim()) {
-      updateDoc(doc(db, "trucks", truckId), { email: email.trim() });
-    }
   };
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
@@ -1361,8 +1554,7 @@ export default function App() {
   if (role === "admin" && !adminName) return <AdminLogin onLogin={handleAdminLogin} onBack={() => setRole(null)} />;
   if (role === "crew" && !crewSession) return <CrewLogin trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
   if (role === "crew" && crewSession) {
-    const truck = trucks.find((tr) => tr.id === crewSession.truckId);
-    if (!truck) return <CrewLogin trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
+    const truck = trucks.find((tr) => tr.id === crewSession.truckId) || { id: null, name: "No Crew Assigned" };
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} jobs={jobs} updates={updates} tickets={tickets} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onLogout={() => { setAdminName(null); setRole(null); }} />;
