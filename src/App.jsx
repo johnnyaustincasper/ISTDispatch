@@ -885,7 +885,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                     const isChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
                     const partialCheck = job.jobCheckedAM === "Yes" || job.jobCheckedPM === "Yes";
                     return (
-                      <Card key={job.id} style={{ marginLeft: "8px", borderLeft: isChecked ? "3px solid #15803d" : partialCheck ? "3px solid #f59e0b" : "3px solid #dc2626" }}>
+                      <Card key={job.id} style={{ marginLeft: "8px" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
                           <div style={{ flex: 1 }}>
                             <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.builder || "No Customer Listed"}</div>
