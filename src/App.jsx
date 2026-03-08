@@ -717,6 +717,8 @@ function RosterView({ trucks }) {
 function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
+  const [expandedJobs, setExpandedJobs] = useState({});
+  const toggleJobExpand = (id) => setExpandedJobs(prev => ({ ...prev, [id]: !prev[id] }));
   const [showAddTruck, setShowAddTruck] = useState(false);
   const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", date: todayStr(), notes: "", jobCategory: "" });
   const [truckForm, setTruckForm] = useState({ name: "", members: "" });
@@ -887,65 +889,79 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                     const jobPmUpdates = pmUpdates.filter((p) => p.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     const isChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
                     const partialCheck = job.jobCheckedAM === "Yes" || job.jobCheckedPM === "Yes";
+                    const isExpanded = !!expandedJobs[job.id];
                     return (
-                      <Card key={job.id} style={{ marginLeft: "8px" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: "8px" }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.builder || "No Customer Listed"}</div>
-                            <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.address}</div>
-                            <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.type} — {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}{job.jobCategory && <span style={{ marginLeft: "8px", fontWeight: 600, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}</div>
+                      <Card key={job.id} style={{ marginLeft: "8px", padding: "14px 16px" }}>
+
+                        {/* Top row — customer + expand toggle */}
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", cursor: "pointer" }} onClick={() => toggleJobExpand(job.id)}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 600, color: t.text, fontSize: "15px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer Listed"}</div>
+                            <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.address}</div>
                           </div>
-                          <div style={{ display: "flex", gap: "6px", alignItems: "center", flexWrap: "wrap" }}>
-                            <span style={{ fontSize: "10px", fontWeight: 600, color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM</span>
-                            <span style={{ fontSize: "10px", fontWeight: 600, color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM</span>
+                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
                             <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
-                            <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "4px 8px", fontSize: "11px" }}>PM Note</Button>
-                            <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Edit</Button>
-                            <Button variant="danger" onClick={() => handleRemoveJob(job)} style={{ padding: "4px 8px", fontSize: "11px" }}>Remove</Button>
+                            <span style={{ fontSize: "14px", color: t.textMuted, lineHeight: 1 }}>{isExpanded ? "▲" : "▼"}</span>
                           </div>
                         </div>
-                        {job.notes && <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "8px", fontStyle: "italic" }}>Notes: {job.notes}</div>}
-                        <div style={{ display: "flex", gap: "16px", marginTop: "12px", flexWrap: "wrap" }}>
-                          <div style={{ flex: "1 1 45%", minWidth: "200px" }}>
-                            <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>Crew Updates</div>
-                            {jobUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobUpdates.map((u) => {
-                              const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
-                              return (
-                                <div key={u.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
-                                  <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                                    <span style={{ color: t.textMuted }}>{u.timeStr}</span>
-                                    <strong style={{ color: t.text }}>{u.crewName}</strong>
-                                    <Badge color={uStatus?.color} bg={uStatus?.bg}>{uStatus?.label}</Badge>
-                                    {u.eta && <span>— ETA: {u.eta}</span>}
+
+                        {/* Pill row — always visible */}
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "10px", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
+                          <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
+                          <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "2px" }}>{job.type}</span>
+                          {job.jobCategory && <span style={{ fontSize: "11px", fontWeight: 600, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}
+                          <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>{new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                        </div>
+
+                        {/* Expanded detail */}
+                        {isExpanded && (
+                          <>
+                            {job.notes && <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "10px", fontStyle: "italic", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>📝 {job.notes}</div>}
+
+                            <div style={{ display: "flex", gap: "16px", marginTop: "12px", flexWrap: "wrap" }}>
+                              <div style={{ flex: "1 1 45%", minWidth: "200px" }}>
+                                <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>Crew Updates</div>
+                                {jobUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobUpdates.map((u) => {
+                                  const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
+                                  return (
+                                    <div key={u.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
+                                      <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                                        <span style={{ color: t.textMuted }}>{u.timeStr}</span>
+                                        <strong style={{ color: t.text }}>{u.crewName}</strong>
+                                        <Badge color={uStatus?.color} bg={uStatus?.bg}>{uStatus?.label}</Badge>
+                                        {u.eta && <span>— ETA: {u.eta}</span>}
+                                      </div>
+                                      {u.notes && <div style={{ marginTop: "3px", color: t.textMuted, paddingLeft: "2px" }}>{u.notes}</div>}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                              <div style={{ flex: "1 1 45%", minWidth: "200px", cursor: "pointer", borderRadius: "6px", padding: "4px", margin: "-4px", transition: "background 0.15s ease" }} onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} onMouseEnter={(e) => e.currentTarget.style.background = t.bg} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
+                                <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "#dc2626", marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                                  <span>PM Updates</span>
+                                  <span style={{ fontSize: "10px", color: t.textMuted, fontWeight: 500, textTransform: "none" }}>Tap to update</span>
+                                </div>
+                                {jobPmUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobPmUpdates.map((p) => (
+                                  <div key={p.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
+                                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                                      <span style={{ color: t.textMuted }}>{p.timeStr}</span>
+                                      <strong style={{ color: t.text }}>{p.user}</strong>
+                                    </div>
+                                    <div style={{ marginTop: "3px", color: t.text, paddingLeft: "2px" }}>{p.note}</div>
                                   </div>
-                                  {u.notes && <div style={{ marginTop: "3px", color: t.textMuted, paddingLeft: "2px" }}>{u.notes}</div>}
-                                </div>
-                              );
-                            })}
-                          </div>
-                          <div style={{ flex: "1 1 45%", minWidth: "200px", cursor: "pointer", borderRadius: "6px", padding: "4px", margin: "-4px", transition: "background 0.15s ease" }} onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} onMouseEnter={(e) => e.currentTarget.style.background = t.bg} onMouseLeave={(e) => e.currentTarget.style.background = "transparent"}>
-                            <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: "#dc2626", marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <span>Project Manager Updates</span>
-                              <span style={{ fontSize: "10px", color: t.textMuted, fontWeight: 500, textTransform: "none" }}>Click to update</span>
-                            </div>
-                            {jobPmUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobPmUpdates.map((p) => (
-                              <div key={p.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
-                                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                                  <span style={{ color: t.textMuted }}>{p.timeStr}</span>
-                                  <strong style={{ color: t.text }}>{p.user}</strong>
-                                </div>
-                                <div style={{ marginTop: "3px", color: t.text, paddingLeft: "2px" }}>{p.note}</div>
-                              </div>
-                            ))}
-                            <div style={{ marginTop: "10px", fontSize: "12.5px" }}>
-                              <div style={{ fontWeight: 600, color: "#dc2626", marginBottom: "4px" }}>Job Checked</div>
-                              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ fontWeight: 600, color: t.textSecondary }}>AM:</span><span style={{ fontWeight: 600, color: job.jobCheckedAM === "Yes" ? "#15803d" : t.textMuted }}>{job.jobCheckedAM || "No"}</span></span>
-                                <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ fontWeight: 600, color: t.textSecondary }}>PM:</span><span style={{ fontWeight: 600, color: job.jobCheckedPM === "Yes" ? "#15803d" : t.textMuted }}>{job.jobCheckedPM || "No"}</span></span>
+                                ))}
                               </div>
                             </div>
-                          </div>
-                        </div>
+
+                            {/* Action row */}
+                            <div style={{ display: "flex", gap: "8px", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid " + t.borderLight }}>
+                              <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>PM Note</Button>
+                              <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Edit</Button>
+                              <Button variant="danger" onClick={() => handleRemoveJob(job)} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Remove</Button>
+                            </div>
+                          </>
+                        )}
                       </Card>
                     );
                   })}
