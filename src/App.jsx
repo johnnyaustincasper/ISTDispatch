@@ -1127,7 +1127,97 @@ export default function App() {
   };
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
-  if (loading) return <div style={{ minHeight: "100vh", background: t.bg, display: "flex", alignItems: "center", justifyContent: "center" }}><div style={{ fontSize: "20px", fontWeight: 600, color: t.textMuted, letterSpacing: "2px" }}>IST</div></div>;
+  if (loading) return (
+    <div style={{ minHeight: "100vh", background: "#0f172a", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", overflow: "hidden", position: "relative" }}>
+      <style>{`
+        @keyframes tornadoSpin {
+          0% { transform: rotate(0deg) scaleX(1); }
+          50% { transform: rotate(180deg) scaleX(0.4); }
+          100% { transform: rotate(360deg) scaleX(1); }
+        }
+        @keyframes tornadoWobble {
+          0%,100% { transform: translateX(0px); }
+          25% { transform: translateX(-8px); }
+          75% { transform: translateX(8px); }
+        }
+        @keyframes fadeUp {
+          from { opacity: 0; transform: translateY(20px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes dustSwirl {
+          0% { transform: rotate(0deg) translateX(40px) rotate(0deg); opacity: 0.6; }
+          100% { transform: rotate(360deg) translateX(40px) rotate(-360deg); opacity: 0; }
+        }
+        @keyframes cloudDrift {
+          0% { transform: translateX(-20px); opacity: 0; }
+          20% { opacity: 0.15; }
+          80% { opacity: 0.15; }
+          100% { transform: translateX(20px); opacity: 0; }
+        }
+        .tornado-ring {
+          border-radius: 50%;
+          border: 2px solid rgba(148,163,184,0.3);
+          position: absolute;
+          animation: tornadoSpin 1.2s ease-in-out infinite;
+        }
+        .dust-particle {
+          width: 4px; height: 4px;
+          background: rgba(148,163,184,0.5);
+          border-radius: 50%;
+          position: absolute;
+          animation: dustSwirl 2s linear infinite;
+        }
+      `}</style>
+
+      {/* Dark stormy sky clouds */}
+      {[...Array(3)].map((_, i) => (
+        <div key={i} style={{
+          position: 'absolute', top: `${15 + i * 12}%`, left: `${10 + i * 25}%`,
+          width: `${120 + i * 60}px`, height: '30px',
+          background: 'rgba(148,163,184,0.08)', borderRadius: '50px',
+          animation: `cloudDrift ${4 + i}s ease-in-out infinite`,
+          animationDelay: `${i * 0.8}s`,
+        }} />
+      ))}
+
+      {/* Tornado funnel */}
+      <div style={{ position: 'relative', width: '80px', height: '120px', marginBottom: '32px', animation: 'tornadoWobble 1.5s ease-in-out infinite' }}>
+        {/* Funnel shape — wide top, narrow bottom */}
+        {[0,1,2,3,4,5,6].map((i) => {
+          const width = 80 - i * 10;
+          const top = i * 16;
+          const opacity = 0.9 - i * 0.1;
+          const delay = i * 0.08;
+          return (
+            <div key={i} style={{
+              position: 'absolute', top: `${top}px`,
+              left: `${(80 - width) / 2}px`,
+              width: `${width}px`, height: '14px',
+              borderRadius: '50%',
+              border: `2px solid rgba(148,163,184,${opacity})`,
+              background: `rgba(30,41,59,${0.3 + i * 0.1})`,
+              animation: `tornadoSpin ${0.6 + i * 0.05}s ease-in-out infinite`,
+              animationDelay: `${delay}s`,
+            }} />
+          );
+        })}
+        {/* Dust cloud at base */}
+        {[...Array(6)].map((_, i) => (
+          <div key={i} className="dust-particle" style={{
+            bottom: '-10px', left: '36px',
+            animationDelay: `${i * 0.33}s`,
+            animationDuration: `${1.5 + i * 0.2}s`,
+          }} />
+        ))}
+      </div>
+
+      {/* IST branding */}
+      <div style={{ animation: 'fadeUp 0.8s ease forwards', animationDelay: '0.3s', opacity: 0, textAlign: 'center' }}>
+        <div style={{ fontSize: '28px', fontWeight: 800, color: '#f1f5f9', letterSpacing: '6px', marginBottom: '6px' }}>IST</div>
+        <div style={{ fontSize: '11px', fontWeight: 500, color: 'rgba(148,163,184,0.7)', letterSpacing: '3px', textTransform: 'uppercase' }}>Dispatch</div>
+      </div>
+    </div>
+  );
 
   if (!role) return <RoleSelect onSelect={setRole} />;
   if (role === "admin" && !adminName) return <AdminLogin onLogin={handleAdminLogin} onBack={() => setRole(null)} />;

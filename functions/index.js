@@ -75,17 +75,19 @@ exports.onTicketCreated = onDocumentCreated('tickets/{ticketId}', async (event) 
   );
 });
 
-// ─── Ticket updated (reply/status change) → notify admins + crew ───
+// ─── Ticket updated → only notify if crew made the change (has truckId/crewName) ───
 exports.onTicketUpdated = onDocumentUpdated('tickets/{ticketId}', async (event) => {
   const before = event.data.before.data();
   const after = event.data.after.data();
   if (before.status === after.status && before.reply === after.reply) return;
+  // Skip if updated by admin (no truckId means admin action)
+  if (!after.truckId) return;
 
-  const crewEmail = after.truckId ? await getCrewEmail(after.truckId) : null;
+  const crewEmail = await getCrewEmail(after.truckId);
   const recipients = crewEmail ? [...ADMIN_EMAILS, crewEmail] : ADMIN_EMAILS;
 
   await sendEmail(recipients, `🔄 Ticket Updated: ${after.description?.slice(0, 50) || 'Ticket'}`,
-    `<h2>Ticket Updated</h2>
+    `<h2>Ticket Updated by Crew</h2>
      <p><strong>Truck:</strong> ${after.truckId || 'N/A'}</p>
      <p><strong>Status:</strong> ${after.status || 'N/A'}</p>
      <p><strong>Description:</strong> ${after.description || 'N/A'}</p>
@@ -94,11 +96,13 @@ exports.onTicketUpdated = onDocumentUpdated('tickets/{ticketId}', async (event) 
   );
 });
 
-// ─── New crew update → notify all admins ───
+// ─── New crew update → notify all admins (crew always has crewName field) ───
 exports.onJobUpdateCreated = onDocumentCreated('updates/{updateId}', async (event) => {
   const update = event.data.data();
+  // Only fire for crew updates (have crewName), not admin PM notes
+  if (!update.crewName) return;
 
-  await sendEmail(ADMIN_EMAILS, `📢 Crew Update from ${update.crewName || 'Crew'}`,
+  await sendEmail(ADMIN_EMAILS, `📢 Crew Update from ${update.crewName}`,
     `<h2>Crew Update</h2>
      <p><strong>Crew:</strong> ${update.crewName || 'N/A'}</p>
      <p><strong>Status:</strong> ${update.status || 'N/A'}</p>
