@@ -111,8 +111,8 @@ function TextArea({ label, ...props }) {
 function Card({ children, style: s, onClick }) {
   return (
     <div onClick={onClick} style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "8px", padding: "16px", marginBottom: "10px", cursor: onClick ? "pointer" : "default", transition: "all 0.15s ease", boxShadow: t.shadow, ...s }}
-      onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.boxShadow = t.shadowMd; } }}
-      onMouseLeave={(e) => { if (onClick) { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.boxShadow = t.shadow; } }}>
+      onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.accent; e.currentTarget.style.boxShadow = t.shadowMd; } }}
+      onMouseLeave={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.border; e.currentTarget.style.boxShadow = t.shadow; } }}>
       {children}
     </div>
   );
@@ -563,7 +563,7 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
               const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
               const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
               return (
-                <Card key={ticket.id} style={{ borderColor: ticket.status === "open" && !ticket.adminNote ? "#ef4444" : undefined, borderWidth: ticket.status === "open" && !ticket.adminNote ? "1.5px" : undefined }}>
+                <Card key={ticket.id} style={{ borderColor: ticket.status === "open" && !ticket.adminNote ? "#ef4444" : undefined, borderWidth: ticket.status === "open" && !ticket.adminNote ? "3px" : undefined }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
                     <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                       <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
@@ -1046,7 +1046,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                       const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
                       const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
                       return (
-                        <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginLeft: "8px", borderColor: ticket.status === "open" && !ticket.adminNote ? "#ef4444" : undefined, borderWidth: ticket.status === "open" && !ticket.adminNote ? "1.5px" : undefined }}>
+                        <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginLeft: "8px", borderColor: ticket.status === "open" && !ticket.adminNote ? "#ef4444" : undefined, borderWidth: ticket.status === "open" && !ticket.adminNote ? "3px" : undefined }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
                             <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
                               <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
