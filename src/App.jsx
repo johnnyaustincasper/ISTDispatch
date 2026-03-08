@@ -156,8 +156,8 @@ function RoleSelect({ onSelect }) {
   return (
     <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "10vh 20px 40px" }}>
       <div style={{ textAlign: "center", marginBottom: "40px" }}>
-        <img src="/ist-logo.jpg" alt="IST Logo" style={{ width: "140px", height: "140px", objectFit: "contain", marginBottom: "8px" }} />
-        <div style={{ fontSize: "32px", fontWeight: 700, color: t.text, marginTop: "4px" }}>IST Dispatch</div>
+        <div style={{ fontSize: "14px", fontWeight: 600, letterSpacing: "2px", textTransform: "uppercase", color: t.accent }}>Insulation Services of Tulsa</div>
+        <div style={{ fontSize: "32px", fontWeight: 700, color: t.text, marginTop: "6px" }}>IST Dispatch</div>
         <div style={{ width: "40px", height: "2px", background: t.accent, margin: "14px auto 0", borderRadius: "1px" }} />
       </div>
       <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", justifyContent: "center", maxWidth: "460px", width: "100%" }}>
