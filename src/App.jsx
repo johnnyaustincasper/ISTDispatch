@@ -1318,8 +1318,8 @@ export default function App() {
   const [minLoadDone, setMinLoadDone] = useState(false);
   const [fadeOut, setFadeOut] = useState(false);
   useEffect(() => {
-    setTimeout(() => setFadeOut(true), 3400);
-    setTimeout(() => setMinLoadDone(true), 4000);
+    setTimeout(() => setFadeOut(true), 3100);
+    setTimeout(() => setMinLoadDone(true), 3700);
   }, []);
   const [role, setRole] = useState(null);
   const [crewSession, setCrewSession] = useState(null);
