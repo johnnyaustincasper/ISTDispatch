@@ -563,7 +563,7 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
               const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
               const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
               return (
-                <Card key={ticket.id}>
+                <Card key={ticket.id} style={{ borderColor: ticket.status === "open" && !ticket.adminNote ? "#ef4444" : undefined, borderWidth: ticket.status === "open" && !ticket.adminNote ? "1.5px" : undefined }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
                     <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
                       <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
@@ -1046,7 +1046,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                       const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
                       const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
                       return (
-                        <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginLeft: "8px" }}>
+                        <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginLeft: "8px", borderColor: ticket.status === "open" && !ticket.adminNote ? "#ef4444" : undefined, borderWidth: ticket.status === "open" && !ticket.adminNote ? "1.5px" : undefined }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
                             <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
                               <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
