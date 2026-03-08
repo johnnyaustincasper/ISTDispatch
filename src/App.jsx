@@ -477,6 +477,7 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
   const [showTicketForm, setShowTicketForm] = useState(false);
   const [ticketDesc, setTicketDesc] = useState("");
   const [ticketPriority, setTicketPriority] = useState("medium");
+  const [ticketType, setTicketType] = useState("equipment");
 
   const getJobUpdates = (jobId) => updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const getLatestStatus = (jobId) => { const u = getJobUpdates(jobId); return u.length > 0 ? u[0].status : "not_started"; };
@@ -486,8 +487,8 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
     setActiveJob(null); setStatus("in_progress"); setEta(""); setNotes("");
   };
   const handleTicketSubmit = () => {
-    onSubmitTicket({ truckId: truck.id, truckName: truck.name, submittedBy: crewName, description: ticketDesc, priority: ticketPriority, status: "open", timestamp: new Date().toISOString() });
-    setTicketDesc(""); setTicketPriority("medium"); setShowTicketForm(false);
+    onSubmitTicket({ truckId: truck.id, truckName: truck.name, submittedBy: crewName, description: ticketDesc, priority: ticketPriority, ticketType, status: "open", timestamp: new Date().toISOString() });
+    setTicketDesc(""); setTicketPriority("medium"); setTicketType("equipment"); setShowTicketForm(false);
   };
 
   const tabStyle = (active) => ({ padding: "8px 16px", background: active ? t.accent : "transparent", color: active ? "#fff" : t.textMuted, border: active ? "none" : "1px solid " + t.border, borderRadius: "6px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", position: "relative" });
@@ -506,7 +507,7 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
         <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
           <button style={tabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
           <button style={tabStyle(crewView === "tickets")} onClick={() => setCrewView("tickets")}>
-            Equipment Issues
+            Tickets
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
           </button>
         </div>
@@ -558,14 +559,16 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
 
         {crewView === "tickets" && (
           <>
-            <SectionHeader title="Equipment Issues" right={<Button onClick={() => setShowTicketForm(true)}>+ Report Issue</Button>} />
-            {myTickets.length === 0 ? <EmptyState text="No issues reported for this truck." sub="Tap '+ Report Issue' if something needs attention." /> : myTickets.map((ticket) => {
+            <SectionHeader title="My Tickets" right={<Button onClick={() => setShowTicketForm(true)}>+ Submit Ticket</Button>} />
+            {myTickets.length === 0 ? <EmptyState text="No tickets submitted yet." sub="Tap '+ Submit Ticket' to report an issue, request supplies, or request time off." /> : myTickets.map((ticket) => {
               const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
               const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
+              const typeLabel = ticket.ticketType === "inventory" ? "📦 Inventory" : ticket.ticketType === "timeoff" ? "🗓 Time Off" : "🔧 Equipment";
               return (
                 <Card key={ticket.id} style={{ border: ticket.status === "open" && !ticket.adminNote ? "3px solid #ef4444" : "1px solid #e5e7eb" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
                     <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: "11px", fontWeight: 600, color: t.textSecondary }}>{typeLabel}</span>
                       <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
                       <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
                     </div>
@@ -595,13 +598,21 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
       )}
 
       {showTicketForm && (
-        <Modal title="Report Issue" onClose={() => setShowTicketForm(false)}>
-          <div style={{ fontSize: "13px", color: t.textMuted, marginBottom: "16px", background: t.bg, padding: "10px 12px", borderRadius: "6px" }}>Reporting for <strong style={{ color: t.text }}>{truck.name}</strong></div>
-          <TextArea label="Describe the problem" placeholder="e.g. spray gun leaking at the tip, generator won't start, flat tire on rear passenger side..." value={ticketDesc} onChange={(e) => setTicketDesc(e.target.value)} style={{ minHeight: "110px" }} />
-          <Select label="Priority" value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} options={TICKET_PRIORITIES.map((p) => ({ value: p.value, label: p.label }))} />
+        <Modal title="Submit Ticket" onClose={() => setShowTicketForm(false)}>
+          <div style={{ fontSize: "13px", color: t.textMuted, marginBottom: "16px", background: t.bg, padding: "10px 12px", borderRadius: "6px" }}>Submitting for <strong style={{ color: t.text }}>{truck.name}</strong></div>
+          <div style={{ marginBottom: "14px" }}>
+            <div style={{ fontSize: "13px", fontWeight: 600, color: t.text, marginBottom: "8px" }}>Ticket Type</div>
+            <div style={{ display: "flex", gap: "8px" }}>
+              {[{ value: "equipment", label: "🔧 Equipment" }, { value: "inventory", label: "📦 Inventory" }, { value: "timeoff", label: "🗓 Time Off" }].map((opt) => (
+                <button key={opt.value} onClick={() => setTicketType(opt.value)} style={{ flex: 1, padding: "10px 6px", border: ticketType === opt.value ? "2px solid " + t.accent : "1px solid " + t.border, borderRadius: "8px", background: ticketType === opt.value ? t.accentBg : t.surface, color: ticketType === opt.value ? t.accent : t.textSecondary, fontWeight: 600, fontSize: "12px", cursor: "pointer", fontFamily: "inherit" }}>{opt.label}</button>
+              ))}
+            </div>
+          </div>
+          <TextArea label={ticketType === "equipment" ? "Describe the problem" : ticketType === "inventory" ? "What supplies do you need?" : "Dates and reason for time off"} placeholder={ticketType === "equipment" ? "e.g. spray gun leaking at the tip, generator won't start..." : ticketType === "inventory" ? "e.g. need more 2-part foam, running low on tarps..." : "e.g. March 15–16, family event"} value={ticketDesc} onChange={(e) => setTicketDesc(e.target.value)} style={{ minHeight: "100px" }} />
+          {ticketType !== "timeoff" && <Select label="Priority" value={ticketPriority} onChange={(e) => setTicketPriority(e.target.value)} options={TICKET_PRIORITIES.map((p) => ({ value: p.value, label: p.label }))} />}
           <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
             <Button variant="secondary" onClick={() => setShowTicketForm(false)} style={{ flex: 1 }}>Cancel</Button>
-            <Button onClick={handleTicketSubmit} disabled={!ticketDesc.trim()} style={{ flex: 1 }}>Submit Ticket</Button>
+            <Button onClick={handleTicketSubmit} disabled={!ticketDesc.trim()} style={{ flex: 1 }}>Submit</Button>
           </div>
         </Modal>
       )}
@@ -1044,50 +1055,36 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
         {view === "tickets" && (
           <>
-            <SectionHeader title="Equipment Tickets" right={
-              <div style={{ display: "flex", gap: "4px" }}>
-                <button onClick={() => setTicketFilter("active")} style={{ padding: "6px 12px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: ticketFilter === "active" ? t.accent : "#fff", color: ticketFilter === "active" ? "#fff" : t.textMuted }}>Active ({tickets.filter((tk) => tk.status !== "resolved").length})</button>
-                <button onClick={() => setTicketFilter("all")} style={{ padding: "6px 12px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: ticketFilter === "all" ? t.accent : "#fff", color: ticketFilter === "all" ? "#fff" : t.textMuted }}>All ({tickets.length})</button>
-              </div>
-            } />
             {truckFilterName && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", padding: "8px 12px", background: t.accentBg, borderRadius: "6px", fontSize: "13px", color: t.accent, fontWeight: 500 }}>
                 Showing tickets for {truckFilterName}
                 <button onClick={() => setTruckFilter(null)} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontWeight: 700, fontSize: "14px", fontFamily: "inherit", padding: "0 4px" }}>✕</button>
               </div>
             )}
-            {sortedTickets.length === 0 ? <EmptyState text={ticketFilter === "active" ? "No active tickets. All clear." : "No tickets submitted yet."} /> : (() => {
-              const ticketGroups = {};
-              sortedTickets.forEach((tk) => {
-                const key = tk.truckId || "_unknown";
-                if (!ticketGroups[key]) {
-                  const crew = trucks.find((tr) => tr.id === tk.truckId);
-                  ticketGroups[key] = { name: crew ? crew.name : tk.truckName || "Unknown Crew", members: crew?.members, order: crew?.order ?? 999, tickets: [] };
-                }
-                ticketGroups[key].tickets.push(tk);
-              });
-              const groupKeys = Object.keys(ticketGroups).sort((a, b) => ticketGroups[a].order - ticketGroups[b].order);
-              return groupKeys.map((key) => {
-                const group = ticketGroups[key];
-                const activeCount = group.tickets.filter((tk) => tk.status !== "resolved").length;
+            {(() => {
+              const renderTicketSection = (label, emoji, typeKey, accentColor) => {
+                const filtered = sortedTickets.filter((tk) => (tk.ticketType || "equipment") === typeKey);
+                const activeCount = filtered.filter((tk) => tk.status !== "resolved").length;
                 return (
-                  <div key={key} style={{ marginBottom: "20px" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
-                      <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{group.name}</div>
-                      {group.members && <span style={{ fontSize: "12px", color: t.textMuted }}>— {group.members}</span>}
-                      {activeCount > 0 && <Badge color="#b91c1c" bg="#fee2e2">{activeCount} active</Badge>}
+                  <div key={typeKey} style={{ marginBottom: "28px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "12px", paddingBottom: "8px", borderBottom: "2px solid " + accentColor }}>
+                      <span style={{ fontSize: "16px" }}>{emoji}</span>
+                      <div style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>{label}</div>
+                      {activeCount > 0 && <Badge color="#b91c1c" bg="#fee2e2">{activeCount} open</Badge>}
+                      {filtered.length === 0 && <span style={{ fontSize: "12px", color: t.textMuted, marginLeft: "4px" }}>— None</span>}
                     </div>
-                    {group.tickets.map((ticket) => {
+                    {filtered.map((ticket) => {
                       const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
                       const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
                       return (
-                        <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginLeft: "8px", border: ticket.status === "open" && !ticket.adminNote ? "3px solid #ef4444" : "1px solid #e5e7eb" }}>
+                        <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginLeft: "8px", marginBottom: "8px", border: ticket.status === "open" && !ticket.adminNote ? "2px solid #ef4444" : "1px solid #e5e7eb" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
                             <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
-                              <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
+                              {typeKey !== "timeoff" && <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>}
                               <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
+                              <span style={{ fontSize: "11px", color: t.textMuted }}>{ticket.truckName || "Unknown Truck"}</span>
                             </div>
-                            <span style={{ fontSize: "11.5px", color: t.textMuted }}>{dateStr(ticket.timestamp)}</span>
+                            <span style={{ fontSize: "11.5px", color: t.textMuted, flexShrink: 0 }}>{dateStr(ticket.timestamp)}</span>
                           </div>
                           <div style={{ fontSize: "14px", color: t.text, lineHeight: 1.5 }}>{ticket.description}</div>
                           <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "6px" }}>Submitted by {ticket.submittedBy}</div>
@@ -1097,7 +1094,12 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                     })}
                   </div>
                 );
-              });
+              };
+              return (<>
+                {renderTicketSection("Equipment Tickets", "🔧", "equipment", t.accent)}
+                {renderTicketSection("Inventory Tickets", "📦", "inventory", "#f59e0b")}
+                {renderTicketSection("Time Off Requests", "🗓", "timeoff", "#8b5cf6")}
+              </>);
             })()}
           </>
         )}
