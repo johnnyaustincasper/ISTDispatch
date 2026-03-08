@@ -419,7 +419,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
               <Card key={m.id} onClick={() => handleSelectMember(m)} style={{ padding: "14px 16px", cursor: "pointer" }}>
                 <div style={{ fontWeight: 600, fontSize: 15, color: t.text }}>{m.name}</div>
                 {m.truckId && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                  {trucks.find(tr => tr.id === m.truckId)?.name || ""}
+                  {(() => { const tr = trucks.find(tr => tr.id === m.truckId); return tr ? (tr.members || tr.name) : ""; })()}
                 </div>}
                 {!m.pin && <div style={{ fontSize: 11, color: t.accent, marginTop: 2 }}>First time — set PIN</div>}
               </Card>
@@ -640,7 +640,7 @@ function RosterView({ trucks }) {
     await deleteDoc(doc(db, "crewMembers", id));
   };
 
-  const getTruckName = (truckId) => trucks.find(tr => tr.id === truckId)?.name || "Unassigned";
+  const getTruckName = (truckId) => { const tr = trucks.find(tr => tr.id === truckId); return tr ? (tr.members || tr.name) : "Unassigned"; };
 
   return (
     <div>
@@ -679,7 +679,7 @@ function RosterView({ trucks }) {
                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                     <select onChange={e => assignTruck(member.id, e.target.value)} defaultValue={member.truckId || ""} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit" }}>
                       <option value="">Unassigned</option>
-                      {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+                      {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.members || tr.name}</option>)}
                     </select>
                     <button onClick={() => setAssigning(null)} style={{ fontSize: 11, color: t.textMuted, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
                   </div>
