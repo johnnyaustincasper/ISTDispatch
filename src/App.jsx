@@ -69,14 +69,21 @@ function Badge({ children, color, bg }) {
 }
 
 function Button({ children, onClick, variant = "primary", style: s, disabled }) {
-  const base = { padding: "9px 18px", border: "none", borderRadius: "6px", fontWeight: 500, fontSize: "13.5px", cursor: disabled ? "not-allowed" : "pointer", transition: "all 0.15s ease", opacity: disabled ? 0.45 : 1, fontFamily: "inherit" };
+  const base = { padding: "9px 18px", border: "none", borderRadius: "6px", fontWeight: 500, fontSize: "13.5px", cursor: disabled ? "not-allowed" : "pointer", transition: "transform 0.1s ease, opacity 0.15s ease", opacity: disabled ? 0.45 : 1, fontFamily: "inherit", WebkitTapHighlightColor: "transparent" };
   const v = {
     primary: { background: t.accent, color: "#fff" },
     secondary: { background: t.bg, color: t.textSecondary, border: "1px solid " + t.border },
     danger: { background: t.dangerBg, color: t.danger, border: "1px solid #fecaca" },
     ghost: { background: "transparent", color: t.textMuted, padding: "6px 10px" },
   };
-  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...v[variant], ...s }}>{children}</button>;
+  return <button
+    onClick={onClick}
+    disabled={disabled}
+    onPointerDown={e => { if (!disabled) e.currentTarget.style.transform = "scale(0.95)"; }}
+    onPointerUp={e => { e.currentTarget.style.transform = "scale(1)"; }}
+    onPointerLeave={e => { e.currentTarget.style.transform = "scale(1)"; }}
+    style={{ ...base, ...v[variant], ...s }}
+  >{children}</button>;
 }
 
 function Input({ label, ...props }) {
@@ -843,7 +850,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           <button key={item.key} onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 4px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", position: "relative", gap: "2px" }}>
             <span style={{ lineHeight: 1, color: view === item.key ? t.accent : "rgba(100,116,139,0.7)" }}>{NAV_ICONS[item.key]}</span>
             <span style={{ fontSize: "10px", fontWeight: view === item.key ? 700 : 400, color: view === item.key ? t.accent : t.textMuted }}>{item.label}</span>
-            {item.badge > 0 && <span style={{ position: "absolute", top: "4px", right: "calc(50% - 16px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "50%", width: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center" }}>{item.badge}</span>}
+            {item.badge > 0 && <span style={{ position: "absolute", top: "4px", right: "calc(50% - 16px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "50%", width: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
             {view === item.key && <div style={{ position: "absolute", top: 0, left: "15%", right: "15%", height: "2px", background: t.accent, borderRadius: "0 0 2px 2px" }} />}
           </button>
         ))}
@@ -855,7 +862,19 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
         {view === "schedule" && (
           <>
-            {(() => { const uncheckedCount = activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes").length; return (
+            {loading ? (
+              <div style={{ padding: "0 4px" }}>
+                {[1,2,3].map(i => (
+                  <div key={i} style={{ marginBottom: 10 }}>
+                    <div className="skeleton" style={{ height: 14, width: "40%", marginBottom: 10 }} />
+                    {[1,2].map(j => (
+                      <div key={j} className="skeleton" style={{ height: 90, marginBottom: 8, borderRadius: 8 }} />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {!loading && (() => { const uncheckedCount = activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes").length; return (
             <SectionHeader title="Schedule" right={<>
               {uncheckedCount > 0 && <button onClick={() => setShowUncheckedOnly(!showUncheckedOnly)} style={{ padding: "6px 12px", border: "1px solid " + (showUncheckedOnly ? t.danger : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showUncheckedOnly ? t.dangerBg : "#fff", color: showUncheckedOnly ? t.danger : t.textMuted }}>{showUncheckedOnly ? "Show All" : uncheckedCount + " Unchecked"}</button>}
               <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr() }); setShowAddJob(true); }}>+ Add Job</Button>
@@ -1020,7 +1039,14 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
         {view === "tickets" && (
           <>
-            <SectionHeader title="Equipment Tickets" right={
+            {loading && (
+              <div style={{ padding: "0 4px" }}>
+                {[1,2,3,4].map(i => (
+                  <div key={i} className="skeleton" style={{ height: 80, marginBottom: 8, borderRadius: 8 }} />
+                ))}
+              </div>
+            )}
+            {!loading && <><SectionHeader title="Equipment Tickets" right={
               <div style={{ display: "flex", gap: "4px" }}>
                 <button onClick={() => setTicketFilter("active")} style={{ padding: "6px 12px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: ticketFilter === "active" ? t.accent : "#fff", color: ticketFilter === "active" ? "#fff" : t.textMuted }}>Active ({tickets.filter((tk) => tk.status !== "resolved").length})</button>
                 <button onClick={() => setTicketFilter("all")} style={{ padding: "6px 12px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: ticketFilter === "all" ? t.accent : "#fff", color: ticketFilter === "all" ? "#fff" : t.textMuted }}>All ({tickets.length})</button>
@@ -1074,7 +1100,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                   </div>
                 );
               });
-            })()}
+            })()}</>}
           </>
         )}
 
