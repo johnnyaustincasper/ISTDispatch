@@ -1075,9 +1075,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               <div style={{ fontSize: "18px", fontWeight: 600, color: t.text }}>{calMonthNames[calMonth]} {calYear}</div>
               <button onClick={calNext} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: "6px", padding: "6px 14px", cursor: "pointer", color: t.text, fontSize: "14px", fontFamily: "inherit" }}>→</button>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: "1px", background: t.border, border: "1px solid " + t.border, borderRadius: "8px", overflow: "hidden" }}>
-              {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map((d) => (
-                <div key={d} style={{ background: t.surface, padding: "8px 4px", textAlign: "center", fontSize: "11px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px" }}>{d}</div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: "1px", background: t.border, border: "1px solid " + t.border, borderRadius: "8px", overflow: "hidden", width: "100%" }}>
+              {["Su","Mo","Tu","We","Th","Fr","Sa"].map((d) => (
+                <div key={d} style={{ background: t.surface, padding: "6px 2px", textAlign: "center", fontSize: "10px", fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.3px" }}>{d}</div>
               ))}
               {calDays().map((day, i) => {
                 const dayJobs = getJobsForDate(day);
@@ -1096,27 +1096,25 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                   if (b === "_unassigned") return -1;
                   return (grouped[a].name).localeCompare(grouped[b].name);
                 });
+                const totalItems = dayJobs.length + dayTimeOff.length;
                 return (
-                  <div key={i} style={{ background: day ? (isToday ? t.accentBg : "#fff") : t.bg, padding: "4px", minHeight: "110px", verticalAlign: "top" }}>
+                  <div key={i} style={{ background: day ? (isToday ? t.accentBg : "#fff") : t.bg, padding: "3px 2px", minHeight: "80px", overflow: "hidden", boxSizing: "border-box" }}>
                     {day && (
                       <>
-                        <div style={{ fontSize: "12px", fontWeight: isToday ? 700 : 400, color: isToday ? t.accent : t.textMuted, marginBottom: "3px", textAlign: "right", paddingRight: "4px" }}>{day}</div>
+                        <div style={{ fontSize: "11px", fontWeight: isToday ? 700 : 500, color: isToday ? "#fff" : t.textMuted, marginBottom: "3px", textAlign: "center", width: "20px", height: "20px", lineHeight: "20px", borderRadius: "50%", background: isToday ? t.accent : "transparent", margin: "0 auto 3px" }}>{day}</div>
                         {crewKeys.map((key) => (
-                          <div key={key} style={{ marginBottom: "3px" }}>
-                            <div style={{ fontSize: "9px", fontWeight: 700, color: t.text, textTransform: "uppercase", letterSpacing: "0.3px", padding: "0 2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{grouped[key].name}</div>
-                            {grouped[key].jobs.map((j) => {
-                              const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-                              const isDone = lat && lat.status === "completed";
-                              return (
-                                <div key={j.id} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "1px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", cursor: "pointer", borderLeft: (j.jobCheckedAM === "Yes" && j.jobCheckedPM === "Yes") ? "3px solid #15803d" : (j.jobCheckedAM === "Yes" || j.jobCheckedPM === "Yes") ? "3px solid #f59e0b" : "3px solid #dc2626" }} title={(j.builder || "No Customer") + " — " + j.address + " — " + j.type + (j.jobCategory ? " — " + j.jobCategory : "") + " — AM: " + (j.jobCheckedAM || "No") + " / PM: " + (j.jobCheckedPM || "No")} onClick={() => setCalViewJob(j)}>
-                                  {isDone && "✓ "}{j.builder || j.address}
-                                </div>
-                              );
-                            })}
-                          </div>
+                          grouped[key].jobs.map((j) => {
+                            const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+                            const isDone = lat && lat.status === "completed";
+                            return (
+                              <div key={j.id} style={{ fontSize: "9px", padding: "2px 3px", marginBottom: "2px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", borderLeft: (j.jobCheckedAM === "Yes" && j.jobCheckedPM === "Yes") ? "2px solid #15803d" : (j.jobCheckedAM === "Yes" || j.jobCheckedPM === "Yes") ? "2px solid #f59e0b" : "2px solid #dc2626", display: "block", maxWidth: "100%" }} title={(j.builder || "No Customer") + " — " + j.address} onClick={() => setCalViewJob(j)}>
+                                {isDone ? "✓ " : ""}{j.builder || j.address}
+                              </div>
+                            );
+                          })
                         ))}
                         {dayTimeOff.map((tk) => (
-                          <div key={tk.id} title={"Time Off: " + tk.submittedBy + " (" + tk.truckName + ")"} style={{ fontSize: "10px", padding: "2px 4px", marginTop: "2px", borderRadius: "3px", background: "#f3e8ff", color: "#7c3aed", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", borderLeft: "3px solid #8b5cf6", cursor: "pointer" }} onClick={() => { setTicketTypeTab("timeoff"); setView("tickets"); }}>
+                          <div key={tk.id} style={{ fontSize: "9px", padding: "2px 3px", marginBottom: "2px", borderRadius: "3px", background: "#f3e8ff", color: "#7c3aed", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderLeft: "2px solid #8b5cf6", cursor: "pointer", display: "block", maxWidth: "100%" }} title={"Time Off: " + tk.submittedBy} onClick={() => { setTicketTypeTab("timeoff"); setView("tickets"); }}>
                             🗓 {tk.submittedBy}
                           </div>
                         ))}
