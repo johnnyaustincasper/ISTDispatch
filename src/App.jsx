@@ -702,7 +702,7 @@ function RosterView({ trucks }) {
                         {getTruckName(member.truckId)}
                       </button>
                     )}
-                    <button onClick={() => removeMember(member.id)} style={{ fontSize: 11, color: "#ef4444", background: "none", border: "none", cursor: "pointer", padding: "4px" }}>✕</button>
+
                   </div>
                 </div>
               </Card>
