@@ -1071,9 +1071,10 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
                   {typeTabs.map((tab) => {
                     const openCount = tickets.filter((tk) => (tk.ticketType || "equipment") === tab.key && tk.status !== "resolved" && (!truckFilter || tk.truckId === truckFilter)).length;
+                    const unresponded = tickets.filter((tk) => (tk.ticketType || "equipment") === tab.key && tk.status === "open" && !tk.adminNote && (!truckFilter || tk.truckId === truckFilter)).length;
                     const active = ticketTypeTab === tab.key;
                     return (
-                      <button key={tab.key} onClick={() => setTicketTypeTab(tab.key)} style={{ flex: 1, padding: "10px 6px", border: active ? "2px solid " + tab.accent : "1px solid " + t.border, borderRadius: "8px", background: active ? tab.accent : t.surface, color: active ? "#fff" : t.textSecondary, fontWeight: 600, fontSize: "12px", cursor: "pointer", fontFamily: "inherit", position: "relative" }}>
+                      <button key={tab.key} onClick={() => setTicketTypeTab(tab.key)} style={{ flex: 1, padding: "10px 6px", border: active ? "2px solid " + tab.accent : unresponded > 0 ? "2px solid #ef4444" : "1px solid " + t.border, borderRadius: "8px", background: active ? tab.accent : t.surface, color: active ? "#fff" : t.textSecondary, fontWeight: 600, fontSize: "12px", cursor: "pointer", fontFamily: "inherit", position: "relative", animation: !active && unresponded > 0 ? "borderPulse 1.8s ease-in-out infinite" : "none" }}>
                         {tab.emoji} {tab.label}
                         {openCount > 0 && <span style={{ position: "absolute", top: "-6px", right: "-4px", background: "#ef4444", color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "18px", height: "18px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openCount}</span>}
                       </button>
