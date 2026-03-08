@@ -807,7 +807,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
             Tickets
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
           </button>
-          <button style={tabStyle(view === "trucks")} onClick={() => setView("trucks")}>Crews</button>
+          <button style={tabStyle(view === "trucks")} onClick={() => setView("trucks")}>Trucks</button>
           <button style={tabStyle(view === "roster")} onClick={() => setView("roster")}>Roster</button>
           <button style={tabStyle(view === "log")} onClick={() => setView("log")}>Activity Log</button>
         </div>
@@ -1042,7 +1042,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
         {view === "trucks" && (
           <>
-            <SectionHeader title="Crews" right={<Button onClick={() => setShowAddTruck(true)}>+ Add Crew</Button>} />
+            <SectionHeader title="Trucks" right={<Button onClick={() => setShowAddTruck(true)}>+ Add Truck</Button>} />
             {trucks.length === 0 ? <EmptyState text="No crews yet. Add one to get started." /> : sortedTrucks.map((tr, idx) => {
               const truckJobs = jobs.filter((j) => { if (j.truckId !== tr.id) return false; const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]; return !lat || lat.status !== "completed"; });
               const truckTickets = tickets.filter((tk) => tk.truckId === tr.id && tk.status !== "resolved");
@@ -1062,8 +1062,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                         <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600, color: t.text, fontSize: "14.5px" }}>{tr.name}</div>
-                        {tr.members && <div style={{ fontSize: "12.5px", color: t.textMuted }}>{tr.members}</div>}
+                        <div style={{ fontWeight: 600, color: t.text, fontSize: "14.5px" }}>{tr.members || tr.name}</div>
+                        {tr.name && <div style={{ fontSize: "12.5px", color: t.textMuted }}>{tr.name}</div>}
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
