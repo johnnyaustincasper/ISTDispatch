@@ -1285,7 +1285,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                       )}
                     </button>
                     {isOpen && (
-                      <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 100, background: "#fff", border: "1px solid " + t.border, borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", minWidth: "140px", overflow: "hidden", marginTop: "4px" }}>
+                      <div style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 100, background: "#fff", border: "1px solid " + t.border, borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", width: "200px", overflow: "hidden", marginTop: "4px" }}>
                         {member && (
                           <button onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[slot] = null; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px 14px", background: "#fef2f2", border: "none", borderBottom: "1px solid " + t.border, cursor: "pointer", fontSize: 12, color: "#dc2626", fontWeight: 700, textAlign: "left", fontFamily: "inherit" }}>✕ Remove</button>
                         )}
