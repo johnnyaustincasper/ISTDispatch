@@ -975,11 +975,24 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               if (unassigned.length > 0) crewGroups.push({ crew: { id: "_unassigned", name: "Unassigned" }, jobs: unassigned });
               return crewGroups.map((group) => (
                 <div key={group.crew.id} style={{ marginBottom: "20px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
-                    <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{group.crew.name}</div>
-                    {group.crew.members && <span style={{ fontSize: "12px", color: t.textMuted }}>— {group.crew.members}</span>}
-                    <Badge>{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
-                  </div>
+                  {(() => {
+                    // Collect all unique crew member names assigned across jobs in this group
+                    const assignedNames = [];
+                    group.jobs.forEach(j => {
+                      (j.crewMemberIds || []).forEach(id => {
+                        if (id) { const m = members.find(m => m.id === id); if (m && !assignedNames.includes(m.name)) assignedNames.push(m.name); }
+                      });
+                    });
+                    const headerName = assignedNames.length > 0 ? assignedNames.join(" and ") : group.crew.name;
+                    const truckLabel = group.crew.members || group.crew.name;
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
+                        <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{headerName}</div>
+                        {group.crew.id !== "_unassigned" && <span style={{ fontSize: "12px", color: t.textMuted }}>— {truckLabel}</span>}
+                        <Badge>{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
+                      </div>
+                    );
+                  })()}
                   {group.jobs.map((job) => {
                     const latest = getLatestUpdate(job.id);
                     const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
