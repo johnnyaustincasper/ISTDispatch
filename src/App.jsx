@@ -1271,40 +1271,48 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               {[0, 1, 2, 3].map((slot) => {
                 const memberId = jobForm.crewMemberIds[slot];
                 const member = memberId ? members.find(m => m.id === memberId) : null;
-                const isOpen = crewPickerSlot === slot;
                 return (
-                  <div key={slot} style={{ flex: 1, position: "relative" }}>
-                    <button onClick={() => setCrewPickerSlot(isOpen ? null : slot)} style={{ width: "100%", aspectRatio: "1", borderRadius: "10px", border: member ? "2px solid " + t.accent : "2px dashed " + t.border, background: member ? t.accentBg : t.bg, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px", fontFamily: "inherit", padding: "6px 2px" }}>
-                      {member ? (
-                        <>
-                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: t.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>{member.name[0]}</div>
-                          <div style={{ fontSize: 9, fontWeight: 700, color: t.accent, textAlign: "center", lineHeight: 1.2, wordBreak: "break-word" }}>{member.name.split(" ")[0]}</div>
-                        </>
-                      ) : (
-                        <div style={{ fontSize: 22, color: t.border, fontWeight: 300, lineHeight: 1 }}>+</div>
-                      )}
-                    </button>
-                    {isOpen && (
-                      <div style={{ position: "absolute", top: "100%", left: "50%", transform: "translateX(-50%)", zIndex: 100, background: "#fff", border: "1px solid " + t.border, borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", width: "200px", overflow: "hidden", marginTop: "4px" }}>
-                        {member && (
-                          <button onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[slot] = null; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px 14px", background: "#fef2f2", border: "none", borderBottom: "1px solid " + t.border, cursor: "pointer", fontSize: 12, color: "#dc2626", fontWeight: 700, textAlign: "left", fontFamily: "inherit" }}>✕ Remove</button>
-                        )}
-                        {members.filter(m => !jobForm.crewMemberIds.includes(m.id)).map(m => (
-                          <button key={m.id} onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[slot] = m.id; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid " + t.border, cursor: "pointer", fontSize: 13, color: t.text, fontWeight: 500, textAlign: "left", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "8px" }}>
-                            <div style={{ width: 24, height: 24, borderRadius: "50%", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11, flexShrink: 0 }}>{m.name[0]}</div>
-                            {m.name}
-                          </button>
-                        ))}
-                        {members.filter(m => !jobForm.crewMemberIds.includes(m.id)).length === 0 && !member && (
-                          <div style={{ padding: "12px 14px", fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>No crew available</div>
-                        )}
-                      </div>
+                  <button key={slot} onClick={() => setCrewPickerSlot(slot)} style={{ flex: 1, aspectRatio: "1", borderRadius: "10px", border: member ? "2px solid " + t.accent : "2px dashed " + t.border, background: member ? t.accentBg : t.bg, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px", fontFamily: "inherit", padding: "6px 2px" }}>
+                    {member ? (
+                      <>
+                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: t.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>{member.name[0]}</div>
+                        <div style={{ fontSize: 9, fontWeight: 700, color: t.accent, textAlign: "center", lineHeight: 1.2, wordBreak: "break-word" }}>{member.name.split(" ")[0]}</div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize: 22, color: t.border, fontWeight: 300, lineHeight: 1 }}>+</div>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
           </div>
+          {/* Crew picker — full-screen overlay rendered outside the form flow */}
+          {crewPickerSlot !== null && (
+            <div onClick={() => setCrewPickerSlot(null)} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "20px", width: "100%", maxWidth: "340px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>Slot {crewPickerSlot + 1} — Pick Crew</span>
+                  <button onClick={() => setCrewPickerSlot(null)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: t.textMuted, padding: "0 4px" }}>✕</button>
+                </div>
+                {jobForm.crewMemberIds[crewPickerSlot] && (
+                  <button onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[crewPickerSlot] = null; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px", borderRadius: "8px", background: "#fef2f2", border: "1px solid #fecaca", cursor: "pointer", fontSize: 13, color: "#dc2626", fontWeight: 700, fontFamily: "inherit", marginBottom: "12px" }}>
+                    ✕ Remove {members.find(m => m.id === jobForm.crewMemberIds[crewPickerSlot])?.name}
+                  </button>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  {members.filter(m => !jobForm.crewMemberIds.includes(m.id)).map(m => (
+                    <button key={m.id} onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[crewPickerSlot] = m.id; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ padding: "14px 10px", borderRadius: "10px", border: "1px solid " + t.border, background: t.bg, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{m.name[0]}</div>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>{m.name}</span>
+                    </button>
+                  ))}
+                </div>
+                {members.filter(m => !jobForm.crewMemberIds.includes(m.id)).length === 0 && (
+                  <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", padding: "12px 0" }}>All crew members assigned</div>
+                )}
+              </div>
+            </div>
+          )}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
             <input type="date" value={jobForm.date} onChange={(e) => setJobForm({ ...jobForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
