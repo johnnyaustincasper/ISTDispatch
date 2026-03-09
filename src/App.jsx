@@ -813,7 +813,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const [ticketFilter, setTicketFilter] = useState("active");
   const [ticketTypeTab, setTicketTypeTab] = useState("equipment");
   const [editingJob, setEditingJob] = useState(null);
-  const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", date: "", notes: "", jobCategory: "" });
+  const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", crewMemberIds: [null,null,null,null], date: "", notes: "", jobCategory: "" });
+  const [editCrewPickerSlot, setEditCrewPickerSlot] = useState(null);
   const [truckFilter, setTruckFilter] = useState(null);
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
   const [pmJob, setPmJob] = useState(null);
@@ -855,7 +856,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
     onReorderTruck(b.id, a.order ?? idx);
   };
   const handleTicketUpdate = () => { onUpdateTicket(activeTicket.id, { status: ticketStatus, adminNote: ticketNote }); onLogAction("Updated ticket for " + activeTicket.truckName + " to " + ticketStatus); setActiveTicket(null); setTicketStatus("acknowledged"); setTicketNote(""); };
-  const openEditJob = (job) => { setEditingJob(job); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", date: job.date, notes: job.notes || "", jobCategory: job.jobCategory || "" }); };
+  const openEditJob = (job) => { setEditingJob(job); setEditCrewPickerSlot(null); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", crewMemberIds: job.crewMemberIds?.length === 4 ? job.crewMemberIds : [null,null,null,null], date: job.date, notes: job.notes || "", jobCategory: job.jobCategory || "" }); };
   const handleSaveEdit = () => { onEditJob(editingJob.id, { ...editForm }); onLogAction("Edited job: " + editForm.address); setEditingJob(null); };
   const handleRemoveJob = (job) => { onDeleteJob(job.id); onLogAction("Removed job: " + job.address + " (" + job.type + ")"); };
   const handlePmSubmit = () => {
@@ -1387,7 +1388,45 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign to Crew" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
+          <Select label="Assign Truck" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <div style={{ marginBottom: "16px" }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "10px" }}>Assign Crew Members</label>
+            <div style={{ display: "flex", gap: "8px" }}>
+              {[0,1,2,3].map((slot) => {
+                const memberId = editForm.crewMemberIds[slot];
+                const member = memberId ? members.find(m => m.id === memberId) : null;
+                return (
+                  <button key={slot} onClick={() => setEditCrewPickerSlot(slot)} style={{ flex: 1, aspectRatio: "1", borderRadius: "10px", border: member ? "2px solid " + t.accent : "2px dashed " + t.border, background: member ? t.accentBg : t.bg, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px", fontFamily: "inherit", padding: "6px 2px" }}>
+                    {member ? (<><div style={{ width: 28, height: 28, borderRadius: "50%", background: t.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>{member.name[0]}</div><div style={{ fontSize: 9, fontWeight: 700, color: t.accent, textAlign: "center", lineHeight: 1.2, wordBreak: "break-word" }}>{member.name.split(" ")[0]}</div></>) : (<div style={{ fontSize: 22, color: t.border, fontWeight: 300, lineHeight: 1 }}>+</div>)}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          {editCrewPickerSlot !== null && (
+            <div onClick={() => setEditCrewPickerSlot(null)} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
+              <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "20px", width: "100%", maxWidth: "340px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+                  <span style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>Slot {editCrewPickerSlot + 1} — Pick Crew</span>
+                  <button onClick={() => setEditCrewPickerSlot(null)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: t.textMuted, padding: "0 4px" }}>✕</button>
+                </div>
+                {editForm.crewMemberIds[editCrewPickerSlot] && (
+                  <button onClick={() => { const ids = [...editForm.crewMemberIds]; ids[editCrewPickerSlot] = null; setEditForm({ ...editForm, crewMemberIds: ids }); setEditCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px", borderRadius: "8px", background: "#fef2f2", border: "1px solid #fecaca", cursor: "pointer", fontSize: 13, color: "#dc2626", fontWeight: 700, fontFamily: "inherit", marginBottom: "12px" }}>
+                    ✕ Remove {members.find(m => m.id === editForm.crewMemberIds[editCrewPickerSlot])?.name}
+                  </button>
+                )}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
+                  {members.filter(m => !editForm.crewMemberIds.includes(m.id)).map(m => (
+                    <button key={m.id} onClick={() => { const ids = [...editForm.crewMemberIds]; ids[editCrewPickerSlot] = m.id; setEditForm({ ...editForm, crewMemberIds: ids }); setEditCrewPickerSlot(null); }} style={{ padding: "14px 10px", borderRadius: "10px", border: "1px solid " + t.border, background: t.bg, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "10px" }}>
+                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{m.name[0]}</div>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>{m.name}</span>
+                    </button>
+                  ))}
+                </div>
+                {members.filter(m => !editForm.crewMemberIds.includes(m.id)).length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", padding: "12px 0" }}>All crew members assigned</div>}
+              </div>
+            </div>
+          )}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
             <input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
