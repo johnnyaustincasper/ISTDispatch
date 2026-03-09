@@ -798,13 +798,14 @@ function RosterView({ trucks }) {
   );
 }
 
-function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onLogout }) {
+function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
   const toggleJobExpand = (id) => setExpandedJobs(prev => ({ ...prev, [id]: !prev[id] }));
   const [showAddTruck, setShowAddTruck] = useState(false);
-  const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", date: todayStr(), notes: "", jobCategory: "" });
+  const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [null, null, null, null], date: todayStr(), notes: "", jobCategory: "" });
+  const [crewPickerSlot, setCrewPickerSlot] = useState(null); // index 0-3 of slot being picked
   const [truckForm, setTruckForm] = useState({ name: "", members: "" });
   const [activeTicket, setActiveTicket] = useState(null);
   const [ticketStatus, setTicketStatus] = useState("acknowledged");
@@ -842,7 +843,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const sortedTrucks = [...trucks].sort(orderSort);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
-  const handleAddJob = () => { onAddJob({ ...jobForm }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ")"); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", date: todayStr(), notes: "", jobCategory: "" }); setShowAddJob(false); };
+  const handleAddJob = () => { onAddJob({ ...jobForm }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ")"); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [null, null, null, null], date: todayStr(), notes: "", jobCategory: "" }); setCrewPickerSlot(null); setShowAddJob(false); };
   const handleAddTruck = () => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, order: maxOrder + 1 }); onLogAction("Added crew: " + truckForm.name); setTruckForm({ name: "", members: "" }); setShowAddTruck(false); };
   const handleMoveTruck = (truckId, direction) => {
     const idx = sortedTrucks.findIndex((tr) => tr.id === truckId);
@@ -1263,7 +1264,47 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} />
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign to Crew" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
+          {/* Assign Crew Members — 4 slots */}
+          <div style={{ marginBottom: "16px" }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "10px" }}>Assign Crew Members</label>
+            <div style={{ display: "flex", gap: "8px" }}>
+              {[0, 1, 2, 3].map((slot) => {
+                const memberId = jobForm.crewMemberIds[slot];
+                const member = memberId ? members.find(m => m.id === memberId) : null;
+                const isOpen = crewPickerSlot === slot;
+                return (
+                  <div key={slot} style={{ flex: 1, position: "relative" }}>
+                    <button onClick={() => setCrewPickerSlot(isOpen ? null : slot)} style={{ width: "100%", aspectRatio: "1", borderRadius: "10px", border: member ? "2px solid " + t.accent : "2px dashed " + t.border, background: member ? t.accentBg : t.bg, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px", fontFamily: "inherit", padding: "6px 2px" }}>
+                      {member ? (
+                        <>
+                          <div style={{ width: 28, height: 28, borderRadius: "50%", background: t.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>{member.name[0]}</div>
+                          <div style={{ fontSize: 9, fontWeight: 700, color: t.accent, textAlign: "center", lineHeight: 1.2, wordBreak: "break-word" }}>{member.name.split(" ")[0]}</div>
+                        </>
+                      ) : (
+                        <div style={{ fontSize: 22, color: t.border, fontWeight: 300, lineHeight: 1 }}>+</div>
+                      )}
+                    </button>
+                    {isOpen && (
+                      <div style={{ position: "absolute", top: "100%", left: 0, zIndex: 100, background: "#fff", border: "1px solid " + t.border, borderRadius: "10px", boxShadow: "0 8px 24px rgba(0,0,0,0.15)", minWidth: "140px", overflow: "hidden", marginTop: "4px" }}>
+                        {member && (
+                          <button onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[slot] = null; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px 14px", background: "#fef2f2", border: "none", borderBottom: "1px solid " + t.border, cursor: "pointer", fontSize: 12, color: "#dc2626", fontWeight: 700, textAlign: "left", fontFamily: "inherit" }}>✕ Remove</button>
+                        )}
+                        {members.filter(m => !jobForm.crewMemberIds.includes(m.id)).map(m => (
+                          <button key={m.id} onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[slot] = m.id; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px 14px", background: "none", border: "none", borderBottom: "1px solid " + t.border, cursor: "pointer", fontSize: 13, color: t.text, fontWeight: 500, textAlign: "left", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "8px" }}>
+                            <div style={{ width: 24, height: 24, borderRadius: "50%", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 11, flexShrink: 0 }}>{m.name[0]}</div>
+                            {m.name}
+                          </button>
+                        ))}
+                        {members.filter(m => !jobForm.crewMemberIds.includes(m.id)).length === 0 && !member && (
+                          <div style={{ padding: "12px 14px", fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>No crew available</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
             <input type="date" value={jobForm.date} onChange={(e) => setJobForm({ ...jobForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
@@ -1763,6 +1804,6 @@ export default function App() {
     );
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} jobs={jobs} updates={updates} tickets={tickets} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onLogout={() => { setAdminName(null); setRole(null); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
 }
