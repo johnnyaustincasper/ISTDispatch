@@ -971,24 +971,31 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               const displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
               if (displayJobs.length === 0) return <EmptyState text={showUncheckedOnly ? "All jobs have been checked." : "No active jobs."} />;
               const unassigned = displayJobs.filter((j) => !j.truckId);
-              const crewGroups = sortedTrucks.filter((tr) => !truckFilter || tr.id === truckFilter).map((tr) => ({ crew: tr, jobs: displayJobs.filter((j) => j.truckId === tr.id) })).filter((g) => g.jobs.length > 0);
-              if (unassigned.length > 0) crewGroups.push({ crew: { id: "_unassigned", name: "Unassigned" }, jobs: unassigned });
+              // Group jobs by their assigned crew member combo (sorted IDs joined as key)
+              const crewGroupMap = {};
+              displayJobs.forEach((j) => {
+                const ids = (j.crewMemberIds || []).filter(Boolean).sort();
+                const key = ids.length > 0 ? ids.join(",") : "_unassigned";
+                if (!crewGroupMap[key]) {
+                  const names = ids.map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+                  const truck = trucks.find(tr => tr.id === j.truckId);
+                  crewGroupMap[key] = { key, names, truckLabel: truck ? (truck.members || truck.name) : null, jobs: [] };
+                }
+                crewGroupMap[key].jobs.push(j);
+              });
+              const crewGroups = Object.values(crewGroupMap).sort((a, b) => {
+                if (a.key === "_unassigned") return 1;
+                if (b.key === "_unassigned") return -1;
+                return (a.names[0] || "").localeCompare(b.names[0] || "");
+              }).filter((g) => !truckFilter || g.jobs.some(j => j.truckId === truckFilter));
               return crewGroups.map((group) => (
-                <div key={group.crew.id} style={{ marginBottom: "20px" }}>
+                <div key={group.key} style={{ marginBottom: "20px" }}>
                   {(() => {
-                    // Collect all unique crew member names assigned across jobs in this group
-                    const assignedNames = [];
-                    group.jobs.forEach(j => {
-                      (j.crewMemberIds || []).forEach(id => {
-                        if (id) { const m = members.find(m => m.id === id); if (m && !assignedNames.includes(m.name)) assignedNames.push(m.name); }
-                      });
-                    });
-                    const headerName = assignedNames.length > 0 ? assignedNames.join(" and ") : group.crew.name;
-                    const truckLabel = group.crew.members || group.crew.name;
+                    const headerName = group.names.length > 0 ? group.names.join(" and ") : "Unassigned";
                     return (
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
                         <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{headerName}</div>
-                        {group.crew.id !== "_unassigned" && <span style={{ fontSize: "12px", color: t.textMuted }}>— {truckLabel}</span>}
+                        {group.truckLabel && <span style={{ fontSize: "12px", color: t.textMuted }}>— {group.truckLabel}</span>}
                         <Badge>{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
                       </div>
                     );
