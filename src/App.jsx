@@ -1488,34 +1488,62 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         </Modal>
       )}
 
-      {calDayView && (
-        <Modal title={(() => { const d = new Date(calDayView.dateStr + "T12:00:00"); return d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }); })()} onClose={() => setCalDayView(null)}>
-          {calDayView.jobs.map((j) => {
-            const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-            const statusObj = lat ? STATUS_OPTIONS.find((s) => s.value === lat.status) : STATUS_OPTIONS[0];
-            const assignedNames = (j.crewMemberIds || []).filter(Boolean).map(id => members.find(m => m.id === id)?.name).filter(Boolean);
-            const truck = trucks.find(tr => tr.id === j.truckId);
-            return (
-              <div key={j.id} onClick={() => { setCalViewJob(j); setCalDayView(null); }} style={{ padding: "12px 14px", borderRadius: "10px", background: t.bg, border: "1px solid " + t.border, marginBottom: "10px", cursor: "pointer" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 700, fontSize: "14px", color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.builder || "No Customer"}</div>
-                    <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.address}</div>
-                    {assignedNames.length > 0 && <div style={{ fontSize: "11px", color: t.accent, marginTop: "4px", fontWeight: 600 }}>👷 {assignedNames.join(", ")}</div>}
-                    {truck && <div style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px" }}>🚛 {truck.members || truck.name}</div>}
+      {calDayView && (() => {
+        const typeConfig = {
+          "Foam":       { color: "#f97316", bg: "#fff7ed", border: "#fed7aa", emoji: "🔥" },
+          "Fiberglass": { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", emoji: "🧊" },
+          "Removal":    { color: "#8b5cf6", bg: "#f5f3ff", border: "#ddd6fe", emoji: "🗑" },
+        };
+        const grouped = {};
+        calDayView.jobs.forEach(j => {
+          const type = j.type || "Other";
+          if (!grouped[type]) grouped[type] = [];
+          grouped[type].push(j);
+        });
+        const typeOrder = ["Foam", "Fiberglass", "Removal"];
+        const sortedTypes = [...typeOrder.filter(t => grouped[t]), ...Object.keys(grouped).filter(t => !typeOrder.includes(t))];
+        const dayLabel = new Date(calDayView.dateStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+        return (
+          <Modal title={dayLabel} onClose={() => setCalDayView(null)}>
+            {sortedTypes.map(type => {
+              const cfg = typeConfig[type] || { color: t.accent, bg: t.bg, border: t.border, emoji: "📋" };
+              return (
+                <div key={type} style={{ marginBottom: "16px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 10px", borderRadius: "8px", background: cfg.bg, border: `1px solid ${cfg.border}`, marginBottom: "8px" }}>
+                    <span style={{ fontSize: "14px" }}>{cfg.emoji}</span>
+                    <span style={{ fontSize: "13px", fontWeight: 800, color: cfg.color }}>{type}</span>
+                    <span style={{ marginLeft: "auto", fontSize: "11px", fontWeight: 700, color: cfg.color, background: cfg.border, padding: "2px 8px", borderRadius: "10px" }}>{grouped[type].length} job{grouped[type].length !== 1 ? "s" : ""}</span>
                   </div>
-                  <div style={{ flexShrink: 0, textAlign: "right" }}>
-                    {j.jobCategory && <div style={{ fontSize: "11px", fontWeight: 700, color: j.jobCategory === "Retro" ? "#15803d" : "#dc2626", marginBottom: "4px" }}>{j.jobCategory}</div>}
-                    <div style={{ fontSize: "11px", fontWeight: 600, color: statusObj?.color || t.textMuted }}>{statusObj?.label || "Not Started"}</div>
-                    <div style={{ fontSize: "10px", color: t.textMuted, marginTop: "3px" }}>AM: {j.jobCheckedAM || "No"} · PM: {j.jobCheckedPM || "No"}</div>
-                  </div>
+                  {grouped[type].map(j => {
+                    const lat = updates.filter(u => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+                    const statusObj = lat ? STATUS_OPTIONS.find(s => s.value === lat.status) : STATUS_OPTIONS[0];
+                    const assignedNames = (j.crewMemberIds || []).filter(Boolean).map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+                    const truck = trucks.find(tr => tr.id === j.truckId);
+                    return (
+                      <div key={j.id} onClick={() => { setCalViewJob(j); setCalDayView(null); }} style={{ padding: "10px 12px", borderRadius: "8px", background: "#fff", border: "1px solid " + t.border, marginBottom: "6px", cursor: "pointer", borderLeft: `3px solid ${cfg.color}` }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontWeight: 700, fontSize: "13px", color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.builder || "No Customer"}</div>
+                            <div style={{ fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.address}</div>
+                            {assignedNames.length > 0 && <div style={{ fontSize: "11px", color: t.accent, fontWeight: 600, marginTop: "2px" }}>👷 {assignedNames.join(", ")}</div>}
+                            {truck && <div style={{ fontSize: "10px", color: t.textMuted }}>🚛 {truck.members || truck.name}</div>}
+                          </div>
+                          <div style={{ flexShrink: 0, textAlign: "right" }}>
+                            {j.jobCategory && <div style={{ fontSize: "10px", fontWeight: 700, color: j.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{j.jobCategory}</div>}
+                            <div style={{ fontSize: "11px", fontWeight: 600, color: statusObj?.color || t.textMuted }}>{statusObj?.label || "Not Started"}</div>
+                            <div style={{ fontSize: "10px", color: t.textMuted }}>AM: {j.jobCheckedAM || "No"} · PM: {j.jobCheckedPM || "No"}</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-              </div>
-            );
-          })}
-          <Button variant="secondary" onClick={() => setCalDayView(null)} style={{ width: "100%", marginTop: "4px" }}>Close</Button>
-        </Modal>
-      )}
+              );
+            })}
+            <Button variant="secondary" onClick={() => setCalDayView(null)} style={{ width: "100%", marginTop: "4px" }}>Close</Button>
+          </Modal>
+        );
+      })()}
 
       {calViewJob && (() => {
         const crew = trucks.find((tr) => tr.id === calViewJob.truckId);
