@@ -894,19 +894,16 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
     const ds = calYear + "-" + String(calMonth + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
     const todayStr = new Date().toISOString().slice(0, 10);
     return jobs.filter((j) => {
-      if (!j.date) return false;
-      // Job starts on or before this day
-      if (j.date > ds) return false;
-      // Find completion date from updates
-      const completedUpdate = updates.filter((u) => u.jobId === j.id && u.status === "completed").sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp))[0];
+      const jobUpdates = updates.filter(u => u.jobId === j.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      // Must have at least one in_progress or completed update to appear on calendar
+      const startedUpdate = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
+      if (!startedUpdate) return false;
+      const startedDate = startedUpdate.timestamp.slice(0, 10);
+      const completedUpdate = jobUpdates.find(u => u.status === "completed");
       const completedDate = completedUpdate ? completedUpdate.timestamp.slice(0, 10) : null;
-      if (completedDate) {
-        // Show through the day it was completed
-        return ds <= completedDate;
-      } else {
-        // Not completed — show through today (don't show on future days)
-        return ds <= todayStr;
-      }
+      if (ds < startedDate) return false;
+      if (completedDate) return ds <= completedDate;
+      return ds <= todayStr;
     });
   };
   const todayDay = new Date().getDate();
