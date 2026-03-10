@@ -154,7 +154,7 @@ function EmptyState({ text, sub }) {
 
 function RoleSelect({ onSelect }) {
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "10vh 20px 40px" }}>
+    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
       <div style={{ textAlign: "center", marginBottom: "40px" }}>
         <div style={{ fontSize: "14px", fontWeight: 600, letterSpacing: "2px", textTransform: "uppercase", color: t.accent }}>Insulation Services of Tulsa</div>
         <div style={{ fontSize: "32px", fontWeight: 700, color: t.text, marginTop: "6px" }}>IST Dispatch</div>
@@ -226,7 +226,7 @@ function AdminLogin({ onLogin, onBack }) {
 
   if (selected && mode === "enter") {
     return (
-      <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "10vh 20px 40px" }}>
+      <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
         <div style={{ maxWidth: "340px", width: "100%" }}>
           <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
@@ -256,7 +256,7 @@ function AdminLogin({ onLogin, onBack }) {
 
   if (selected && mode === "create") {
     return (
-      <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "10vh 20px 40px" }}>
+      <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
         <div style={{ maxWidth: "340px", width: "100%" }}>
           <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
@@ -294,7 +294,7 @@ function AdminLogin({ onLogin, onBack }) {
   }
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "10vh 20px 40px" }}>
+    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
       <div style={{ maxWidth: "380px", width: "100%" }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         <h1 style={{ fontSize: "22px", fontWeight: 600, color: t.text, margin: "0 0 6px" }}>Office Login</h1>
@@ -405,7 +405,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   const subtitle = step === "pick" ? "Select your name" : step === "setup" ? "You'll use this every time" : step === "confirm" ? "Enter your PIN again" : step === "email" ? "Add your email for job alerts (optional)" : "Enter your PIN";
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "10vh 20px 40px" }}>
+    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
       <div style={{ maxWidth: "380px", width: "100%" }}>
         <button onClick={onBack} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         <h1 style={{ fontSize: "22px", fontWeight: 600, color: t.text, margin: "0 0 6px" }}>{title}</h1>
@@ -530,8 +530,8 @@ function CrewDashboard({ truck, crewName, jobs, updates, tickets, onSubmitUpdate
   const openTicketCount = myTickets.filter((tk) => tk.status !== "resolved").length;
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg }}>
-      <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+    <div style={{ minHeight: "100dvh", background: t.bg }}>
+      <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>IST Dispatch</div>
@@ -930,9 +930,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   ];
 
   return (
-    <div style={{ minHeight: "100vh", background: t.bg, paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Top header — title + logout only */}
-      <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+      <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "900px", margin: "0 auto" }}>
           <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg">
             <rect width="360" height="100" fill="#0f172a" rx="8"/>
@@ -1933,7 +1933,7 @@ export default function App() {
   if (role === "crew" && crewSession) {
     const truck = trucks.find((tr) => tr.id === crewSession.truckId) || null;
     if (!truck) return (
-      <div style={{ minHeight: "100vh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", fontFamily: "inherit" }}>
+      <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", fontFamily: "inherit" }}>
         <div style={{ maxWidth: 360, textAlign: "center" }}>
           <div style={{ fontSize: 32, marginBottom: 16 }}>🚛</div>
           <div style={{ fontSize: 20, fontWeight: 700, color: t.text, marginBottom: 8 }}>Not Assigned to a Truck</div>
