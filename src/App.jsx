@@ -32,14 +32,12 @@ const INVENTORY_ITEMS = [
   { id: "cc_b",       name: "Closed Cell B",     unit: "bbl",   category: "Foam" },
   // R11
   { id: "r11_15_8_t", name: "R11 x 15 x 8",     unit: "tubes", category: "R11" },
-  { id: "r11_24_8_t", name: "R11 x 24 x 8",     unit: "tubes", category: "R11" },
   // R13
   { id: "r13_15_8_t", name: "R13 x 15 x 8",     unit: "tubes", category: "R13" },
   { id: "r13_15_9_t", name: "R13 x 15 x 9",     unit: "tubes", category: "R13" },
   { id: "r13_24_8_t", name: "R13 x 24 x 8",     unit: "tubes", category: "R13" },
   // R19
   { id: "r19_15_8_t", name: "R19 x 15 x 8",     unit: "tubes", category: "R19" },
-  { id: "r19_15_9_t", name: "R19 x 15 x 9",     unit: "tubes", category: "R19" },
   { id: "r19_19_8_t", name: "R19 x 19 x 8",     unit: "tubes", category: "R19" },
   { id: "r19_24_8_t", name: "R19 x 24 x 8",     unit: "tubes", category: "R19" },
   // R30
@@ -1800,10 +1798,15 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               })}
             </div>
 
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, display: "block", marginBottom: 4 }}>Move Job Date</label>
+              <input type="date" defaultValue={calViewJob.date} onChange={async (e) => { if (e.target.value) { await onEditJob(calViewJob.id, { ...calViewJob, date: e.target.value }); setCalViewJob(null); }}} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+            </div>
             <div style={{ display: "flex", gap: "10px" }}>
               <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1 }}>Close</Button>
               <Button onClick={() => { setPmJob(calViewJob); setPmCheckedAM(calViewJob.jobCheckedAM || "No"); setPmCheckedPM(calViewJob.jobCheckedPM || "No"); setCalViewJob(null); }} style={{ flex: 1 }}>PM Note</Button>
-              <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Edit Job</Button>
+              <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Edit</Button>
+              <Button variant="danger" onClick={async () => { if (confirm("Delete this job?")) { await onDeleteJob(calViewJob.id); setCalViewJob(null); }}} style={{ flex: 1 }}>Delete</Button>
             </div>
           </Modal>
         );
