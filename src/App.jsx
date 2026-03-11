@@ -659,7 +659,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18 }}>{materialCountJob.builder} — {materialCountJob.address?.split(",")[0]}</div>
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14, fontStyle: "italic" }}>Enter how much material you are returning to the warehouse. This adds back to inventory.</div>
               {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => {
-                const sortFn = (a,b) => { const base = s => s.name.replace(/ ?(MP|Tubes).*$/i,"").trim(); const ba=base(a),bb=base(b); if(ba!==bb) return ba.localeCompare(bb); return a.unit==="MP"||a.unit==="master packs"?-1:1; }; const catItems = INVENTORY_ITEMS.filter(i => i.category === cat).sort(sortFn);
+                const sortFn = (a,b) => { const isMP = s => s.unit==="MP"||s.unit==="master packs"; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,"").trim(); return base(a).localeCompare(base(b)); }; const catItems = INVENTORY_ITEMS.filter(i => i.category === cat).sort(sortFn);
                 const anyFilled = catItems.some(i => materialQtys[i.id] > 0);
                 return (
                   <div key={cat} style={{ marginBottom: 16 }}>
@@ -707,7 +707,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => (
                 <div key={cat} style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
-                  {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const base = s => s.name.replace(/ ?(MP|Tubes).*$/i,'').trim(); const ba=base(a),bb=base(b); if(ba!==bb) return ba.localeCompare(bb); return a.unit==='MP'||a.unit==='master packs'?-1:1; }).map(item => {
+                  {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); }).map(item => {
                     const warehouseQty = inventory.find(r => r.itemId === item.id)?.qty || 0;
                     return (
                       <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
@@ -1452,7 +1452,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                   {categories.map(cat => (
                     <>
                       <tr key={cat + "_h"} style={S.catRow}><td colSpan={3} style={S.catTd}>{cat}</td></tr>
-                      {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const base = s => s.name.replace(/ ?(MP|Tubes).*$/i,"").trim(); const ba=base(a),bb=base(b); if(ba!==bb) return ba.localeCompare(bb); return a.unit==="MP"||a.unit==="master packs"?-1:1; }).map(item => {
+                      {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const isMP = s => s.unit==="MP"||s.unit==="master packs"; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,"").trim(); return base(a).localeCompare(base(b)); }).map(item => {
                         const qty = getQty(item.id);
                         const low = qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
                         return (
