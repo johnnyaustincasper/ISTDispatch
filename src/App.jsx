@@ -1107,6 +1107,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               <button onClick={() => setShowOngoing(o => !o)} style={{ padding: "6px 12px", border: "1px solid " + (showOngoing ? t.accent : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showOngoing ? t.accentBg : "#fff", color: showOngoing ? t.accent : t.textMuted, position: "relative" }}>On-going Jobs{onHoldJobs.length > 0 && <span style={{ position: "absolute", top: -5, right: -5, background: t.accent, color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: "50%", width: 15, height: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>{onHoldJobs.length}</span>}</button>
               <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr() }); setShowAddJob(true); }}>+ Add Job</Button>
             </>} />
+            ); })()}
             {showOngoing && (
               <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: 14, marginBottom: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>On-going Jobs</div>
@@ -1130,7 +1131,6 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 }
               </div>
             )}
-            ); })()}
             {truckFilterName && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", padding: "8px 12px", background: t.accentBg, borderRadius: "6px", fontSize: "13px", color: t.accent, fontWeight: 500 }}>
                 Showing jobs for {truckFilterName}
