@@ -1368,85 +1368,55 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         )}
 
         {view === "inventory" && (() => {
+          const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
-          const qtyColor = (qty, low = 2) => qty === 0 ? "#ef4444" : qty <= low ? "#f59e0b" : "#15803d";
-          const qtyBg   = (qty, low = 2) => qty === 0 ? "#fee2e2" : qty <= low ? "#fef3c7" : "#dcfce7";
-
-          // Foam pair card — shows A + B side side-by-side
-          const FoamPair = ({ label, aId, bId }) => {
-            const aQty = getQty(aId); const bQty = getQty(bId);
-            return (
-              <Card style={{ marginBottom: 12 }}>
-                <div style={{ fontWeight: 800, fontSize: 14, color: t.text, marginBottom: 12 }}>{label}</div>
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-                  {[{ label: "A Side", id: aId, qty: aQty }, { label: "B Side", id: bId, qty: bQty }].map(side => (
-                    <div key={side.id} style={{ background: t.bg, borderRadius: 10, padding: "12px 10px", border: `2px solid ${qtyBg(side.qty)}`, textAlign: "center" }}>
-                      <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{side.label}</div>
-                      <div style={{ fontSize: 32, fontWeight: 900, color: qtyColor(side.qty), lineHeight: 1 }}>{side.qty}</div>
-                      <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 10 }}>barrels</div>
-                      {side.qty === 0 && <div style={{ fontSize: 10, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>OUT OF STOCK</div>}
-                      {side.qty > 0 && side.qty <= 2 && <div style={{ fontSize: 10, fontWeight: 800, color: "#f59e0b", marginBottom: 6 }}>LOW STOCK</div>}
-                      <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center" }}>
-                        <button onClick={() => onUpdateInventory(side.id, Math.max(0, side.qty - 1))} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + t.border, background: "#fff", fontSize: 18, cursor: "pointer", fontFamily: "inherit" }}>−</button>
-                        <button onClick={() => onUpdateInventory(side.id, side.qty + 1)} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + t.border, background: "#fff", fontSize: 18, cursor: "pointer", fontFamily: "inherit" }}>+</button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            );
-          };
-
-          // Compact table row for batts / blown / rockwool
-          const InvRow = ({ item }) => {
-            const qty = getQty(item.id);
-            return (
-              <div style={{ display: "flex", alignItems: "center", padding: "9px 0", borderBottom: "1px solid " + t.borderLight, gap: 8 }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</div>
-                  <div style={{ fontSize: 10, color: t.textMuted }}>{item.unit}</div>
-                </div>
-                {qty === 0 && <span style={{ fontSize: 9, fontWeight: 800, color: "#ef4444", background: "#fee2e2", padding: "2px 6px", borderRadius: 6, flexShrink: 0 }}>OUT</span>}
-                {qty > 0 && qty <= 2 && <span style={{ fontSize: 9, fontWeight: 800, color: "#f59e0b", background: "#fef3c7", padding: "2px 6px", borderRadius: 6, flexShrink: 0 }}>LOW</span>}
-                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                  <button onClick={() => onUpdateInventory(item.id, Math.max(0, qty - 1))} style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>−</button>
-                  <span style={{ minWidth: 26, textAlign: "center", fontWeight: 800, fontSize: 16, color: qtyColor(qty) }}>{qty}</span>
-                  <button onClick={() => onUpdateInventory(item.id, qty + 1)} style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>+</button>
-                </div>
-              </div>
-            );
-          };
-
-          const batts = INVENTORY_ITEMS.filter(i => i.category === "Fiberglass Batts");
-          const blown = INVENTORY_ITEMS.filter(i => i.category === "Blown");
-          const rockwool = INVENTORY_ITEMS.filter(i => i.category === "Rockwool");
-
+          const rowBg = (qty) => qty === 0 ? "#fff5f5" : qty <= 2 ? "#fffbeb" : "#fff";
+          const qtyColor = (qty) => qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
           return (
-            <div style={{ padding: "0 16px 32px" }}>
-              <SectionHeader title="Warehouse Inventory" right={<span style={{ fontSize: 11, color: t.textMuted }}>Updates live</span>} />
-
-              {/* ── FOAM — prominent pairs ── */}
-              <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>🔥 Spray Foam</div>
-              <FoamPair label="Open Cell Foam" aId="oc_a" bId="oc_b" />
-              <FoamPair label="Closed Cell Foam" aId="cc_a" bId="cc_b" />
-
-              {/* ── FIBERGLASS BATTS — compact table ── */}
-              <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, marginTop: 20, marginBottom: 4 }}>🧱 Fiberglass Batts</div>
-              <Card style={{ padding: "0 14px" }}>
-                {batts.map(item => <InvRow key={item.id} item={item} />)}
-              </Card>
-
-              {/* ── BLOWN ── */}
-              <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, marginTop: 20, marginBottom: 4 }}>💨 Blown</div>
-              <Card style={{ padding: "0 14px" }}>
-                {blown.map(item => <InvRow key={item.id} item={item} />)}
-              </Card>
-
-              {/* ── ROCKWOOL ── */}
-              <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, marginTop: 20, marginBottom: 4 }}>🪨 Rockwool</div>
-              <Card style={{ padding: "0 14px" }}>
-                {rockwool.map(item => <InvRow key={item.id} item={item} />)}
-              </Card>
+            <div style={{ padding: "0 0 32px" }}>
+              <div style={{ padding: "12px 16px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 17, fontWeight: 800, color: t.text }}>Warehouse Inventory</div>
+                <span style={{ fontSize: 11, color: t.textMuted }}>Live</span>
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ background: t.surface, borderBottom: "2px solid " + t.border }}>
+                      <th style={{ textAlign: "left", padding: "9px 16px", fontWeight: 700, color: t.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>Item</th>
+                      <th style={{ textAlign: "center", padding: "9px 10px", fontWeight: 700, color: t.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Unit</th>
+                      <th style={{ textAlign: "center", padding: "9px 10px", fontWeight: 700, color: t.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Qty</th>
+                      <th style={{ textAlign: "center", padding: "9px 16px 9px 4px", fontWeight: 700, color: t.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Adjust</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {categories.map(cat => (
+                      <>
+                        <tr key={cat + "_header"}>
+                          <td colSpan={4} style={{ padding: "10px 16px 4px", fontSize: 10, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, background: t.bg, borderBottom: "1px solid " + t.border }}>{cat}</td>
+                        </tr>
+                        {INVENTORY_ITEMS.filter(i => i.category === cat).map((item, idx, arr) => {
+                          const qty = getQty(item.id);
+                          return (
+                            <tr key={item.id} style={{ background: rowBg(qty), borderBottom: idx === arr.length - 1 ? "2px solid " + t.border : "1px solid " + t.borderLight }}>
+                              <td style={{ padding: "10px 16px", color: t.text, fontWeight: 500 }}>{item.name}</td>
+                              <td style={{ padding: "10px", textAlign: "center", color: t.textMuted, fontSize: 12, whiteSpace: "nowrap" }}>{item.unit}</td>
+                              <td style={{ padding: "10px", textAlign: "center", fontWeight: 800, fontSize: 16, color: qtyColor(qty), whiteSpace: "nowrap" }}>
+                                {qty}
+                                {qty === 0 && <div style={{ fontSize: 9, fontWeight: 700, color: "#ef4444" }}>OUT</div>}
+                                {qty > 0 && qty <= 2 && <div style={{ fontSize: 9, fontWeight: 700, color: "#d97706" }}>LOW</div>}
+                              </td>
+                              <td style={{ padding: "8px 16px 8px 4px", textAlign: "center", whiteSpace: "nowrap" }}>
+                                <button onClick={() => onUpdateInventory(item.id, Math.max(0, qty - 1))} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + t.border, background: "#fff", fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginRight: 6 }}>−</button>
+                                <button onClick={() => onUpdateInventory(item.id, qty + 1)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + t.border, background: "#fff", fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
           );
         })()}
