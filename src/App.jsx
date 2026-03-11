@@ -46,7 +46,7 @@ const INVENTORY_ITEMS = [
   // Blown
   { id: "blown_fg",   name: "Blown Fiberglass",  unit: "bags",  category: "Blown" },
   { id: "blown_cel",  name: "Blown Cellulose",   unit: "bags",  category: "Blown" },
-  { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Blown" },
+  { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Lambswool" },
   // Rockwool
   { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool" },
   { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool" },
