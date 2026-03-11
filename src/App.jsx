@@ -575,7 +575,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         </div>
         <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
           <button style={tabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
-          <button style={tabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>🚛 Truck</button>
+          <button style={tabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>Truck</button>
           <button style={tabStyle(crewView === "tickets")} onClick={() => setCrewView("tickets")}>
             Tickets
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
@@ -665,7 +665,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 setLoadTruckMode(false);
                 setLoadQtys({});
               }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: mode === "load" ? "#1e40af" : "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
-                {mode === "load" ? "✅ Confirm Load Out" : "✅ Confirm Return"}
+                {mode === "load" ? "Confirm Load Out" : "Confirm Return"}
               </button>
               <button onClick={() => { setLoadTruckMode(false); setLoadQtys({}); }} style={{ width: "100%", padding: "12px", borderRadius: 12, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
                 Cancel
@@ -674,14 +674,14 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           );
           return (
             <div style={{ padding: "0 16px 32px" }}>
-              <SectionHeader title="🚛 Truck" />
+              <SectionHeader title="Truck" />
               {!loadTruckMode ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <button onClick={() => { setLoadTruckMode("load"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                    🚛 Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse — deducts inventory</div>
+                    Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse — deducts inventory</div>
                   </button>
                   <button onClick={() => { setLoadTruckMode("return"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                    📦 Return Material<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Return unused material to warehouse — adds to inventory</div>
+                    Return Material<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Return unused material to warehouse — adds to inventory</div>
                   </button>
                 </div>
               ) : (
@@ -697,7 +697,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
             {myTickets.length === 0 ? <EmptyState text="No tickets submitted yet." sub="Tap '+ Submit Ticket' to report an issue, request supplies, or request time off." /> : myTickets.map((ticket) => {
               const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
               const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
-              const typeLabel = ticket.ticketType === "inventory" ? "📦 Inventory" : ticket.ticketType === "timeoff" ? "🗓 Time Off" : "🔧 Equipment";
+              const typeLabel = ticket.ticketType === "inventory" ? "Inventory" : ticket.ticketType === "timeoff" ? "Time Off" : "Equipment";
               return (
                 <Card key={ticket.id} style={{ border: ticket.status === "open" && !ticket.adminNote ? "3px solid #ef4444" : "1px solid #e5e7eb" }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
@@ -737,7 +737,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           <div style={{ marginBottom: "14px" }}>
             <div style={{ fontSize: "13px", fontWeight: 600, color: t.text, marginBottom: "8px" }}>Ticket Type</div>
             <div style={{ display: "flex", gap: "8px" }}>
-              {[{ value: "equipment", label: "🔧 Equipment" }, { value: "inventory", label: "📦 Inventory" }, { value: "timeoff", label: "🗓 Time Off" }].map((opt) => (
+              {[{ value: "equipment", label: "Equipment" }, { value: "inventory", label: "Inventory" }, { value: "timeoff", label: "Time Off" }].map((opt) => (
                 <button key={opt.value} onClick={() => setTicketType(opt.value)} style={{ flex: 1, padding: "10px 6px", border: ticketType === opt.value ? "2px solid " + t.accent : "1px solid " + t.border, borderRadius: "8px", background: ticketType === opt.value ? t.accentBg : t.surface, color: ticketType === opt.value ? t.accent : t.textSecondary, fontWeight: 600, fontSize: "12px", cursor: "pointer", fontFamily: "inherit" }}>{opt.label}</button>
               ))}
             </div>
@@ -863,7 +863,7 @@ function RosterView({ trucks }) {
                   <div>
                     <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{member.name}</div>
                     <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                      {member.email ? `📧 ${member.email}` : "No email yet"}
+                      {member.email ? member.email : "No email yet"}
                     </div>
                     {member.pin ? (
                       <div style={{ fontSize: 11, color: t.green, marginTop: 2 }}>✓ PIN set</div>
@@ -1150,7 +1150,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                         {/* Expanded detail */}
                         {isExpanded && (
                           <>
-                            {job.notes && <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "10px", fontStyle: "italic", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>📝 {job.notes}</div>}
+                            {job.notes && <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "10px", fontStyle: "italic", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>{job.notes}</div>}
 
                             <div style={{ display: "flex", gap: "16px", marginTop: "12px", flexWrap: "wrap" }}>
                               <div style={{ flex: "1 1 45%", minWidth: "200px" }}>
@@ -1251,7 +1251,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                         ))}
                         {dayTimeOff.map((tk) => (
                           <div key={tk.id} style={{ fontSize: "9px", padding: "2px 3px", marginBottom: "2px", borderRadius: "3px", background: "#f3e8ff", color: "#7c3aed", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", borderLeft: "2px solid #8b5cf6", cursor: "pointer", display: "block", maxWidth: "100%" }} title={"Time Off: " + tk.submittedBy} onClick={() => { setTicketTypeTab("timeoff"); setView("tickets"); }}>
-                            🗓 {tk.submittedBy}
+                            {tk.submittedBy}
                           </div>
                         ))}
                       </>
@@ -1278,9 +1278,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
             {/* Ticket type tab bar */}
             {(() => {
               const typeTabs = [
-                { key: "equipment", emoji: "🔧", label: "Equipment", accent: t.accent },
-                { key: "inventory", emoji: "📦", label: "Inventory", accent: "#f59e0b" },
-                { key: "timeoff",   emoji: "🗓",  label: "Time Off",  accent: "#8b5cf6" },
+                { key: "equipment", emoji: "", label: "Equipment", accent: t.accent },
+                { key: "inventory", emoji: "", label: "Inventory", accent: "#f59e0b" },
+                { key: "timeoff",   emoji: "",  label: "Time Off",  accent: "#8b5cf6" },
               ];
               return (
                 <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
@@ -1642,9 +1642,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
       {calDayView && (() => {
         const typeConfig = {
-          "Foam":       { color: "#f97316", bg: "#fff7ed", border: "#fed7aa", emoji: "🔥" },
-          "Fiberglass": { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", emoji: "🧊" },
-          "Removal":    { color: "#8b5cf6", bg: "#f5f3ff", border: "#ddd6fe", emoji: "🗑" },
+          "Foam":       { color: "#f97316", bg: "#fff7ed", border: "#fed7aa", emoji: "" },
+          "Fiberglass": { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", emoji: "" },
+          "Removal":    { color: "#8b5cf6", bg: "#f5f3ff", border: "#ddd6fe", emoji: "" },
         };
         const grouped = {};
         calDayView.jobs.forEach(j => {
@@ -1658,7 +1658,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         return (
           <Modal title={dayLabel} onClose={() => setCalDayView(null)}>
             {sortedTypes.map(type => {
-              const cfg = typeConfig[type] || { color: t.accent, bg: t.bg, border: t.border, emoji: "📋" };
+              const cfg = typeConfig[type] || { color: t.accent, bg: t.bg, border: t.border, emoji: "" };
               return (
                 <div key={type} style={{ marginBottom: "16px" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "6px", padding: "6px 10px", borderRadius: "8px", background: cfg.bg, border: `1px solid ${cfg.border}`, marginBottom: "8px" }}>
@@ -1677,8 +1677,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 700, fontSize: "13px", color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.builder || "No Customer"}</div>
                             <div style={{ fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.address}</div>
-                            {assignedNames.length > 0 && <div style={{ fontSize: "11px", color: t.accent, fontWeight: 600, marginTop: "2px" }}>👷 {assignedNames.join(", ")}</div>}
-                            {truck && <div style={{ fontSize: "10px", color: t.textMuted }}>🚛 {truck.members || truck.name}</div>}
+                            {assignedNames.length > 0 && <div style={{ fontSize: "11px", color: t.accent, fontWeight: 600, marginTop: "2px" }}>{assignedNames.join(", ")}</div>}
+                            {truck && <div style={{ fontSize: "10px", color: t.textMuted }}>{truck.members || truck.name}</div>}
                           </div>
                           <div style={{ flexShrink: 0, textAlign: "right" }}>
                             {j.jobCategory && <div style={{ fontSize: "10px", fontWeight: 700, color: j.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{j.jobCategory}</div>}
@@ -2114,7 +2114,7 @@ export default function App() {
     if (!truck) return (
       <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "40px 20px", fontFamily: "inherit" }}>
         <div style={{ maxWidth: 360, textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: 16 }}>🚛</div>
+          
           <div style={{ fontSize: 20, fontWeight: 700, color: t.text, marginBottom: 8 }}>Not Assigned to a Truck</div>
           <div style={{ fontSize: 14, color: t.textMuted, marginBottom: 24 }}>Ask the office to assign you to a crew in the Roster tab.</div>
           <button onClick={() => { setCrewSession(null); setRole(null); }} style={{ background: "none", border: "1px solid " + t.border, color: t.textMuted, padding: "10px 20px", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontSize: 14 }}>← Back</button>
