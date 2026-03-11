@@ -25,41 +25,43 @@ const STATUS_OPTIONS = [
 ];
 
 const INVENTORY_ITEMS = [
-  // ── Open Cell Foam ──
-  { id: "oc_a",  name: "Open Cell — A Side",  unit: "barrels", category: "Open Cell Foam" },
-  { id: "oc_b",  name: "Open Cell — B Side",  unit: "barrels", category: "Open Cell Foam" },
-  // ── Closed Cell Foam ──
-  { id: "cc_a",  name: "Closed Cell — A Side", unit: "barrels", category: "Closed Cell Foam" },
-  { id: "cc_b",  name: "Closed Cell — B Side", unit: "barrels", category: "Closed Cell Foam" },
-  // ── Fiberglass Batts — each SKU has master packs + loose tubes ──
-  { id: "r11_15_8_mp", name: "R11 x 15 x 8 — Master Packs", unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r11_15_8_t",  name: "R11 x 15 x 8 — Tubes",        unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r11_24_8_mp", name: "R11 x 24 x 8 — Master Packs", unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r11_24_8_t",  name: "R11 x 24 x 8 — Tubes",        unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r13_15_8_mp", name: "R13 x 15 x 8 — Master Packs", unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r13_15_8_t",  name: "R13 x 15 x 8 — Tubes",        unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r13_15_9_mp", name: "R13 x 15 x 9 — Master Packs", unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r13_15_9_t",  name: "R13 x 15 x 9 — Tubes",        unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r13_24_8_mp", name: "R13 x 24 x 8 — Master Packs", unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r13_24_8_t",  name: "R13 x 24 x 8 — Tubes",        unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r19_15_8_mp", name: "R19 x 15 x 8 — Master Packs", unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r19_15_8_t",  name: "R19 x 15 x 8 — Tubes",        unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r19_15_9_mp", name: "R19 x 15 x 9 — Master Packs", unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r19_15_9_t",  name: "R19 x 15 x 9 — Tubes",        unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r19_24_8_mp", name: "R19 x 24 x 8 — Master Packs", unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r19_24_8_t",  name: "R19 x 24 x 8 — Tubes",        unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r30_15_mp",   name: "R30 x 15 — Master Packs",      unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r30_15_t",    name: "R30 x 15 — Tubes",             unit: "tubes",        category: "Fiberglass Batts" },
-  { id: "r30_24_mp",   name: "R30 x 24 — Master Packs",      unit: "master packs", category: "Fiberglass Batts" },
-  { id: "r30_24_t",    name: "R30 x 24 — Tubes",             unit: "tubes",        category: "Fiberglass Batts" },
-  // ── Blown ──
+  // Foam
+  { id: "oc_a",        name: "Open Cell A",      unit: "bbl", category: "Foam" },
+  { id: "oc_b",        name: "Open Cell B",      unit: "bbl", category: "Foam" },
+  { id: "cc_a",        name: "Closed Cell A",    unit: "bbl", category: "Foam" },
+  { id: "cc_b",        name: "Closed Cell B",    unit: "bbl", category: "Foam" },
+  // R11
+  { id: "r11_15_8_mp", name: "R11 x 15 x 8  MP", unit: "MP",    category: "R11" },
+  { id: "r11_15_8_t",  name: "R11 x 15 x 8  Tubes", unit: "tubes", category: "R11" },
+  { id: "r11_24_8_mp", name: "R11 x 24 x 8  MP", unit: "MP",    category: "R11" },
+  { id: "r11_24_8_t",  name: "R11 x 24 x 8  Tubes", unit: "tubes", category: "R11" },
+  // R13
+  { id: "r13_15_8_mp", name: "R13 x 15 x 8  MP", unit: "MP",    category: "R13" },
+  { id: "r13_15_8_t",  name: "R13 x 15 x 8  Tubes", unit: "tubes", category: "R13" },
+  { id: "r13_15_9_mp", name: "R13 x 15 x 9  MP", unit: "MP",    category: "R13" },
+  { id: "r13_15_9_t",  name: "R13 x 15 x 9  Tubes", unit: "tubes", category: "R13" },
+  { id: "r13_24_8_mp", name: "R13 x 24 x 8  MP", unit: "MP",    category: "R13" },
+  { id: "r13_24_8_t",  name: "R13 x 24 x 8  Tubes", unit: "tubes", category: "R13" },
+  // R19
+  { id: "r19_15_8_mp", name: "R19 x 15 x 8  MP", unit: "MP",    category: "R19" },
+  { id: "r19_15_8_t",  name: "R19 x 15 x 8  Tubes", unit: "tubes", category: "R19" },
+  { id: "r19_15_9_mp", name: "R19 x 15 x 9  MP", unit: "MP",    category: "R19" },
+  { id: "r19_15_9_t",  name: "R19 x 15 x 9  Tubes", unit: "tubes", category: "R19" },
+  { id: "r19_24_8_mp", name: "R19 x 24 x 8  MP", unit: "MP",    category: "R19" },
+  { id: "r19_24_8_t",  name: "R19 x 24 x 8  Tubes", unit: "tubes", category: "R19" },
+  // R30
+  { id: "r30_15_mp",   name: "R30 x 15  MP",    unit: "MP",    category: "R30" },
+  { id: "r30_15_t",    name: "R30 x 15  Tubes", unit: "tubes", category: "R30" },
+  { id: "r30_24_mp",   name: "R30 x 24  MP",    unit: "MP",    category: "R30" },
+  { id: "r30_24_t",    name: "R30 x 24  Tubes", unit: "tubes", category: "R30" },
+  // Blown
   { id: "blown_fg",    name: "Blown Fiberglass", unit: "bags", category: "Blown" },
   { id: "blown_cel",   name: "Blown Cellulose",  unit: "bags", category: "Blown" },
-  // ── Rockwool — master packs + loose tubes ──
-  { id: "rw_4_mp", name: 'Rockwool 4" — Master Packs', unit: "master packs", category: "Rockwool" },
-  { id: "rw_4_t",  name: 'Rockwool 4" — Tubes',        unit: "tubes",        category: "Rockwool" },
-  { id: "rw_6_mp", name: 'Rockwool 6" — Master Packs', unit: "master packs", category: "Rockwool" },
-  { id: "rw_6_t",  name: 'Rockwool 6" — Tubes',        unit: "tubes",        category: "Rockwool" },
+  // Rockwool
+  { id: "rw_4_mp", name: 'Rockwool 4" MP',    unit: "MP",    category: "Rockwool" },
+  { id: "rw_4_t",  name: 'Rockwool 4" Tubes', unit: "tubes", category: "Rockwool" },
+  { id: "rw_6_mp", name: 'Rockwool 6" MP',    unit: "MP",    category: "Rockwool" },
+  { id: "rw_6_t",  name: 'Rockwool 6" Tubes', unit: "tubes", category: "Rockwool" },
 ];
 const TICKET_PRIORITIES = [
   { value: "low", label: "Low — Can Wait", color: "#1d4ed8", bg: "#dbeafe" },
@@ -1370,53 +1372,53 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         {view === "inventory" && (() => {
           const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
-          const rowBg = (qty) => qty === 0 ? "#fff5f5" : qty <= 2 ? "#fffbeb" : "#fff";
-          const qtyColor = (qty) => qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
+          const S = {
+            tbl: { width: "100%", borderCollapse: "collapse" },
+            catRow: { background: "#1e293b", color: "#fff" },
+            catTd: { padding: "5px 12px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1 },
+            th: { padding: "6px 8px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, background: t.surface, borderBottom: "1px solid " + t.border, textAlign: "left" },
+            thR: { padding: "6px 8px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, background: t.surface, borderBottom: "1px solid " + t.border, textAlign: "right" },
+            td: { padding: "5px 8px", fontSize: 13, color: t.text, borderBottom: "1px solid " + t.borderLight },
+            tdR: { padding: "5px 8px", fontSize: 13, fontWeight: 700, textAlign: "right", borderBottom: "1px solid " + t.borderLight },
+            btn: { width: 24, height: 24, borderRadius: 5, border: "1px solid " + t.border, background: t.bg, fontSize: 14, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 },
+          };
           return (
-            <div style={{ padding: "0 0 32px" }}>
-              <div style={{ padding: "12px 16px 8px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontSize: 17, fontWeight: 800, color: t.text }}>Warehouse Inventory</div>
-                <span style={{ fontSize: 11, color: t.textMuted }}>Live</span>
+            <div style={{ padding: "0 0 24px" }}>
+              <div style={{ padding: "10px 14px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 16, fontWeight: 800, color: t.text }}>Warehouse Inventory</div>
+                <span style={{ fontSize: 10, color: t.textMuted }}>Live</span>
               </div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-                  <thead>
-                    <tr style={{ background: t.surface, borderBottom: "2px solid " + t.border }}>
-                      <th style={{ textAlign: "left", padding: "9px 16px", fontWeight: 700, color: t.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5, whiteSpace: "nowrap" }}>Item</th>
-                      <th style={{ textAlign: "center", padding: "9px 10px", fontWeight: 700, color: t.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Unit</th>
-                      <th style={{ textAlign: "center", padding: "9px 10px", fontWeight: 700, color: t.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Qty</th>
-                      <th style={{ textAlign: "center", padding: "9px 16px 9px 4px", fontWeight: 700, color: t.textMuted, fontSize: 11, textTransform: "uppercase", letterSpacing: 0.5 }}>Adjust</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {categories.map(cat => (
-                      <>
-                        <tr key={cat + "_header"}>
-                          <td colSpan={4} style={{ padding: "10px 16px 4px", fontSize: 10, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, background: t.bg, borderBottom: "1px solid " + t.border }}>{cat}</td>
-                        </tr>
-                        {INVENTORY_ITEMS.filter(i => i.category === cat).map((item, idx, arr) => {
-                          const qty = getQty(item.id);
-                          return (
-                            <tr key={item.id} style={{ background: rowBg(qty), borderBottom: idx === arr.length - 1 ? "2px solid " + t.border : "1px solid " + t.borderLight }}>
-                              <td style={{ padding: "10px 16px", color: t.text, fontWeight: 500 }}>{item.name}</td>
-                              <td style={{ padding: "10px", textAlign: "center", color: t.textMuted, fontSize: 12, whiteSpace: "nowrap" }}>{item.unit}</td>
-                              <td style={{ padding: "10px", textAlign: "center", fontWeight: 800, fontSize: 16, color: qtyColor(qty), whiteSpace: "nowrap" }}>
-                                {qty}
-                                {qty === 0 && <div style={{ fontSize: 9, fontWeight: 700, color: "#ef4444" }}>OUT</div>}
-                                {qty > 0 && qty <= 2 && <div style={{ fontSize: 9, fontWeight: 700, color: "#d97706" }}>LOW</div>}
-                              </td>
-                              <td style={{ padding: "8px 16px 8px 4px", textAlign: "center", whiteSpace: "nowrap" }}>
-                                <button onClick={() => onUpdateInventory(item.id, Math.max(0, qty - 1))} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + t.border, background: "#fff", fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginRight: 6 }}>−</button>
-                                <button onClick={() => onUpdateInventory(item.id, qty + 1)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + t.border, background: "#fff", fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>+</button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <table style={S.tbl}>
+                <thead>
+                  <tr>
+                    <th style={S.th}>Material</th>
+                    <th style={{ ...S.thR, width: 60 }}>Qty</th>
+                    <th style={{ ...S.thR, width: 70 }}>±</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categories.map(cat => (
+                    <>
+                      <tr key={cat + "_h"} style={S.catRow}><td colSpan={3} style={S.catTd}>{cat}</td></tr>
+                      {INVENTORY_ITEMS.filter(i => i.category === cat).map(item => {
+                        const qty = getQty(item.id);
+                        const low = qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
+                        return (
+                          <tr key={item.id} style={{ background: qty === 0 ? "#fff5f5" : qty <= 2 ? "#fffbeb" : "#fff" }}>
+                            <td style={S.td}>{item.name} <span style={{ fontSize: 10, color: t.textMuted }}>({item.unit})</span></td>
+                            <td style={{ ...S.tdR, color: low, fontSize: 15 }}>{qty}{qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>OUT</div>}{qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706", lineHeight: 1 }}>LOW</div>}</td>
+                            <td style={{ ...S.tdR, whiteSpace: "nowrap" }}>
+                              <button style={S.btn} onClick={() => onUpdateInventory(item.id, Math.max(0, qty - 1))}>−</button>
+                              {" "}
+                              <button style={S.btn} onClick={() => onUpdateInventory(item.id, qty + 1)}>+</button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </>
+                  ))}
+                </tbody>
+              </table>
             </div>
           );
         })()}
