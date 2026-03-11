@@ -637,53 +637,110 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const nonFoamLoaded = loadedItems.filter(i => !isFoam(i.id));
           const renderTruckForm = (mode) => {
             const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
+            // For "return": items currently on truck. For "load": all items.
+            const itemsForMode = mode === "return"
+              ? INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0)
+              : INVENTORY_ITEMS;
             return (
               <div>
                 <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
-                  {mode === "load" ? "Enter what you are loading from the warehouse." : "Enter what you are returning. Amounts cannot exceed what is on the truck."}
+                  {mode === "load"
+                    ? "Enter what you are loading from the warehouse."
+                    : "Enter what you still have on the truck. Anything not entered was used on the job."}
                 </div>
                 {categories.map(cat => {
-                  const items = INVENTORY_ITEMS.filter(i => i.category === cat).filter(i => mode === "load" || (truckInventory[i.id] || 0) > 0);
+                  const items = itemsForMode.filter(i => i.category === cat);
                   if (items.length === 0) return null;
                   return (
                     <div key={cat} style={{ marginBottom: 16 }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
+                      {mode === "return" && (
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "6px 10px", alignItems: "center", marginBottom: 6 }}>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase" }}>Item</div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", textAlign: "center" }}>Loaded</div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#15803d", textTransform: "uppercase", textAlign: "center" }}>Still Have</div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", textAlign: "center" }}>Used</div>
+                        </div>
+                      )}
                       {items.map(item => {
                         const warehouseQty = inventory.find(r => r.itemId === item.id)?.qty || 0;
                         const onTruck = truckInventory[item.id] || 0;
-                        const cap = mode === "return" ? onTruck : 999;
-                        const cur = loadQtys[item.id] || 0;
+                        const stillHave = loadQtys[item.id] || 0;
+                        const used = Math.max(0, Math.round((onTruck - stillHave) * 100) / 100);
+                        if (mode === "return") {
+                          return (
+                            <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "6px 10px", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight }}>
+                              <div>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
+                              </div>
+                              {/* Loaded */}
+                              <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: t.textMuted, minWidth: 60 }}>
+                                {isFoam(item.id) ? bblToGals(onTruck, item.id) + " gal" : onTruck}
+                              </div>
+                              {/* Still Have input */}
+                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                                {isFoam(item.id)
+                                  ? <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                      <input
+                                        type="number" min="0" step="1" placeholder="0"
+                                        value={loadQtys[item.id + "_gal"] || ""}
+                                        onChange={e => {
+                                          const gals = parseFloat(e.target.value) || 0;
+                                          const bbls = Math.min(onTruck, Math.round(gals / (["cc_a","cc_b"].includes(item.id) ? 50 : 48) * 100) / 100);
+                                          setLoadQtys(q => ({ ...q, [item.id + "_gal"]: e.target.value, [item.id]: bbls }));
+                                        }}
+                                        style={{ width: 70, padding: "6px 8px", borderRadius: 7, border: "1px solid " + t.border, fontSize: 13, fontFamily: "inherit", textAlign: "right" }}
+                                      />
+                                      <span style={{ fontSize: 10, color: t.textMuted }}>gal</span>
+                                    </div>
+                                  : <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                      <button onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id]||0) - 1) }))} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid " + t.border, background: t.bg, fontSize: 14, cursor: "pointer" }}>−</button>
+                                      <span style={{ minWidth: 24, textAlign: "center", fontWeight: 700, fontSize: 14 }}>{stillHave}</span>
+                                      <button onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.min(onTruck, (q[item.id]||0) + 1) }))} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid " + t.border, background: t.bg, fontSize: 14, cursor: "pointer" }}>+</button>
+                                    </div>
+                                }
+                              </div>
+                              {/* Used */}
+                              <div style={{ textAlign: "center", minWidth: 50 }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: used > 0 ? "#dc2626" : t.textMuted }}>
+                                  {isFoam(item.id) ? bblToGals(used, item.id) + " gal" : used}
+                                </div>
+                                {isFoam(item.id) && used > 0 && <div style={{ fontSize: 10, color: "#dc2626" }}>{used.toFixed(2)} bbl</div>}
+                              </div>
+                            </div>
+                          );
+                        }
+                        // Load mode
                         return (
                           <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 }}>
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
                               <div style={{ fontSize: 11, color: t.textMuted }}>
-                                {mode === "load" ? (isFoam(item.id) ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse` : `${warehouseQty} in warehouse`) : (isFoam(item.id) ? `${onTruck.toFixed(2)} bbl (${bblToGals(onTruck, item.id)} gal) on truck` : `${onTruck} on truck`)}
+                                {isFoam(item.id) ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse` : `${warehouseQty} in warehouse`}
                               </div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                               {isFoam(item.id)
-                            ? <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
-                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                  <input
-                                    type="number" min="0" step="1" placeholder="0 gal"
-                                    value={loadQtys[item.id + "_gal"] || ""}
-                                    onChange={e => {
-                                      const gals = parseFloat(e.target.value) || 0;
-                                      const bbls = Math.round(gals / (["cc_a","cc_b"].includes(item.id) ? 50 : 48) * 100) / 100;
-                                      const capped = mode === "return" ? Math.min(cap, bbls) : bbls;
-                                      setLoadQtys(q => ({ ...q, [item.id + "_gal"]: e.target.value, [item.id]: capped }));
-                                    }}
-                                    style={{ width: 90, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", textAlign: "right" }}
-                                  />
-                                  <span style={{ fontSize: 11, color: t.textMuted }}>gal</span>
-                                </div>
-                                {(loadQtys[item.id] || 0) > 0 && <div style={{ fontSize: 11, color: t.accent, fontWeight: 700 }}>{(loadQtys[item.id] || 0).toFixed(2)} bbl</div>}
-                              </div>
-                            : <>{[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
-                                <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.min(cap, Math.max(0, (q[item.id] || 0) + n)) }))} style={{ height: 36, minWidth: 34, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
-                              ))}
-                              <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 15, color: cur > 0 ? (mode === "load" ? "#1e40af" : "#15803d") : t.textMuted, marginLeft: 2 }}>{cur}</span></>}
+                                ? <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                      <input
+                                        type="number" min="0" step="1" placeholder="0 gal"
+                                        value={loadQtys[item.id + "_gal"] || ""}
+                                        onChange={e => {
+                                          const gals = parseFloat(e.target.value) || 0;
+                                          const bbls = Math.round(gals / (["cc_a","cc_b"].includes(item.id) ? 50 : 48) * 100) / 100;
+                                          setLoadQtys(q => ({ ...q, [item.id + "_gal"]: e.target.value, [item.id]: bbls }));
+                                        }}
+                                        style={{ width: 90, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", textAlign: "right" }}
+                                      />
+                                      <span style={{ fontSize: 11, color: t.textMuted }}>gal</span>
+                                    </div>
+                                    {(loadQtys[item.id] || 0) > 0 && <div style={{ fontSize: 11, color: t.accent, fontWeight: 700 }}>{(loadQtys[item.id] || 0).toFixed(2)} bbl</div>}
+                                  </div>
+                                : <>{[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
+                                    <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) + n) }))} style={{ height: 36, minWidth: 34, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
+                                  ))}
+                                  <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 15, color: (loadQtys[item.id]||0) > 0 ? "#1e40af" : t.textMuted, marginLeft: 2 }}>{loadQtys[item.id]||0}</span></>}
                             </div>
                           </div>
                         );
@@ -692,15 +749,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   );
                 })}
                 <button onClick={() => {
-                  const items = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
-                  if (items.length > 0) {
-                    if (mode === "load") onLoadTruck(items, truck?.id);
-                    else onReturnMaterial(items, truck?.id);
+                  if (mode === "load") {
+                    const items = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
+                    if (items.length > 0) onLoadTruck(items, truck?.id);
+                  } else {
+                    // Return = whatever is still on truck goes back; used = loaded - still have
+                    const returning = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({
+                      itemId: i.id, name: i.name, unit: i.unit,
+                      stillHave: loadQtys[i.id] || 0,
+                      used: Math.max(0, Math.round((truckInventory[i.id] - (loadQtys[i.id] || 0)) * 100) / 100)
+                    }));
+                    onReturnMaterial(returning, truck?.id);
                   }
                   setLoadTruckMode(false);
                   setLoadQtys({});
-                }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: mode === "load" ? "#1e40af" : "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
-                  {mode === "load" ? "Confirm Load Out" : "Confirm Return"}
+                }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: mode === "load" ? "#1e40af" : "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 12 }}>
+                  {mode === "load" ? "Confirm Load Out" : "Confirm End of Day Count"}
                 </button>
                 <button onClick={() => { setLoadTruckMode(false); setLoadQtys({}); }} style={{ width: "100%", padding: "12px", borderRadius: 12, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
                   Cancel
@@ -734,7 +798,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse</div>
                   </button>
                   <button onClick={() => { setLoadTruckMode("return"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                    Return Material<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Return unused material to warehouse</div>
+                    End of Day Count<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Enter what's still on the truck — system calculates what was used</div>
                   </button>
                 </div>
               ) : renderTruckForm(loadTruckMode)}
@@ -1937,13 +2001,15 @@ export default function App() {
   const handleReturnMaterial = async (materialsReturned, truckId) => {
     if (!truckId) return;
     const truckRef = doc(db, "truckInventory", truckId);
-    const currentTruck = truckInventory[truckId] || {};
-    const updatedTruck = { ...currentTruck };
+    const updatedTruck = { ...(truckInventory[truckId] || {}) };
     for (const m of materialsReturned) {
-      const rec = inventory.find(r => r.itemId === m.itemId);
-      const current = rec?.qty || 0;
-      await handleUpdateInventory(m.itemId, current + m.qty);
-      updatedTruck[m.itemId] = Math.max(0, (updatedTruck[m.itemId] || 0) - m.qty);
+      const returning = Math.round(((truckInventory[truckId]?.[m.itemId] || 0) - (m.stillHave || 0)) * 100) / 100;
+      if (returning > 0) {
+        const rec = inventory.find(r => r.itemId === m.itemId);
+        const current = rec?.qty || 0;
+        await handleUpdateInventory(m.itemId, Math.round((current + returning) * 100) / 100);
+      }
+      updatedTruck[m.itemId] = m.stillHave || 0;
     }
     await setDoc(truckRef, updatedTruck);
   };
