@@ -1408,9 +1408,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                             <td style={S.td}>{item.name} <span style={{ fontSize: 10, color: t.textMuted }}>({item.unit})</span></td>
                             <td style={{ ...S.tdR, color: low, fontSize: 15 }}>{qty}{qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>OUT</div>}{qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706", lineHeight: 1 }}>LOW</div>}</td>
                             <td style={{ ...S.tdR, whiteSpace: "nowrap" }}>
-                              <button style={S.btn} onClick={() => onUpdateInventory(item.id, Math.max(0, qty - 1))}>−</button>
-                              {" "}
-                              <button style={S.btn} onClick={() => onUpdateInventory(item.id, qty + 1)}>+</button>
+                              {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
+                                <button key={n} style={{ ...S.btn, fontSize: n === -1 || n === 1 ? 14 : 10, fontWeight: n === -1 || n === 1 ? 400 : 700, marginLeft: n === 1 ? 4 : 2, color: n < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(item.id, Math.max(0, qty + n))}>{label}</button>
+                              ))}
                             </td>
                           </tr>
                         );
