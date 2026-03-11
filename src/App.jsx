@@ -515,6 +515,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const [materialCountJob, setMaterialCountJob] = useState(null);
   const [materialQtys, setMaterialQtys] = useState({});
   const [loadTruckMode, setLoadTruckMode] = useState(false);
+  const [invEditMode, setInvEditMode] = useState(false);
   const [loadQtys, setLoadQtys] = useState({});
   const [status, setStatus] = useState("in_progress");
   const [eta, setEta] = useState("");
@@ -1438,20 +1439,20 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
             <div style={{ padding: "0 0 24px" }}>
               <div style={{ padding: "10px 14px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <div style={{ fontSize: 16, fontWeight: 800, color: t.text }}>Warehouse Inventory</div>
-                <span style={{ fontSize: 10, color: t.textMuted }}>Live</span>
+                <button onClick={() => setInvEditMode(e => !e)} style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid " + (invEditMode ? "#ef4444" : t.border), background: invEditMode ? "#fef2f2" : t.surface, color: invEditMode ? "#ef4444" : t.accent, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{invEditMode ? "✓ Done" : "✏️ Edit"}</button>
               </div>
               <table style={S.tbl}>
                 <thead>
                   <tr>
                     <th style={S.th}>Material</th>
                     <th style={{ ...S.thR, width: 60 }}>Qty</th>
-                    <th style={{ ...S.thR, width: 70 }}>±</th>
+                    {invEditMode && <th style={{ ...S.thR, width: 70 }}>±</th>}
                   </tr>
                 </thead>
                 <tbody>
                   {categories.map(cat => (
-                    <>
-                      <tr key={cat + "_h"} style={S.catRow}><td colSpan={3} style={S.catTd}>{cat}</td></tr>
+                    <React.Fragment key={cat}>
+                      <tr style={S.catRow}><td colSpan={invEditMode ? 3 : 2} style={S.catTd}>{cat}</td></tr>
                       {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); }).map(item => {
                         const qty = getQty(item.id);
                         const low = qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
@@ -1459,15 +1460,15 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                           <tr key={item.id} style={{ background: qty === 0 ? "#fff5f5" : qty <= 2 ? "#fffbeb" : "#fff" }}>
                             <td style={S.td}>{item.name} <span style={{ fontSize: 10, color: t.textMuted }}>({item.unit})</span></td>
                             <td style={{ ...S.tdR, color: low, fontSize: 15 }}>{qty}{qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>OUT</div>}{qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706", lineHeight: 1 }}>LOW</div>}</td>
-                            <td style={{ ...S.tdR, whiteSpace: "nowrap" }}>
+                            {invEditMode && <td style={{ ...S.tdR, whiteSpace: "nowrap" }}>
                               {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
                                 <button key={n} style={{ ...S.btn, fontSize: n === -1 || n === 1 ? 14 : 10, fontWeight: n === -1 || n === 1 ? 400 : 700, marginLeft: n === 1 ? 4 : 2, color: n < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(item.id, Math.max(0, qty + n))}>{label}</button>
                               ))}
-                            </td>
+                            </td>}
                           </tr>
                         );
                       })}
-                    </>
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
