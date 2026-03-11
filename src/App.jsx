@@ -1368,35 +1368,85 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         )}
 
         {view === "inventory" && (() => {
-          const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
-          return (
-            <div style={{ padding: "0 16px 24px" }}>
-              <SectionHeader title="Warehouse Inventory" right={<span style={{ fontSize: 12, color: t.textMuted }}>Live counts</span>} />
-              {categories.map(cat => (
-                <div key={cat} style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8, paddingLeft: 2 }}>{cat}</div>
-                  {INVENTORY_ITEMS.filter(i => i.category === cat).map(item => {
-                    const rec = inventory.find(r => r.itemId === item.id) || { qty: 0 };
-                    const low = rec.qty <= (rec.lowStock ?? 2);
-                    return (
-                      <Card key={item.id} style={{ marginBottom: 8, borderLeft: low && rec.qty > 0 ? "3px solid #f59e0b" : low ? "3px solid #ef4444" : "3px solid " + t.accent }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                          <div>
-                            <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>{item.name}</div>
-                            <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit}{item.masterPack ? ` · ${item.masterPack}/master pack` : ""}</div>
-                          </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                            {low && <span style={{ fontSize: 10, fontWeight: 700, color: rec.qty === 0 ? "#ef4444" : "#f59e0b", background: rec.qty === 0 ? "#fee2e2" : "#fef3c7", padding: "2px 7px", borderRadius: 8 }}>{rec.qty === 0 ? "OUT" : "LOW"}</span>}
-                            <button onClick={() => onUpdateInventory(item.id, Math.max(0, (rec.qty || 0) - 1))} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + t.border, background: t.bg, fontSize: 18, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", color: t.text }}>−</button>
-                            <span style={{ minWidth: 32, textAlign: "center", fontWeight: 800, fontSize: 18, color: t.text }}>{rec.qty || 0}</span>
-                            <button onClick={() => onUpdateInventory(item.id, (rec.qty || 0) + 1)} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + t.border, background: t.bg, fontSize: 18, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", color: t.text }}>+</button>
-                          </div>
-                        </div>
-                      </Card>
-                    );
-                  })}
+          const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
+          const qtyColor = (qty, low = 2) => qty === 0 ? "#ef4444" : qty <= low ? "#f59e0b" : "#15803d";
+          const qtyBg   = (qty, low = 2) => qty === 0 ? "#fee2e2" : qty <= low ? "#fef3c7" : "#dcfce7";
+
+          // Foam pair card — shows A + B side side-by-side
+          const FoamPair = ({ label, aId, bId }) => {
+            const aQty = getQty(aId); const bQty = getQty(bId);
+            return (
+              <Card style={{ marginBottom: 12 }}>
+                <div style={{ fontWeight: 800, fontSize: 14, color: t.text, marginBottom: 12 }}>{label}</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  {[{ label: "A Side", id: aId, qty: aQty }, { label: "B Side", id: bId, qty: bQty }].map(side => (
+                    <div key={side.id} style={{ background: t.bg, borderRadius: 10, padding: "12px 10px", border: `2px solid ${qtyBg(side.qty)}`, textAlign: "center" }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.5 }}>{side.label}</div>
+                      <div style={{ fontSize: 32, fontWeight: 900, color: qtyColor(side.qty), lineHeight: 1 }}>{side.qty}</div>
+                      <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 10 }}>barrels</div>
+                      {side.qty === 0 && <div style={{ fontSize: 10, fontWeight: 800, color: "#ef4444", marginBottom: 6 }}>OUT OF STOCK</div>}
+                      {side.qty > 0 && side.qty <= 2 && <div style={{ fontSize: 10, fontWeight: 800, color: "#f59e0b", marginBottom: 6 }}>LOW STOCK</div>}
+                      <div style={{ display: "flex", justifyContent: "center", gap: 8, alignItems: "center" }}>
+                        <button onClick={() => onUpdateInventory(side.id, Math.max(0, side.qty - 1))} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + t.border, background: "#fff", fontSize: 18, cursor: "pointer", fontFamily: "inherit" }}>−</button>
+                        <button onClick={() => onUpdateInventory(side.id, side.qty + 1)} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + t.border, background: "#fff", fontSize: 18, cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </Card>
+            );
+          };
+
+          // Compact table row for batts / blown / rockwool
+          const InvRow = ({ item }) => {
+            const qty = getQty(item.id);
+            return (
+              <div style={{ display: "flex", alignItems: "center", padding: "9px 0", borderBottom: "1px solid " + t.borderLight, gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</div>
+                  <div style={{ fontSize: 10, color: t.textMuted }}>{item.unit}</div>
+                </div>
+                {qty === 0 && <span style={{ fontSize: 9, fontWeight: 800, color: "#ef4444", background: "#fee2e2", padding: "2px 6px", borderRadius: 6, flexShrink: 0 }}>OUT</span>}
+                {qty > 0 && qty <= 2 && <span style={{ fontSize: 9, fontWeight: 800, color: "#f59e0b", background: "#fef3c7", padding: "2px 6px", borderRadius: 6, flexShrink: 0 }}>LOW</span>}
+                <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                  <button onClick={() => onUpdateInventory(item.id, Math.max(0, qty - 1))} style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>−</button>
+                  <span style={{ minWidth: 26, textAlign: "center", fontWeight: 800, fontSize: 16, color: qtyColor(qty) }}>{qty}</span>
+                  <button onClick={() => onUpdateInventory(item.id, qty + 1)} style={{ width: 26, height: 26, borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                </div>
+              </div>
+            );
+          };
+
+          const batts = INVENTORY_ITEMS.filter(i => i.category === "Fiberglass Batts");
+          const blown = INVENTORY_ITEMS.filter(i => i.category === "Blown");
+          const rockwool = INVENTORY_ITEMS.filter(i => i.category === "Rockwool");
+
+          return (
+            <div style={{ padding: "0 16px 32px" }}>
+              <SectionHeader title="Warehouse Inventory" right={<span style={{ fontSize: 11, color: t.textMuted }}>Updates live</span>} />
+
+              {/* ── FOAM — prominent pairs ── */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>🔥 Spray Foam</div>
+              <FoamPair label="Open Cell Foam" aId="oc_a" bId="oc_b" />
+              <FoamPair label="Closed Cell Foam" aId="cc_a" bId="cc_b" />
+
+              {/* ── FIBERGLASS BATTS — compact table ── */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, marginTop: 20, marginBottom: 4 }}>🧱 Fiberglass Batts</div>
+              <Card style={{ padding: "0 14px" }}>
+                {batts.map(item => <InvRow key={item.id} item={item} />)}
+              </Card>
+
+              {/* ── BLOWN ── */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, marginTop: 20, marginBottom: 4 }}>💨 Blown</div>
+              <Card style={{ padding: "0 14px" }}>
+                {blown.map(item => <InvRow key={item.id} item={item} />)}
+              </Card>
+
+              {/* ── ROCKWOOL ── */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 1, marginTop: 20, marginBottom: 4 }}>🪨 Rockwool</div>
+              <Card style={{ padding: "0 14px" }}>
+                {rockwool.map(item => <InvRow key={item.id} item={item} />)}
+              </Card>
             </div>
           );
         })()}
