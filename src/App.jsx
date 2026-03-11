@@ -26,42 +26,31 @@ const STATUS_OPTIONS = [
 
 const INVENTORY_ITEMS = [
   // Foam
-  { id: "oc_a",        name: "Open Cell A",      unit: "bbl", category: "Foam" },
-  { id: "oc_b",        name: "Open Cell B",      unit: "bbl", category: "Foam" },
-  { id: "cc_a",        name: "Closed Cell A",    unit: "bbl", category: "Foam" },
-  { id: "cc_b",        name: "Closed Cell B",    unit: "bbl", category: "Foam" },
+  { id: "oc_a",       name: "Open Cell A",       unit: "bbl",   category: "Foam" },
+  { id: "oc_b",       name: "Open Cell B",       unit: "bbl",   category: "Foam" },
+  { id: "cc_a",       name: "Closed Cell A",     unit: "bbl",   category: "Foam" },
+  { id: "cc_b",       name: "Closed Cell B",     unit: "bbl",   category: "Foam" },
   // R11
-  { id: "r11_15_8_mp", name: "R11 x 15 x 8  MP", unit: "MP",    category: "R11" },
-  { id: "r11_15_8_t",  name: "R11 x 15 x 8  Tubes", unit: "tubes", category: "R11" },
-  { id: "r11_24_8_mp", name: "R11 x 24 x 8  MP", unit: "MP",    category: "R11" },
-  { id: "r11_24_8_t",  name: "R11 x 24 x 8  Tubes", unit: "tubes", category: "R11" },
+  { id: "r11_15_8_t", name: "R11 x 15 x 8",     unit: "tubes", category: "R11" },
+  { id: "r11_24_8_t", name: "R11 x 24 x 8",     unit: "tubes", category: "R11" },
   // R13
-  { id: "r13_15_8_mp", name: "R13 x 15 x 8  MP", unit: "MP",    category: "R13" },
-  { id: "r13_15_8_t",  name: "R13 x 15 x 8  Tubes", unit: "tubes", category: "R13" },
-  { id: "r13_15_9_mp", name: "R13 x 15 x 9  MP", unit: "MP",    category: "R13" },
-  { id: "r13_15_9_t",  name: "R13 x 15 x 9  Tubes", unit: "tubes", category: "R13" },
-  { id: "r13_24_8_mp", name: "R13 x 24 x 8  MP", unit: "MP",    category: "R13" },
-  { id: "r13_24_8_t",  name: "R13 x 24 x 8  Tubes", unit: "tubes", category: "R13" },
+  { id: "r13_15_8_t", name: "R13 x 15 x 8",     unit: "tubes", category: "R13" },
+  { id: "r13_15_9_t", name: "R13 x 15 x 9",     unit: "tubes", category: "R13" },
+  { id: "r13_24_8_t", name: "R13 x 24 x 8",     unit: "tubes", category: "R13" },
   // R19
-  { id: "r19_15_8_mp", name: "R19 x 15 x 8  MP", unit: "MP",    category: "R19" },
-  { id: "r19_15_8_t",  name: "R19 x 15 x 8  Tubes", unit: "tubes", category: "R19" },
-  { id: "r19_15_9_mp", name: "R19 x 15 x 9  MP", unit: "MP",    category: "R19" },
-  { id: "r19_15_9_t",  name: "R19 x 15 x 9  Tubes", unit: "tubes", category: "R19" },
-  { id: "r19_24_8_mp", name: "R19 x 24 x 8  MP", unit: "MP",    category: "R19" },
-  { id: "r19_24_8_t",  name: "R19 x 24 x 8  Tubes", unit: "tubes", category: "R19" },
+  { id: "r19_15_8_t", name: "R19 x 15 x 8",     unit: "tubes", category: "R19" },
+  { id: "r19_15_9_t", name: "R19 x 15 x 9",     unit: "tubes", category: "R19" },
+  { id: "r19_19_8_t", name: "R19 x 19 x 8",     unit: "tubes", category: "R19" },
+  { id: "r19_24_8_t", name: "R19 x 24 x 8",     unit: "tubes", category: "R19" },
   // R30
-  { id: "r30_15_mp",   name: "R30 x 15  MP",    unit: "MP",    category: "R30" },
-  { id: "r30_15_t",    name: "R30 x 15  Tubes", unit: "tubes", category: "R30" },
-  { id: "r30_24_mp",   name: "R30 x 24  MP",    unit: "MP",    category: "R30" },
-  { id: "r30_24_t",    name: "R30 x 24  Tubes", unit: "tubes", category: "R30" },
+  { id: "r30_15_t",   name: "R30 x 15",         unit: "tubes", category: "R30" },
+  { id: "r30_24_t",   name: "R30 x 24",         unit: "tubes", category: "R30" },
   // Blown
-  { id: "blown_fg",    name: "Blown Fiberglass", unit: "bags", category: "Blown" },
-  { id: "blown_cel",   name: "Blown Cellulose",  unit: "bags", category: "Blown" },
+  { id: "blown_fg",   name: "Blown Fiberglass",  unit: "bags",  category: "Blown" },
+  { id: "blown_cel",  name: "Blown Cellulose",   unit: "bags",  category: "Blown" },
   // Rockwool
-  { id: "rw_4_mp", name: 'Rockwool 4" MP',    unit: "MP",    category: "Rockwool" },
-  { id: "rw_4_t",  name: 'Rockwool 4" Tubes', unit: "tubes", category: "Rockwool" },
-  { id: "rw_6_mp", name: 'Rockwool 6" MP',    unit: "MP",    category: "Rockwool" },
-  { id: "rw_6_t",  name: 'Rockwool 6" Tubes', unit: "tubes", category: "Rockwool" },
+  { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool" },
+  { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool" },
 ];
 const TICKET_PRIORITIES = [
   { value: "low", label: "Low — Can Wait", color: "#1d4ed8", bg: "#dbeafe" },
