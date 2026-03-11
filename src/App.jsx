@@ -515,6 +515,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const [materialCountJob, setMaterialCountJob] = useState(null);
   const [materialQtys, setMaterialQtys] = useState({});
   const [loadTruckMode, setLoadTruckMode] = useState(false);
+  const [invEditMode, setInvEditMode] = useState(false);
   const [loadQtys, setLoadQtys] = useState({});
   const [status, setStatus] = useState("in_progress");
   const [eta, setEta] = useState("");
@@ -1424,7 +1425,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         {view === "inventory" && (() => {
           const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
-          const [invEditMode, setInvEditMode] = React.useState(false);
+
           const S = {
             tbl: { width: "100%", borderCollapse: "collapse" },
             catRow: { background: "#1e293b", color: "#fff" },
