@@ -489,7 +489,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 }
 
 // ─── Crew Dashboard ───
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onLoadTruck, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onLoadTruck, onReturnMaterial, onLogout }) {
   const myJobs = jobs.filter((j) => {
     // Show job if assigned to this crew member by ID, OR assigned to their truck (legacy)
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -629,59 +629,85 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
         {/* ── LOAD TRUCK MODAL ── */}
         {crewView === "truck" && (() => {
-          const truckAction = loadTruckMode; // "load" | "return" | false
-          const qtyState = loadQtys;
-          const setQtyState = setLoadQtys;
-          const MaterialForm = ({ mode }) => (
-            <div>
-              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
-                {mode === "load" ? "Enter what you're loading from the warehouse. This deducts from inventory." : "Enter what you're returning to the warehouse. This adds back to inventory."}
-              </div>
-              {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => (
-                <div key={cat} style={{ marginBottom: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
-                  {INVENTORY_ITEMS.filter(i => i.category === cat).map(item => {
-                    const warehouseQty = inventory.find(r => r.itemId === item.id)?.qty || 0;
-                    return (
-                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit}{mode === "load" ? ` · ${warehouseQty} in warehouse` : ""}</div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                          {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
-                            <button key={n} onClick={() => setQtyState(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) + n) }))} style={{ height: 36, minWidth: 34, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
-                          ))}
-                          <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 17, color: (qtyState[item.id] || 0) > 0 ? (mode === "load" ? "#1e40af" : "#15803d") : t.textMuted, marginLeft: 2 }}>{qtyState[item.id] || 0}</span>
-                        </div>
-                      </div>
-                    );
-                  })}
+          const loadedItems = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0);
+          const MaterialForm = ({ mode }) => {
+            const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
+            return (
+              <div>
+                <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
+                  {mode === "load" ? "Enter what you are loading from the warehouse." : "Enter what you are returning. Amounts cannot exceed what is on the truck."}
                 </div>
-              ))}
-              <button onClick={() => {
-                const items = INVENTORY_ITEMS.filter(i => (qtyState[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: qtyState[i.id] }));
-                if (items.length > 0) { mode === "load" ? onLoadTruck(items) : onCloseOutJob(null, items); }
-                setLoadTruckMode(false);
-                setLoadQtys({});
-              }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: mode === "load" ? "#1e40af" : "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
-                {mode === "load" ? "Confirm Load Out" : "Confirm Return"}
-              </button>
-              <button onClick={() => { setLoadTruckMode(false); setLoadQtys({}); }} style={{ width: "100%", padding: "12px", borderRadius: 12, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
-                Cancel
-              </button>
-            </div>
-          );
+                {categories.map(cat => {
+                  const items = INVENTORY_ITEMS.filter(i => i.category === cat).filter(i => mode === "load" || (truckInventory[i.id] || 0) > 0);
+                  if (items.length === 0) return null;
+                  return (
+                    <div key={cat} style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
+                      {items.map(item => {
+                        const warehouseQty = inventory.find(r => r.itemId === item.id)?.qty || 0;
+                        const onTruck = truckInventory[item.id] || 0;
+                        const cap = mode === "return" ? onTruck : 999;
+                        const cur = loadQtys[item.id] || 0;
+                        return (
+                          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
+                              <div style={{ fontSize: 11, color: t.textMuted }}>
+                                {mode === "load" ? `${warehouseQty} in warehouse` : `${onTruck} on truck`}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                              {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
+                                <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.min(cap, Math.max(0, (q[item.id] || 0) + n)) }))} style={{ height: 36, minWidth: 34, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
+                              ))}
+                              <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 17, color: cur > 0 ? (mode === "load" ? "#1e40af" : "#15803d") : t.textMuted, marginLeft: 2 }}>{cur}</span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+                <button onClick={() => {
+                  const items = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
+                  if (items.length > 0) {
+                    if (mode === "load") onLoadTruck(items, truck?.id);
+                    else onReturnMaterial(items, truck?.id);
+                  }
+                  setLoadTruckMode(false);
+                  setLoadQtys({});
+                }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: mode === "load" ? "#1e40af" : "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
+                  {mode === "load" ? "Confirm Load Out" : "Confirm Return"}
+                </button>
+                <button onClick={() => { setLoadTruckMode(false); setLoadQtys({}); }} style={{ width: "100%", padding: "12px", borderRadius: 12, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
+                  Cancel
+                </button>
+              </div>
+            );
+          };
           return (
             <div style={{ padding: "0 16px 32px" }}>
-              <SectionHeader title="Truck" />
+              <SectionHeader title="Truck Inventory" />
+              {/* Current truck load */}
+              <Card style={{ marginBottom: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: t.textMuted, marginBottom: loadedItems.length ? 10 : 0 }}>Currently Loaded</div>
+                {loadedItems.length === 0
+                  ? <div style={{ fontSize: 13, color: t.textMuted }}>Nothing loaded on truck.</div>
+                  : loadedItems.map(item => (
+                    <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
+                      <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} {item.unit}</span>
+                    </div>
+                  ))
+                }
+              </Card>
               {!loadTruckMode ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <button onClick={() => { setLoadTruckMode("load"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                    Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse — deducts inventory</div>
+                    Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse</div>
                   </button>
                   <button onClick={() => { setLoadTruckMode("return"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                    Return Material<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Return unused material to warehouse — adds to inventory</div>
+                    Return Material<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Return unused material to warehouse</div>
                   </button>
                 </div>
               ) : (
@@ -1787,6 +1813,7 @@ export default function App() {
   const [pmUpdates, setPmUpdates] = useState([]);
   const [members, setMembers] = useState([]);
   const [inventory, setInventory] = useState([]);
+  const [truckInventory, setTruckInventory] = useState({});
 
   useEffect(() => {
     const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
@@ -1797,7 +1824,8 @@ export default function App() {
     const unsubPm = onSnapshot(collection(db, "pmUpdates"), (snap) => { setPmUpdates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubMembers = onSnapshot(collection(db, "crewMembers"), (snap) => { setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubInv = onSnapshot(collection(db, "inventory"), (snap) => { setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); };
+    const unsubTruckInv = onSnapshot(collection(db, "truckInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckInventory(m); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); };
   }, []);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
@@ -1822,22 +1850,34 @@ export default function App() {
     if (existing) { await updateDoc(doc(db, "inventory", existing.id), { qty }); }
     else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
-  const handleCloseOutJob = async (jobId, materialsReturned) => {
-    if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsReturned, closedAt: new Date().toISOString() });
-    // Add returned material back to warehouse inventory
+  const handleReturnMaterial = async (materialsReturned, truckId) => {
+    if (!truckId) return;
+    const truckRef = doc(db, "truckInventory", truckId);
+    const currentTruck = truckInventory[truckId] || {};
+    const updatedTruck = { ...currentTruck };
     for (const m of materialsReturned) {
       const rec = inventory.find(r => r.itemId === m.itemId);
       const current = rec?.qty || 0;
       await handleUpdateInventory(m.itemId, current + m.qty);
+      updatedTruck[m.itemId] = Math.max(0, (updatedTruck[m.itemId] || 0) - m.qty);
     }
+    await setDoc(truckRef, updatedTruck);
   };
-  const handleLoadTruck = async (itemsLoaded) => {
-    // Morning load — deduct from warehouse
+  const handleCloseOutJob = async (jobId, materialsReturned) => {
+    if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsReturned, closedAt: new Date().toISOString() });
+  };
+  const handleLoadTruck = async (itemsLoaded, truckId) => {
+    // Deduct from warehouse and add to truck inventory
+    const truckRef = doc(db, "truckInventory", truckId);
+    const currentTruck = truckInventory[truckId] || {};
+    const updatedTruck = { ...currentTruck };
     for (const m of itemsLoaded) {
       const rec = inventory.find(r => r.itemId === m.itemId);
       const current = rec?.qty || 0;
       await handleUpdateInventory(m.itemId, Math.max(0, current - m.qty));
+      updatedTruck[m.itemId] = (updatedTruck[m.itemId] || 0) + m.qty;
     }
+    await setDoc(truckRef, updatedTruck);
   };
   const handleCrewLogin = (member, truck) => {
     setCrewSession({ memberId: member.id, crewName: member.name, truckId: truck?.id || null });
@@ -2121,7 +2161,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onLoadTruck={handleLoadTruck} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
