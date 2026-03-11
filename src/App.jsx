@@ -632,6 +632,9 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b"].includes(id) ? 50 : 48));
           const loadedItems = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0);
+          const ocSets = Math.min(truckInventory["oc_a"] || 0, truckInventory["oc_b"] || 0);
+          const ccSets = Math.min(truckInventory["cc_a"] || 0, truckInventory["cc_b"] || 0);
+          const nonFoamLoaded = loadedItems.filter(i => !isFoam(i.id));
           const MaterialForm = ({ mode }) => {
             const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
             return (
@@ -660,14 +663,27 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                               {isFoam(item.id)
-                            ? [[-10,"-10g"],[-5,"-5g"],[-1,"-1g"],[1,"+1g"],[5,"+5g"],[10,"+10g"]].map(([g, label]) => {
-                                const step = galsToBbl(g, item.id);
-                                return <button key={g} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.min(cap, Math.max(0, Math.round(((q[item.id] || 0) + step) * 100) / 100)) }))} style={{ height: 36, minWidth: 38, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", color: g < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>;
-                              })
-                            : [[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
+                            ? <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <input
+                                    type="number" min="0" step="1" placeholder="0 gal"
+                                    value={loadQtys[item.id + "_gal"] || ""}
+                                    onChange={e => {
+                                      const gals = parseFloat(e.target.value) || 0;
+                                      const bbls = Math.round(gals / (["cc_a","cc_b"].includes(item.id) ? 50 : 48) * 100) / 100;
+                                      const capped = mode === "return" ? Math.min(cap, bbls) : bbls;
+                                      setLoadQtys(q => ({ ...q, [item.id + "_gal"]: e.target.value, [item.id]: capped }));
+                                    }}
+                                    style={{ width: 90, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", textAlign: "right" }}
+                                  />
+                                  <span style={{ fontSize: 11, color: t.textMuted }}>gal</span>
+                                </div>
+                                {(loadQtys[item.id] || 0) > 0 && <div style={{ fontSize: 11, color: t.accent, fontWeight: 700 }}>{(loadQtys[item.id] || 0).toFixed(2)} bbl</div>}
+                              </div>
+                            : <>{[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
                                 <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.min(cap, Math.max(0, (q[item.id] || 0) + n)) }))} style={{ height: 36, minWidth: 34, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
                               ))}
-                              <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 15, color: cur > 0 ? (mode === "load" ? "#1e40af" : "#15803d") : t.textMuted, marginLeft: 2 }}>{isFoam(item.id) ? cur.toFixed(2) + ' bbl' : cur}</span>
+                              <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 15, color: cur > 0 ? (mode === "load" ? "#1e40af" : "#15803d") : t.textMuted, marginLeft: 2 }}>{cur}</span></>}
                             </div>
                           </div>
                         );
@@ -700,12 +716,16 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 <div style={{ fontWeight: 700, fontSize: 13, color: t.textMuted, marginBottom: loadedItems.length ? 10 : 0 }}>Currently Loaded</div>
                 {loadedItems.length === 0
                   ? <div style={{ fontSize: 13, color: t.textMuted }}>Nothing loaded on truck.</div>
-                  : loadedItems.map(item => (
-                    <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
-                      <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{isFoam(item.id) ? truckInventory[item.id].toFixed(2) + ' bbl (' + bblToGals(truckInventory[item.id], item.id) + ' gal)' : truckInventory[item.id] + ' ' + item.unit}</span>
-                    </div>
-                  ))
+                  : <>
+                    {ocSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ocSets.toFixed(2)} sets ({bblToGals(ocSets, "oc_a")*2} gal total)</span></div>}
+                    {ccSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ccSets.toFixed(2)} sets ({bblToGals(ccSets, "cc_a")*2} gal total)</span></div>}
+                    {nonFoamLoaded.map(item => (
+                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
+                        <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} {item.unit}</span>
+                      </div>
+                    ))}
+                  </>
                 }
               </Card>
               {!loadTruckMode ? (
@@ -1437,8 +1457,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                         {loaded.length === 0
                           ? <div style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded.</div>
                           : <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                              {(() => { const ocS = Math.min(ti["oc_a"]||0, ti["oc_b"]||0); const ccS = Math.min(ti["cc_a"]||0, ti["cc_b"]||0); return <>{ocS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Open Cell — {ocS.toFixed(2)} sets</span>}{ccS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Closed Cell — {ccS.toFixed(2)} sets</span>}</>; })()}
                               {loaded.map(item => (
-                                <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {isFoam(item.id) ? ti[item.id].toFixed(2) + ' bbl (' + bblToGals(ti[item.id], item.id) + ' gal)' : ti[item.id] + ' ' + item.unit}</span>
+                                {!isFoam(item.id) && <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>}
                               ))}
                             </div>
                         }
