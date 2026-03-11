@@ -46,6 +46,7 @@ const INVENTORY_ITEMS = [
   // Blown
   { id: "blown_fg",   name: "Blown Fiberglass",  unit: "bags",  category: "Blown" },
   { id: "blown_cel",  name: "Blown Cellulose",   unit: "bags",  category: "Blown" },
+  { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Blown" },
   // Rockwool
   { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool" },
   { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool" },
@@ -948,10 +949,12 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const [calDayView, setCalDayView] = useState(null); // { dateStr, jobs }
 
   const activeJobs = jobs.filter((j) => {
+    if (j.onHold) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
     const isCompleted = latest && latest.status === "completed";
     return !isCompleted && (!truckFilter || j.truckId === truckFilter);
   });
+  const onHoldJobs = jobs.filter((j) => j.onHold);
   const openTicketCount = tickets.filter((tk) => tk.status === "open").length;
   const STATUS_SORT_ORDER = { open: 0, acknowledged: 1, in_progress: 2, resolved: 3 };
   const filteredTickets = tickets
@@ -1014,9 +1017,12 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const calMonthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
   const getJobsForDate = (day) => {
     if (!day) return [];
+    const cellDate = new Date(calYear, calMonth, day);
+    if (cellDate.getDay() === 0) return []; // No jobs on Sunday
     const ds = calYear + "-" + String(calMonth + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
     const todayStr = new Date().toISOString().slice(0, 10);
     return jobs.filter((j) => {
+      if (j.onHold) return false;
       const jobUpdates = updates.filter(u => u.jobId === j.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
       // Must have at least one in_progress or completed update to appear on calendar
       const startedUpdate = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
@@ -1047,6 +1053,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
     { key: "calendar", label: "Calendar" },
+    { key: "onhold", label: "On Hold", badge: onHoldJobs.length },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
     { key: "inventory", label: "Inventory" },
@@ -1215,6 +1222,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                             <div style={{ display: "flex", gap: "8px", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid " + t.borderLight }}>
                               <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>PM Note</Button>
                               <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Edit</Button>
+                              <Button variant="secondary" onClick={() => onEditJob(job.id, { ...job, onHold: true })} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Hold</Button>
                               <Button variant="danger" onClick={() => handleRemoveJob(job)} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Remove</Button>
                             </div>
                           </>
@@ -1408,6 +1416,34 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 </Card>
               );
             })}
+          </>
+        )}
+
+        {view === "onhold" && (
+          <>
+            <SectionHeader title="On Hold" right={<span style={{ fontSize: 12, color: t.textMuted }}>{onHoldJobs.length} job{onHoldJobs.length !== 1 ? "s" : ""}</span>} />
+            {onHoldJobs.length === 0
+              ? <EmptyState text="No jobs on hold." />
+              : onHoldJobs.map(job => {
+                  const crew = trucks.find(tr => tr.id === job.truckId);
+                  return (
+                    <Card key={job.id}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>{job.builder || "No Customer"}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted }}>{job.address}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{job.type} · {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                          {crew && <div style={{ fontSize: 11, color: t.accent, fontWeight: 600, marginTop: 2 }}>{crew.members || crew.name}</div>}
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <Button onClick={() => onEditJob(job.id, { ...job, onHold: false })} style={{ padding: "6px 12px", fontSize: 12 }}>Resume</Button>
+                          <Button variant="danger" onClick={() => { if (confirm("Delete this job?")) onDeleteJob(job.id); }} style={{ padding: "6px 12px", fontSize: 12 }}>Delete</Button>
+                        </div>
+                      </div>
+                    </Card>
+                  );
+                })
+            }
           </>
         )}
 
@@ -1806,6 +1842,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
               <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1 }}>Close</Button>
               <Button onClick={() => { setPmJob(calViewJob); setPmCheckedAM(calViewJob.jobCheckedAM || "No"); setPmCheckedPM(calViewJob.jobCheckedPM || "No"); setCalViewJob(null); }} style={{ flex: 1 }}>PM Note</Button>
               <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Edit</Button>
+              <Button variant="secondary" onClick={async () => { await onEditJob(calViewJob.id, { ...calViewJob, onHold: true }); setCalViewJob(null); }} style={{ flex: 1 }}>Hold</Button>
               <Button variant="danger" onClick={async () => { if (confirm("Delete this job?")) { await onDeleteJob(calViewJob.id); setCalViewJob(null); }}} style={{ flex: 1 }}>Delete</Button>
             </div>
           </Modal>
