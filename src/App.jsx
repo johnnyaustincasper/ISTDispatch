@@ -659,7 +659,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18 }}>{materialCountJob.builder} — {materialCountJob.address?.split(",")[0]}</div>
               <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14, fontStyle: "italic" }}>Enter how much material you are returning to the warehouse. This adds back to inventory.</div>
               {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => {
-                const catItems = INVENTORY_ITEMS.filter(i => i.category === cat);
+                const sortFn = (a,b) => { const base = s => s.name.replace(/ ?(MP|Tubes).*$/i,"").trim(); const ba=base(a),bb=base(b); if(ba!==bb) return ba.localeCompare(bb); return a.unit==="MP"||a.unit==="master packs"?-1:1; }; const catItems = INVENTORY_ITEMS.filter(i => i.category === cat).sort(sortFn);
                 const anyFilled = catItems.some(i => materialQtys[i.id] > 0);
                 return (
                   <div key={cat} style={{ marginBottom: 16 }}>
