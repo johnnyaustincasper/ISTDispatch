@@ -1452,7 +1452,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                   {categories.map(cat => (
                     <>
                       <tr key={cat + "_h"} style={S.catRow}><td colSpan={3} style={S.catTd}>{cat}</td></tr>
-                      {INVENTORY_ITEMS.filter(i => i.category === cat).map(item => {
+                      {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const base = s => s.name.replace(/ ?(MP|Tubes).*$/i,"").trim(); const ba=base(a),bb=base(b); if(ba!==bb) return ba.localeCompare(bb); return a.unit==="MP"||a.unit==="master packs"?-1:1; }).map(item => {
                         const qty = getQty(item.id);
                         const low = qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
                         return (
