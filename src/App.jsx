@@ -1458,8 +1458,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                           ? <div style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded.</div>
                           : <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                               {(() => { const ocS = Math.min(ti["oc_a"]||0, ti["oc_b"]||0); const ccS = Math.min(ti["cc_a"]||0, ti["cc_b"]||0); return <>{ocS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Open Cell — {ocS.toFixed(2)} sets</span>}{ccS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Closed Cell — {ccS.toFixed(2)} sets</span>}</>; })()}
-                              {loaded.map(item => (
-                                {!isFoam(item.id) && <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>}
+                              {loaded.filter(item => !isFoam(item.id)).map(item => (
+                                <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>
                               ))}
                             </div>
                         }
