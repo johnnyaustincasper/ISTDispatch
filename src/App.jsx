@@ -1380,7 +1380,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
             thR: { padding: "6px 8px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, background: t.surface, borderBottom: "1px solid " + t.border, textAlign: "right" },
             td: { padding: "5px 8px", fontSize: 13, color: t.text, borderBottom: "1px solid " + t.borderLight },
             tdR: { padding: "5px 8px", fontSize: 13, fontWeight: 700, textAlign: "right", borderBottom: "1px solid " + t.borderLight },
-            btn: { width: 24, height: 24, borderRadius: 5, border: "1px solid " + t.border, background: t.bg, fontSize: 14, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 },
+            btn: { height: 36, minWidth: 36, padding: "0 8px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 13, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 },
           };
           return (
             <div style={{ padding: "0 0 24px" }}>
