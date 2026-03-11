@@ -635,7 +635,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const ocSets = Math.min(truckInventory["oc_a"] || 0, truckInventory["oc_b"] || 0);
           const ccSets = Math.min(truckInventory["cc_a"] || 0, truckInventory["cc_b"] || 0);
           const nonFoamLoaded = loadedItems.filter(i => !isFoam(i.id));
-          const MaterialForm = ({ mode }) => {
+          const renderTruckForm = (mode) => {
             const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
             return (
               <div>
@@ -737,9 +737,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     Return Material<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Return unused material to warehouse</div>
                   </button>
                 </div>
-              ) : (
-                <MaterialForm mode={loadTruckMode} />
-              )}
+              ) : renderTruckForm(loadTruckMode)}
             </div>
           );
         })()}
