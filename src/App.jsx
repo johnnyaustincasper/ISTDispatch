@@ -941,6 +941,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const [editCrewPickerSlot, setEditCrewPickerSlot] = useState(null);
   const [truckFilter, setTruckFilter] = useState(null);
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
+  const [showOngoing, setShowOngoing] = useState(false);
   const [pmJob, setPmJob] = useState(null);
   const [pmNote, setPmNote] = useState("");
   const [pmCheckedAM, setPmCheckedAM] = useState("No");
@@ -1053,7 +1054,6 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
     { key: "calendar", label: "Calendar" },
-    { key: "onhold", label: "On Hold", badge: onHoldJobs.length },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
     { key: "inventory", label: "Inventory" },
@@ -1104,8 +1104,32 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
             {(() => { const uncheckedCount = activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes").length; return (
             <SectionHeader title="Schedule" right={<>
               {uncheckedCount > 0 && <button onClick={() => setShowUncheckedOnly(!showUncheckedOnly)} style={{ padding: "6px 12px", border: "1px solid " + (showUncheckedOnly ? t.danger : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showUncheckedOnly ? t.dangerBg : "#fff", color: showUncheckedOnly ? t.danger : t.textMuted }}>{showUncheckedOnly ? "Show All" : uncheckedCount + " Unchecked"}</button>}
+              <button onClick={() => setShowOngoing(o => !o)} style={{ padding: "6px 12px", border: "1px solid " + (showOngoing ? t.accent : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showOngoing ? t.accentBg : "#fff", color: showOngoing ? t.accent : t.textMuted, position: "relative" }}>On-going Jobs{onHoldJobs.length > 0 && <span style={{ position: "absolute", top: -5, right: -5, background: t.accent, color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: "50%", width: 15, height: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>{onHoldJobs.length}</span>}</button>
               <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr() }); setShowAddJob(true); }}>+ Add Job</Button>
             </>} />
+            {showOngoing && (
+              <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>On-going Jobs</div>
+                {onHoldJobs.length === 0
+                  ? <div style={{ fontSize: 13, color: t.textMuted }}>No on-going jobs.</div>
+                  : onHoldJobs.map(job => {
+                    const crew = trucks.find(tr => tr.id === job.truckId);
+                    return (
+                      <div key={job.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight, gap: 8 }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer"}</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{job.address?.split(",")[0]} · {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {crew?.members || crew?.name || "Unassigned"}</div>
+                        </div>
+                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <Button onClick={() => onEditJob(job.id, { ...job, onHold: false })} style={{ padding: "5px 10px", fontSize: 11 }}>Resume</Button>
+                          <Button variant="danger" onClick={() => { if (confirm("Delete this job?")) onDeleteJob(job.id); }} style={{ padding: "5px 10px", fontSize: 11 }}>Delete</Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                }
+              </div>
+            )}
             ); })()}
             {truckFilterName && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", padding: "8px 12px", background: t.accentBg, borderRadius: "6px", fontSize: "13px", color: t.accent, fontWeight: 500 }}>
@@ -1416,34 +1440,6 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 </Card>
               );
             })}
-          </>
-        )}
-
-        {view === "onhold" && (
-          <>
-            <SectionHeader title="On Hold" right={<span style={{ fontSize: 12, color: t.textMuted }}>{onHoldJobs.length} job{onHoldJobs.length !== 1 ? "s" : ""}</span>} />
-            {onHoldJobs.length === 0
-              ? <EmptyState text="No jobs on hold." />
-              : onHoldJobs.map(job => {
-                  const crew = trucks.find(tr => tr.id === job.truckId);
-                  return (
-                    <Card key={job.id}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                        <div>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>{job.builder || "No Customer"}</div>
-                          <div style={{ fontSize: 12, color: t.textMuted }}>{job.address}</div>
-                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{job.type} · {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
-                          {crew && <div style={{ fontSize: 11, color: t.accent, fontWeight: 600, marginTop: 2 }}>{crew.members || crew.name}</div>}
-                        </div>
-                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                          <Button onClick={() => onEditJob(job.id, { ...job, onHold: false })} style={{ padding: "6px 12px", fontSize: 12 }}>Resume</Button>
-                          <Button variant="danger" onClick={() => { if (confirm("Delete this job?")) onDeleteJob(job.id); }} style={{ padding: "6px 12px", fontSize: 12 }}>Delete</Button>
-                        </div>
-                      </div>
-                    </Card>
-                  );
-                })
-            }
           </>
         )}
 
