@@ -628,6 +628,9 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
         {/* ── LOAD TRUCK MODAL ── */}
         {crewView === "truck" && (() => {
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+          const galsToBbl = (g) => Math.round(g / 48 * 100) / 100;
+          const bblToGals = (b) => Math.round(b * 48);
           const loadedItems = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0);
           const MaterialForm = ({ mode }) => {
             const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
@@ -652,14 +655,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                             <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
                               <div style={{ fontSize: 11, color: t.textMuted }}>
-                                {mode === "load" ? `${warehouseQty} in warehouse` : `${onTruck} on truck`}
+                                {mode === "load" ? (isFoam(item.id) ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty)} gal) in warehouse` : `${warehouseQty} in warehouse`) : (isFoam(item.id) ? `${onTruck.toFixed(2)} bbl (${bblToGals(onTruck)} gal) on truck` : `${onTruck} on truck`)}
                               </div>
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                              {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
+                              {isFoam(item.id)
+                            ? [[-10,"-10g"],[-5,"-5g"],[-1,"-1g"],[1,"+1g"],[5,"+5g"],[10,"+10g"]].map(([g, label]) => {
+                                const step = galsToBbl(g);
+                                return <button key={g} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.min(cap, Math.max(0, Math.round(((q[item.id] || 0) + step) * 100) / 100)) }))} style={{ height: 36, minWidth: 38, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 10, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", color: g < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>;
+                              })
+                            : [[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
                                 <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.min(cap, Math.max(0, (q[item.id] || 0) + n)) }))} style={{ height: 36, minWidth: 34, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
                               ))}
-                              <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 17, color: cur > 0 ? (mode === "load" ? "#1e40af" : "#15803d") : t.textMuted, marginLeft: 2 }}>{cur}</span>
+                              <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 15, color: cur > 0 ? (mode === "load" ? "#1e40af" : "#15803d") : t.textMuted, marginLeft: 2 }}>{isFoam(item.id) ? cur.toFixed(2) + ' bbl' : cur}</span>
                             </div>
                           </div>
                         );
@@ -695,7 +703,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   : loadedItems.map(item => (
                     <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
                       <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} {item.unit}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{isFoam(item.id) ? truckInventory[item.id].toFixed(2) + ' bbl (' + bblToGals(truckInventory[item.id]) + ' gal)' : truckInventory[item.id] + ' ' + item.unit}</span>
                     </div>
                   ))
                 }
@@ -1430,7 +1438,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                           ? <div style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded.</div>
                           : <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
                               {loaded.map(item => (
-                                <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>
+                                <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {isFoam(item.id) ? ti[item.id].toFixed(2) + ' bbl (' + bblToGals(ti[item.id]) + ' gal)' : ti[item.id] + ' ' + item.unit}</span>
                               ))}
                             </div>
                         }
@@ -1450,6 +1458,9 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         {view === "inventory" && (() => {
           const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+          const galsToBbl = (g) => Math.round(g / 48 * 100) / 100;
+          const bblToGals = (b) => Math.round(b * 48);
           const S = {
             tbl: { width: "100%", borderCollapse: "collapse" },
             catRow: { background: "#1e293b", color: "#fff" },
@@ -1484,7 +1495,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                         return (
                           <tr key={item.id} style={{ background: qty === 0 ? "#fff5f5" : qty <= 2 ? "#fffbeb" : "#fff" }}>
                             <td style={S.td}>{item.name} <span style={{ fontSize: 10, color: t.textMuted }}>({item.unit})</span></td>
-                            <td style={{ ...S.tdR, color: low, fontSize: 15 }}>{qty}{qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>OUT</div>}{qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706", lineHeight: 1 }}>LOW</div>}</td>
+                            <td style={{ ...S.tdR, color: low, fontSize: 15 }}>{isFoam(item.id) ? qty.toFixed(2) : qty}{isFoam(item.id) && <div style={{ fontSize: 9, color: t.textMuted, fontWeight: 500 }}>{bblToGals(qty)} gal</div>}{qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>OUT</div>}{!isFoam(item.id) && qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706", lineHeight: 1 }}>LOW</div>}</td>
                             <td style={{ ...S.tdR, whiteSpace: "nowrap" }}>
                               {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
                                 <button key={n} style={{ ...S.btn, fontSize: n === -1 || n === 1 ? 14 : 10, fontWeight: n === -1 || n === 1 ? 400 : 700, marginLeft: n === 1 ? 4 : 2, color: n < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(item.id, Math.max(0, qty + n))}>{label}</button>
