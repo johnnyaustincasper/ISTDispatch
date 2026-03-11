@@ -500,7 +500,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 }
 
 // ─── Crew Dashboard ───
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onLoadTruck, onLogout }) {
   const myJobs = jobs.filter((j) => {
     // Show job if assigned to this crew member by ID, OR assigned to their truck (legacy)
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -596,6 +596,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       <div style={{ padding: "20px", maxWidth: "600px", margin: "0 auto" }}>
         {crewView === "jobs" && (
           <>
+            <div style={{ marginBottom: 14 }}>
+              <button onClick={() => { setLoadTruckMode(true); setLoadQtys({}); }} style={{ width: "100%", padding: "13px", borderRadius: 10, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                🚛 Load Truck — Morning Checkout
+              </button>
+            </div>
             <SectionHeader title="Your Jobs" />
             {myJobs.length === 0 ? <EmptyState text="No active jobs assigned to you." sub="Check back or contact the office." /> : myJobs.map((job) => {
               const latestStatus = getLatestStatus(job.id);
@@ -652,7 +657,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 <button onClick={() => setMaterialCountJob(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted }}>✕</button>
               </div>
               <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18 }}>{materialCountJob.builder} — {materialCountJob.address?.split(",")[0]}</div>
-              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14, fontStyle: "italic" }}>Enter how much of each material was used on this job. Leave blank if not used.</div>
+              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14, fontStyle: "italic" }}>Enter how much material you are returning to the warehouse. This adds back to inventory.</div>
               {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => {
                 const catItems = INVENTORY_ITEMS.filter(i => i.category === cat);
                 const anyFilled = catItems.some(i => materialQtys[i.id] > 0);
@@ -684,7 +689,51 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 setMaterialCountJob(null);
                 setMaterialQtys({});
               }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
-                ✅ Finish &amp; Close Job
+                ✅ Return Material & Close Job
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ── LOAD TRUCK MODAL ── */}
+        {loadTruckMode && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", paddingTop: 20, paddingBottom: 40 }}>
+            <div style={{ background: "#fff", borderRadius: 16, padding: 20, width: "100%", maxWidth: 480, margin: "0 20px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ fontWeight: 800, fontSize: 17, color: t.text }}>🚛 Load Truck</div>
+                <button onClick={() => setLoadTruckMode(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted }}>✕</button>
+              </div>
+              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18 }}>Enter how much of each material you're taking from the warehouse. This will deduct from inventory.</div>
+              {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => (
+                <div key={cat} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
+                  {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const base = s => s.name.replace(/ ?(MP|Tubes).*$/i,'').trim(); const ba=base(a),bb=base(b); if(ba!==bb) return ba.localeCompare(bb); return a.unit==='MP'||a.unit==='master packs'?-1:1; }).map(item => {
+                    const warehouseQty = inventory.find(r => r.itemId === item.id)?.qty || 0;
+                    return (
+                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit} · {warehouseQty} in warehouse</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                          {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
+                            <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) + n) }))} style={{ height: 34, minWidth: 34, padding: "0 7px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
+                          ))}
+                          <span style={{ minWidth: 28, textAlign: "center", fontWeight: 800, fontSize: 17, color: (loadQtys[item.id] || 0) > 0 ? "#1e40af" : t.textMuted, marginLeft: 4 }}>{loadQtys[item.id] || 0}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+              <button onClick={() => {
+                const items = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
+                if (items.length === 0) { setLoadTruckMode(false); return; }
+                onLoadTruck(items);
+                setLoadTruckMode(false);
+                setLoadQtys({});
+              }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
+                ✅ Confirm Load — Deduct from Warehouse
               </button>
             </div>
           </div>
@@ -1821,10 +1870,18 @@ export default function App() {
     if (existing) { await updateDoc(doc(db, "inventory", existing.id), { qty }); }
     else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
-  const handleCloseOutJob = async (jobId, materialsUsed) => {
-    await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsUsed, closedAt: new Date().toISOString() });
-    // Deduct from inventory
-    for (const m of materialsUsed) {
+  const handleCloseOutJob = async (jobId, materialsReturned) => {
+    await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsReturned, closedAt: new Date().toISOString() });
+    // Add returned material back to warehouse inventory
+    for (const m of materialsReturned) {
+      const rec = inventory.find(r => r.itemId === m.itemId);
+      const current = rec?.qty || 0;
+      await handleUpdateInventory(m.itemId, current + m.qty);
+    }
+  };
+  const handleLoadTruck = async (itemsLoaded) => {
+    // Morning load — deduct from warehouse
+    for (const m of itemsLoaded) {
       const rec = inventory.find(r => r.itemId === m.itemId);
       const current = rec?.qty || 0;
       await handleUpdateInventory(m.itemId, Math.max(0, current - m.qty));
@@ -2112,7 +2169,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onLoadTruck={handleLoadTruck} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
