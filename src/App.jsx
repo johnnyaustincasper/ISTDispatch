@@ -1454,8 +1454,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 </thead>
                 <tbody>
                   {categories.map(cat => (
-                    <>
-                      <tr key={cat + "_h"} style={S.catRow}><td colSpan={invEditMode ? 3 : 2} style={S.catTd}>{cat}</td></tr>
+                    <React.Fragment key={cat}>
+                      <tr style={S.catRow}><td colSpan={invEditMode ? 3 : 2} style={S.catTd}>{cat}</td></tr>
                       {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const isMP = s => s.unit==="MP"||s.unit==="master packs"; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,"").trim(); return base(a).localeCompare(base(b)); }).map(item => {
                         const qty = getQty(item.id);
                         const low = qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
@@ -1471,7 +1471,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                           </tr>
                         );
                       })}
-                    </>
+                    </React.Fragment>
                   ))}
                 </tbody>
               </table>
