@@ -923,7 +923,7 @@ function RosterView({ trucks }) {
   );
 }
 
-function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
+function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
@@ -1389,6 +1389,24 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                       <Button variant="danger" onClick={() => handleRemoveTruck(tr)} style={{ padding: "4px 8px", fontSize: "11px" }}>Remove</Button>
                     </div>
                   </div>
+                  {/* Truck inventory */}
+                  {(() => {
+                    const ti = truckInventory?.[tr.id] || {};
+                    const loaded = INVENTORY_ITEMS.filter(i => (ti[i.id] || 0) > 0);
+                    return (
+                      <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Loaded on Truck</div>
+                        {loaded.length === 0
+                          ? <div style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded.</div>
+                          : <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                              {loaded.map(item => (
+                                <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>
+                              ))}
+                            </div>
+                        }
+                      </div>
+                    );
+                  })()}
                 </Card>
               );
             })}
@@ -2163,6 +2181,6 @@ export default function App() {
     );
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
 }
