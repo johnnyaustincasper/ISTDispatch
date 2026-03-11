@@ -496,7 +496,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
     const assignedByTruck = truck && j.truckId === truck.id;
     if (!assignedByMember && !assignedByTruck) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-    return !latest || (latest.status !== "completed") || !j.closedOut;
+    return !latest || latest.status !== "completed";
   });
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("jobs");
