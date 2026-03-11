@@ -666,9 +666,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                           <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit}</div>
                         </div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <button onClick={() => setMaterialQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) - 1) }))} style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>−</button>
-                          <span style={{ minWidth: 28, textAlign: "center", fontWeight: 700, fontSize: 16, color: (materialQtys[item.id] || 0) > 0 ? t.accent : t.textMuted }}>{materialQtys[item.id] || 0}</span>
-                          <button onClick={() => setMaterialQtys(q => ({ ...q, [item.id]: (q[item.id] || 0) + 1 }))} style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                          <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                            {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
+                              <button key={n} onClick={() => setMaterialQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) + n) }))} style={{ height: 36, minWidth: 36, padding: "0 7px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
+                            ))}
+                            <span style={{ minWidth: 28, textAlign: "center", fontWeight: 800, fontSize: 17, color: (materialQtys[item.id] || 0) > 0 ? t.accent : t.textMuted, marginLeft: 4 }}>{materialQtys[item.id] || 0}</span>
+                          </div>
                         </div>
                       </div>
                     ))}
