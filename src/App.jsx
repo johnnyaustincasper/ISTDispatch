@@ -19,9 +19,7 @@ import {
 const JOB_TYPES = ["Foam","Fiberglass","Removal"];
 const STATUS_OPTIONS = [
   { value: "not_started", label: "Not Started", color: "#6b7280", bg: "#f3f4f6" },
-  { value: "en_route", label: "En Route", color: "#1d4ed8", bg: "#dbeafe" },
   { value: "in_progress", label: "In Progress", color: "#b45309", bg: "#fef3c7" },
-  { value: "wrapping_up", label: "Wrapping Up", color: "#6d28d9", bg: "#ede9fe" },
   { value: "completed", label: "Completed", color: "#15803d", bg: "#dcfce7" },
   { value: "issue", label: "Issue / Need Help", color: "#b91c1c", bg: "#fee2e2" },
 ];
