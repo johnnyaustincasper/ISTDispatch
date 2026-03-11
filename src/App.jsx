@@ -575,6 +575,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         </div>
         <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
           <button style={tabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
+          <button style={tabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>🚛 Truck</button>
           <button style={tabStyle(crewView === "tickets")} onClick={() => setCrewView("tickets")}>
             Tickets
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
@@ -585,11 +586,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       <div style={{ padding: "20px", maxWidth: "600px", margin: "0 auto" }}>
         {crewView === "jobs" && (
           <>
-            <div style={{ marginBottom: 14 }}>
-              <button onClick={() => { setLoadTruckMode(true); setLoadQtys({}); }} style={{ width: "100%", padding: "13px", borderRadius: 10, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                🚛 Load Truck — Morning Checkout
-              </button>
-            </div>
             <SectionHeader title="Your Jobs" />
             {myJobs.length === 0 ? <EmptyState text="No active jobs assigned to you." sub="Check back or contact the office." /> : myJobs.map((job) => {
               const latestStatus = getLatestStatus(job.id);
@@ -624,91 +620,39 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                       })}
                     </div>
                   )}
-                  {latestStatus === "completed" && !job.closedOut ? (
-                    <button onClick={() => { setMaterialCountJob(job); setMaterialQtys({}); }} style={{ width: "100%", padding: "12px", borderRadius: 10, background: "#f59e0b", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", marginTop: 4 }}>
-                      📦 Material Count — Close Out Job
-                    </button>
-                  ) : (
-                    <Button onClick={() => setActiveJob(job)} style={{ width: "100%" }}>Send Update</Button>
-                  )}
+                  <Button onClick={() => setActiveJob(job)} style={{ width: "100%" }}>Send Update</Button>
                 </Card>
               );
             })}
           </>
         )}
 
-        {/* ── MATERIAL COUNT CLOSE-OUT MODAL ── */}
-        {materialCountJob && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", paddingTop: 20, paddingBottom: 40 }}>
-            <div style={{ background: "#fff", borderRadius: 16, padding: 20, width: "100%", maxWidth: 480, margin: "0 20px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <div style={{ fontWeight: 800, fontSize: 17, color: t.text }}>📦 Material Count</div>
-                <button onClick={() => setMaterialCountJob(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted }}>✕</button>
-              </div>
-              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18 }}>{materialCountJob.builder} — {materialCountJob.address?.split(",")[0]}</div>
-              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14, fontStyle: "italic" }}>Enter how much material you are returning to the warehouse. This adds back to inventory.</div>
-              {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => {
-                const catItems = INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
-                const anyFilled = catItems.some(i => materialQtys[i.id] > 0);
-                return (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
-                    {catItems.map(item => (
-                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit}</div>
-                        </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                            {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
-                              <button key={n} onClick={() => setMaterialQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) + n) }))} style={{ height: 36, minWidth: 36, padding: "0 7px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
-                            ))}
-                            <span style={{ minWidth: 28, textAlign: "center", fontWeight: 800, fontSize: 17, color: (materialQtys[item.id] || 0) > 0 ? t.accent : t.textMuted, marginLeft: 4 }}>{materialQtys[item.id] || 0}</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-              <button onClick={() => {
-                const used = INVENTORY_ITEMS.filter(i => (materialQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: materialQtys[i.id] }));
-                onCloseOutJob(materialCountJob.id, used);
-                setMaterialCountJob(null);
-                setMaterialQtys({});
-              }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
-                ✅ Return Material & Close Job
-              </button>
-            </div>
-          </div>
-        )}
-
         {/* ── LOAD TRUCK MODAL ── */}
-        {loadTruckMode && (
-          <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", paddingTop: 20, paddingBottom: 40 }}>
-            <div style={{ background: "#fff", borderRadius: 16, padding: 20, width: "100%", maxWidth: 480, margin: "0 20px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                <div style={{ fontWeight: 800, fontSize: 17, color: t.text }}>🚛 Load Truck</div>
-                <button onClick={() => setLoadTruckMode(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted }}>✕</button>
+        {crewView === "truck" && (() => {
+          const truckAction = loadTruckMode; // "load" | "return" | false
+          const qtyState = loadQtys;
+          const setQtyState = setLoadQtys;
+          const MaterialForm = ({ mode }) => (
+            <div>
+              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
+                {mode === "load" ? "Enter what you're loading from the warehouse. This deducts from inventory." : "Enter what you're returning to the warehouse. This adds back to inventory."}
               </div>
-              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18 }}>Enter how much of each material you're taking from the warehouse. This will deduct from inventory.</div>
               {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => (
                 <div key={cat} style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
-                  {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); }).map(item => {
+                  {INVENTORY_ITEMS.filter(i => i.category === cat).map(item => {
                     const warehouseQty = inventory.find(r => r.itemId === item.id)?.qty || 0;
                     return (
-                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                        <div style={{ flex: 1 }}>
+                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit} · {warehouseQty} in warehouse</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit}{mode === "load" ? ` · ${warehouseQty} in warehouse` : ""}</div>
                         </div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                           {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
-                            <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) + n) }))} style={{ height: 34, minWidth: 34, padding: "0 7px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
+                            <button key={n} onClick={() => setQtyState(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) + n) }))} style={{ height: 36, minWidth: 34, padding: "0 6px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?14:11, fontWeight: n===-1||n===1?400:700, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{label}</button>
                           ))}
-                          <span style={{ minWidth: 28, textAlign: "center", fontWeight: 800, fontSize: 17, color: (loadQtys[item.id] || 0) > 0 ? "#1e40af" : t.textMuted, marginLeft: 4 }}>{loadQtys[item.id] || 0}</span>
+                          <span style={{ minWidth: 30, textAlign: "center", fontWeight: 800, fontSize: 17, color: (qtyState[item.id] || 0) > 0 ? (mode === "load" ? "#1e40af" : "#15803d") : t.textMuted, marginLeft: 2 }}>{qtyState[item.id] || 0}</span>
                         </div>
                       </div>
                     );
@@ -716,17 +660,36 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 </div>
               ))}
               <button onClick={() => {
-                const items = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
-                if (items.length === 0) { setLoadTruckMode(false); return; }
-                onLoadTruck(items);
+                const items = INVENTORY_ITEMS.filter(i => (qtyState[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: qtyState[i.id] }));
+                if (items.length > 0) { mode === "load" ? onLoadTruck(items) : onCloseOutJob(null, items); }
                 setLoadTruckMode(false);
                 setLoadQtys({});
-              }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
-                ✅ Confirm Load — Deduct from Warehouse
+              }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: mode === "load" ? "#1e40af" : "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
+                {mode === "load" ? "✅ Confirm Load Out" : "✅ Confirm Return"}
+              </button>
+              <button onClick={() => { setLoadTruckMode(false); setLoadQtys({}); }} style={{ width: "100%", padding: "12px", borderRadius: 12, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
+                Cancel
               </button>
             </div>
-          </div>
-        )}
+          );
+          return (
+            <div style={{ padding: "0 16px 32px" }}>
+              <SectionHeader title="🚛 Truck" />
+              {!loadTruckMode ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <button onClick={() => { setLoadTruckMode("load"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                    🚛 Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse — deducts inventory</div>
+                  </button>
+                  <button onClick={() => { setLoadTruckMode("return"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                    📦 Return Material<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Return unused material to warehouse — adds to inventory</div>
+                  </button>
+                </div>
+              ) : (
+                <MaterialForm mode={loadTruckMode} />
+              )}
+            </div>
+          );
+        })()}
 
         {crewView === "tickets" && (
           <>
@@ -1860,7 +1823,7 @@ export default function App() {
     else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
   const handleCloseOutJob = async (jobId, materialsReturned) => {
-    await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsReturned, closedAt: new Date().toISOString() });
+    if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsReturned, closedAt: new Date().toISOString() });
     // Add returned material back to warehouse inventory
     for (const m of materialsReturned) {
       const rec = inventory.find(r => r.itemId === m.itemId);
