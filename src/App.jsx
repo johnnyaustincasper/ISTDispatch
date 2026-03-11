@@ -23,6 +23,31 @@ const STATUS_OPTIONS = [
   { value: "completed", label: "Completed", color: "#15803d", bg: "#dcfce7" },
   { value: "issue", label: "Issue / Need Help", color: "#b91c1c", bg: "#fee2e2" },
 ];
+
+const INVENTORY_ITEMS = [
+  // Foam
+  { id: "oc_a", name: "Open Cell - A Side", unit: "barrels", category: "Open Cell Foam" },
+  { id: "oc_b", name: "Open Cell - B Side", unit: "barrels", category: "Open Cell Foam" },
+  { id: "cc_a", name: "Closed Cell - A Side", unit: "barrels", category: "Closed Cell Foam" },
+  { id: "cc_b", name: "Closed Cell - B Side", unit: "barrels", category: "Closed Cell Foam" },
+  // Fiberglass Batts
+  { id: "r11_15_8", name: "R11 x 15 x 8", unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r11_24_8", name: "R11 x 24 x 8", unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r13_15_8", name: "R13 x 15 x 8", unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r13_15_9", name: "R13 x 15 x 9", unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r13_24_8", name: "R13 x 24 x 8", unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r19_15_8", name: "R19 x 15 x 8", unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r19_15_9", name: "R19 x 15 x 9", unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r19_24_8", name: "R19 x 24 x 8", unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r30_15",   name: "R30 x 15",     unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  { id: "r30_24",   name: "R30 x 24",     unit: "tubes", category: "Fiberglass Batts", masterPack: 5 },
+  // Blown
+  { id: "blown_fg",  name: "Blown Fiberglass", unit: "bags", category: "Blown" },
+  { id: "blown_cel", name: "Blown Cellulose",  unit: "bags", category: "Blown" },
+  // Rockwool
+  { id: "rw_4", name: 'Rockwool 4"', unit: "tubes", category: "Rockwool" },
+  { id: "rw_6", name: 'Rockwool 6"', unit: "tubes", category: "Rockwool" },
+];
 const TICKET_PRIORITIES = [
   { value: "low", label: "Low — Can Wait", color: "#1d4ed8", bg: "#dbeafe" },
   { value: "medium", label: "Medium — Needs Attention", color: "#b45309", bg: "#fef3c7" },
@@ -460,18 +485,22 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 }
 
 // ─── Crew Dashboard ───
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, onSubmitUpdate, onSubmitTicket, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onLogout }) {
   const myJobs = jobs.filter((j) => {
     // Show job if assigned to this crew member by ID, OR assigned to their truck (legacy)
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
     const assignedByTruck = truck && j.truckId === truck.id;
     if (!assignedByMember && !assignedByTruck) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
-    return !latest || latest.status !== "completed";
+    return !latest || (latest.status !== "completed") || !j.closedOut;
   });
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("jobs");
   const [activeJob, setActiveJob] = useState(null);
+  const [materialCountJob, setMaterialCountJob] = useState(null);
+  const [materialQtys, setMaterialQtys] = useState({});
+  const [loadTruckMode, setLoadTruckMode] = useState(false);
+  const [loadQtys, setLoadQtys] = useState({});
   const [status, setStatus] = useState("in_progress");
   const [eta, setEta] = useState("");
   const [notes, setNotes] = useState("");
@@ -586,11 +615,61 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                       })}
                     </div>
                   )}
-                  <Button onClick={() => setActiveJob(job)} style={{ width: "100%" }}>Send Update</Button>
+                  {latestStatus === "completed" && !job.closedOut ? (
+                    <button onClick={() => { setMaterialCountJob(job); setMaterialQtys({}); }} style={{ width: "100%", padding: "12px", borderRadius: 10, background: "#f59e0b", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", marginTop: 4 }}>
+                      📦 Material Count — Close Out Job
+                    </button>
+                  ) : (
+                    <Button onClick={() => setActiveJob(job)} style={{ width: "100%" }}>Send Update</Button>
+                  )}
                 </Card>
               );
             })}
           </>
+        )}
+
+        {/* ── MATERIAL COUNT CLOSE-OUT MODAL ── */}
+        {materialCountJob && (
+          <div style={{ position: "fixed", inset: 0, zIndex: 200, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", paddingTop: 20, paddingBottom: 40 }}>
+            <div style={{ background: "#fff", borderRadius: 16, padding: 20, width: "100%", maxWidth: 480, margin: "0 20px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <div style={{ fontWeight: 800, fontSize: 17, color: t.text }}>📦 Material Count</div>
+                <button onClick={() => setMaterialCountJob(null)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: t.textMuted }}>✕</button>
+              </div>
+              <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 18 }}>{materialCountJob.builder} — {materialCountJob.address?.split(",")[0]}</div>
+              <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 14, fontStyle: "italic" }}>Enter how much of each material was used on this job. Leave blank if not used.</div>
+              {[...new Set(INVENTORY_ITEMS.map(i => i.category))].map(cat => {
+                const catItems = INVENTORY_ITEMS.filter(i => i.category === cat);
+                const anyFilled = catItems.some(i => materialQtys[i.id] > 0);
+                return (
+                  <div key={cat} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
+                    {catItems.map(item => (
+                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit}</div>
+                        </div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <button onClick={() => setMaterialQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id] || 0) - 1) }))} style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>−</button>
+                          <span style={{ minWidth: 28, textAlign: "center", fontWeight: 700, fontSize: 16, color: (materialQtys[item.id] || 0) > 0 ? t.accent : t.textMuted }}>{materialQtys[item.id] || 0}</span>
+                          <button onClick={() => setMaterialQtys(q => ({ ...q, [item.id]: (q[item.id] || 0) + 1 }))} style={{ width: 28, height: 28, borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 16, cursor: "pointer", fontFamily: "inherit" }}>+</button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              <button onClick={() => {
+                const used = INVENTORY_ITEMS.filter(i => (materialQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: materialQtys[i.id] }));
+                onCloseOutJob(materialCountJob.id, used);
+                setMaterialCountJob(null);
+                setMaterialQtys({});
+              }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
+                ✅ Finish &amp; Close Job
+              </button>
+            </div>
+          </div>
         )}
 
         {crewView === "tickets" && (
@@ -799,7 +878,7 @@ function RosterView({ trucks }) {
   );
 }
 
-function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onLogout }) {
+function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
@@ -919,6 +998,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
     tickets: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V15a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V9z"/></svg>,
     trucks: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
     roster: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg>,
+    inventory: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"/></svg>,
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
   };
   const NAV_ITEMS = [
@@ -926,6 +1006,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
     { key: "calendar", label: "Calendar" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
+    { key: "inventory", label: "Inventory" },
     { key: "roster", label: "Roster" },
     { key: "log", label: "Log" },
   ];
@@ -1272,6 +1353,40 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         {view === "roster" && (
           <RosterView trucks={trucks} />
         )}
+
+        {view === "inventory" && (() => {
+          const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
+          return (
+            <div style={{ padding: "0 16px 24px" }}>
+              <SectionHeader title="Warehouse Inventory" right={<span style={{ fontSize: 12, color: t.textMuted }}>Live counts</span>} />
+              {categories.map(cat => (
+                <div key={cat} style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8, paddingLeft: 2 }}>{cat}</div>
+                  {INVENTORY_ITEMS.filter(i => i.category === cat).map(item => {
+                    const rec = inventory.find(r => r.itemId === item.id) || { qty: 0 };
+                    const low = rec.qty <= (rec.lowStock ?? 2);
+                    return (
+                      <Card key={item.id} style={{ marginBottom: 8, borderLeft: low && rec.qty > 0 ? "3px solid #f59e0b" : low ? "3px solid #ef4444" : "3px solid " + t.accent }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>{item.name}</div>
+                            <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit}{item.masterPack ? ` · ${item.masterPack}/master pack` : ""}</div>
+                          </div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                            {low && <span style={{ fontSize: 10, fontWeight: 700, color: rec.qty === 0 ? "#ef4444" : "#f59e0b", background: rec.qty === 0 ? "#fee2e2" : "#fef3c7", padding: "2px 7px", borderRadius: 8 }}>{rec.qty === 0 ? "OUT" : "LOW"}</span>}
+                            <button onClick={() => onUpdateInventory(item.id, Math.max(0, (rec.qty || 0) - 1))} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + t.border, background: t.bg, fontSize: 18, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", color: t.text }}>−</button>
+                            <span style={{ minWidth: 32, textAlign: "center", fontWeight: 800, fontSize: 18, color: t.text }}>{rec.qty || 0}</span>
+                            <button onClick={() => onUpdateInventory(item.id, (rec.qty || 0) + 1)} style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid " + t.border, background: t.bg, fontSize: 18, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", color: t.text }}>+</button>
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          );
+        })()}
 
         {view === "log" && (
           <>
@@ -1632,6 +1747,7 @@ export default function App() {
   const [activityLog, setActivityLog] = useState([]);
   const [pmUpdates, setPmUpdates] = useState([]);
   const [members, setMembers] = useState([]);
+  const [inventory, setInventory] = useState([]);
 
   useEffect(() => {
     const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
@@ -1641,7 +1757,8 @@ export default function App() {
     const unsubLog = onSnapshot(collection(db, "activityLog"), (snap) => { setActivityLog(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubPm = onSnapshot(collection(db, "pmUpdates"), (snap) => { setPmUpdates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubMembers = onSnapshot(collection(db, "crewMembers"), (snap) => { setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); };
+    const unsubInv = onSnapshot(collection(db, "inventory"), (snap) => { setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); };
   }, []);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
@@ -1661,6 +1778,20 @@ export default function App() {
   const handleUpdateTicket = async (id, data) => { await updateDoc(doc(db, "tickets", id), data); };
   const handleLogAction = async (action) => { await addDoc(collection(db, "activityLog"), { user: adminName, action, timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
   const handleSubmitPmUpdate = async (data) => { await addDoc(collection(db, "pmUpdates"), { ...data, createdAt: serverTimestamp() }); };
+  const handleUpdateInventory = async (itemId, qty) => {
+    const existing = inventory.find(r => r.itemId === itemId);
+    if (existing) { await updateDoc(doc(db, "inventory", existing.id), { qty }); }
+    else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
+  };
+  const handleCloseOutJob = async (jobId, materialsUsed) => {
+    await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsUsed, closedAt: new Date().toISOString() });
+    // Deduct from inventory
+    for (const m of materialsUsed) {
+      const rec = inventory.find(r => r.itemId === m.itemId);
+      const current = rec?.qty || 0;
+      await handleUpdateInventory(m.itemId, Math.max(0, current - m.qty));
+    }
+  };
   const handleCrewLogin = (member, truck) => {
     setCrewSession({ memberId: member.id, crewName: member.name, truckId: truck?.id || null });
     setRole("crew");
@@ -1943,8 +2074,8 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onLogout={() => { setAdminName(null); setRole(null); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
 }
