@@ -748,24 +748,34 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     </div>
                   );
                 })}
-                <button onClick={() => {
-                  if (mode === "load") {
-                    const items = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
-                    if (items.length > 0) onLoadTruck(items, truck?.id);
-                  } else {
-                    // Return = whatever is still on truck goes back; used = loaded - still have
-                    const returning = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({
-                      itemId: i.id, name: i.name, unit: i.unit,
-                      stillHave: loadQtys[i.id] || 0,
-                      used: Math.max(0, Math.round((truckInventory[i.id] - (loadQtys[i.id] || 0)) * 100) / 100)
-                    }));
-                    onReturnMaterial(returning, truck?.id);
-                  }
-                  setLoadTruckMode(false);
-                  setLoadQtys({});
-                }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: mode === "load" ? "#1e40af" : "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 12 }}>
-                  {mode === "load" ? "Confirm Load Out" : "Confirm End of Day Count"}
-                </button>
+                {mode === "load"
+                  ? <button onClick={() => {
+                      const items = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
+                      if (items.length > 0) onLoadTruck(items, truck?.id);
+                      setLoadTruckMode(false); setLoadQtys({});
+                    }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 12 }}>
+                      Confirm Load Out
+                    </button>
+                  : <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, textAlign: "center", marginBottom: 2 }}>What are you doing with the remaining material?</div>
+                      <button onClick={() => {
+                        const returning = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 }));
+                        onReturnMaterial(returning, truck?.id, "unload");
+                        setLoadTruckMode(false); setLoadQtys({});
+                      }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                        Unload to Warehouse
+                        <div style={{ fontSize: 12, fontWeight: 400, marginTop: 3, opacity: 0.85 }}>Return remaining material — truck inventory zeroes out</div>
+                      </button>
+                      <button onClick={() => {
+                        const keeping = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 }));
+                        onReturnMaterial(keeping, truck?.id, "keep");
+                        setLoadTruckMode(false); setLoadQtys({});
+                      }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                        Keep on Truck
+                        <div style={{ fontSize: 12, fontWeight: 400, marginTop: 3, opacity: 0.85 }}>Material stays on truck — load more tomorrow on top of this</div>
+                      </button>
+                    </div>
+                }
                 <button onClick={() => { setLoadTruckMode(false); setLoadQtys({}); }} style={{ width: "100%", padding: "12px", borderRadius: 12, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginTop: 8 }}>
                   Cancel
                 </button>
@@ -1998,18 +2008,24 @@ export default function App() {
     if (existing) { await updateDoc(doc(db, "inventory", existing.id), { qty }); }
     else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
-  const handleReturnMaterial = async (materialsReturned, truckId) => {
+  const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
     if (!truckId) return;
     const truckRef = doc(db, "truckInventory", truckId);
     const updatedTruck = { ...(truckInventory[truckId] || {}) };
-    for (const m of materialsReturned) {
-      const returning = Math.round(((truckInventory[truckId]?.[m.itemId] || 0) - (m.stillHave || 0)) * 100) / 100;
-      if (returning > 0) {
-        const rec = inventory.find(r => r.itemId === m.itemId);
-        const current = rec?.qty || 0;
-        await handleUpdateInventory(m.itemId, Math.round((current + returning) * 100) / 100);
+    for (const m of materials) {
+      const stillHave = m.stillHave || 0;
+      if (returnMode === "unload") {
+        // Return stillHave to warehouse, zero out truck
+        if (stillHave > 0) {
+          const rec = inventory.find(r => r.itemId === m.itemId);
+          const current = rec?.qty || 0;
+          await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100);
+        }
+        updatedTruck[m.itemId] = 0;
+      } else {
+        // Keep on truck — just update truck inventory to stillHave, no warehouse change
+        updatedTruck[m.itemId] = stillHave;
       }
-      updatedTruck[m.itemId] = m.stillHave || 0;
     }
     await setDoc(truckRef, updatedTruck);
   };
