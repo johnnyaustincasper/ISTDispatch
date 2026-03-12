@@ -31,18 +31,26 @@ const INVENTORY_ITEMS = [
   { id: "cc_a",       name: "Closed Cell A",     unit: "bbl",   category: "Foam" },
   { id: "cc_b",       name: "Closed Cell B",     unit: "bbl",   category: "Foam" },
   // R11
-  { id: "r11_15_8_t", name: "R11 x 15 x 8",     unit: "tubes", category: "R11" },
+  { id: "r11_15_8_t", name: "R11 x 15 x 8",     unit: "tubes", category: "R11", hasPieces: true },
+  { id: "r11_15_8_pcs", name: "R11 x 15 x 8",   unit: "pcs",   category: "R11", isPieces: true, parentId: "r11_15_8_t" },
   // R13
-  { id: "r13_15_8_t", name: "R13 x 15 x 8",     unit: "tubes", category: "R13" },
+  { id: "r13_15_8_t", name: "R13 x 15 x 8",     unit: "tubes", category: "R13", hasPieces: true },
+  { id: "r13_15_8_pcs", name: "R13 x 15 x 8",   unit: "pcs",   category: "R13", isPieces: true, parentId: "r13_15_8_t" },
   { id: "r13_15_9_t", name: "R13 x 15 x 9",     unit: "tubes", category: "R13" },
-  { id: "r13_24_8_t", name: "R13 x 24 x 8",     unit: "tubes", category: "R13" },
+  { id: "r13_24_8_t", name: "R13 x 24 x 8",     unit: "tubes", category: "R13", hasPieces: true },
+  { id: "r13_24_8_pcs", name: "R13 x 24 x 8",   unit: "pcs",   category: "R13", isPieces: true, parentId: "r13_24_8_t" },
   // R19
-  { id: "r19_15_8_t", name: "R19 x 15 x 8",     unit: "tubes", category: "R19" },
-  { id: "r19_19_8_t", name: "R19 x 19 x 8",     unit: "tubes", category: "R19" },
-  { id: "r19_24_8_t", name: "R19 x 24 x 8",     unit: "tubes", category: "R19" },
+  { id: "r19_15_8_t", name: "R19 x 15 x 8",     unit: "tubes", category: "R19", hasPieces: true },
+  { id: "r19_15_8_pcs", name: "R19 x 15 x 8",   unit: "pcs",   category: "R19", isPieces: true, parentId: "r19_15_8_t" },
+  { id: "r19_19_8_t", name: "R19 x 19 x 8",     unit: "tubes", category: "R19", hasPieces: true },
+  { id: "r19_19_8_pcs", name: "R19 x 19 x 8",   unit: "pcs",   category: "R19", isPieces: true, parentId: "r19_19_8_t" },
+  { id: "r19_24_8_t", name: "R19 x 24 x 8",     unit: "tubes", category: "R19", hasPieces: true },
+  { id: "r19_24_8_pcs", name: "R19 x 24 x 8",   unit: "pcs",   category: "R19", isPieces: true, parentId: "r19_24_8_t" },
   // R30
-  { id: "r30_15_t",   name: "R30 x 15",         unit: "tubes", category: "R30" },
-  { id: "r30_24_t",   name: "R30 x 24",         unit: "tubes", category: "R30" },
+  { id: "r30_15_t",   name: "R30 x 15",         unit: "tubes", category: "R30", hasPieces: true },
+  { id: "r30_15_pcs",   name: "R30 x 15",       unit: "pcs",   category: "R30", isPieces: true, parentId: "r30_15_t" },
+  { id: "r30_24_t",   name: "R30 x 24",         unit: "tubes", category: "R30", hasPieces: true },
+  { id: "r30_24_pcs",   name: "R30 x 24",       unit: "pcs",   category: "R30", isPieces: true, parentId: "r30_24_t" },
   // Blown
   { id: "blown_fg",   name: "Blown Fiberglass",  unit: "bags",  category: "Blown" },
   { id: "blown_cel",  name: "Blown Cellulose",   unit: "bags",  category: "Blown" },
@@ -639,8 +647,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
             const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
             // For "return": items currently on truck. For "load": all items.
             const itemsForMode = mode === "return"
-              ? INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0)
-              : INVENTORY_ITEMS;
+              ? INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0)
+              : INVENTORY_ITEMS.filter(i => !i.isPieces);
             return (
               <div>
                 <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
@@ -672,6 +680,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                             <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 64px 110px 64px", gap: "4px 8px", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight }}>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
+                                {item.hasPieces && (() => { const pi = INVENTORY_ITEMS.find(x => x.parentId === item.id); const pq = loadQtys[pi?.id] || 0; const pOnTruck = truckInventory[pi?.id] || 0; const pUsed = Math.max(0, pOnTruck - pq); return pi ? <div style={{ marginTop: 4 }}><div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3 }}>Pieces — on truck: {pOnTruck}</div><div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#15803d" }}>Still:</span>{[[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"]].map(([n,l]) => <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [pi.id]: Math.min(pOnTruck, Math.max(0, (q[pi.id]||0) + n)) }))} style={{ height: 26, minWidth: 26, padding: "0 4px", borderRadius: 6, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?12:9, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{l}</button>)}<span style={{ fontWeight: 700, fontSize: 13 }}>{pq}</span><span style={{ fontSize: 10, color: "#dc2626", marginLeft: 6 }}>Used: {pUsed}</span></div></div> : null; })()}
                               </div>
                               {/* Loaded */}
                               <div style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: t.textMuted }}>
@@ -718,6 +727,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                               <div style={{ fontSize: 11, color: t.textMuted }}>
                                 {isFoam(item.id) ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse` : `${warehouseQty} in warehouse`}
                               </div>
+                              {item.hasPieces && (() => { const pi = INVENTORY_ITEMS.find(x => x.parentId === item.id); const pq = loadQtys[pi?.id] || 0; return pi ? <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 6 }}><span style={{ fontSize: 11, color: t.textMuted }}>Pieces:</span>{[[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"]].map(([n,l]) => <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [pi.id]: Math.max(0, (q[pi.id]||0) + n) }))} style={{ height: 28, minWidth: 28, padding: "0 5px", borderRadius: 6, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?13:10, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{l}</button>)}<span style={{ fontWeight: 700, fontSize: 14, minWidth: 24, textAlign: "center" }}>{pq}</span></div> : null; })()}
                             </div>
                             <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                               {isFoam(item.id)
@@ -793,12 +803,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   : <>
                     {ocSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ocSets.toFixed(2)} sets ({bblToGals(ocSets, "oc_a")*2} gal total)</span></div>}
                     {ccSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ccSets.toFixed(2)} sets ({bblToGals(ccSets, "cc_a")*2} gal total)</span></div>}
-                    {nonFoamLoaded.map(item => (
-                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
-                        <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} {item.unit}</span>
-                      </div>
-                    ))}
+                    {nonFoamLoaded.filter(i => !i.isPieces).map(item => {
+                      const pi = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
+                      const pq = pi ? (truckInventory[pi.id] || 0) : 0;
+                      return (
+                        <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
+                          <div>
+                            <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
+                            {pi && pq > 0 && <div style={{ fontSize: 11, color: t.textMuted, paddingLeft: 8 }}>↳ {pq} pcs</div>}
+                          </div>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} {item.unit}</span>
+                        </div>
+                      );
+                    })}
                   </>
                 }
               </Card>
@@ -1551,6 +1568,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         {view === "inventory" && (() => {
           const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
+          const isFgTube = (item) => item.hasPieces;
+          const isFgPcs = (item) => item.isPieces;
           const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b"].includes(id) ? 50 : 48));
@@ -1582,17 +1601,38 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                   {categories.map(cat => (
                     <>
                       <tr key={cat + "_h"} style={S.catRow}><td colSpan={3} style={S.catTd}>{cat}</td></tr>
-                      {INVENTORY_ITEMS.filter(i => i.category === cat).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); }).map(item => {
+                      {INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); }).map(item => {
                         const qty = getQty(item.id);
+                        const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
+                        const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
                         const low = qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
                         return (
                           <tr key={item.id} style={{ background: qty === 0 ? "#fff5f5" : qty <= 2 ? "#fffbeb" : "#fff" }}>
-                            <td style={S.td}>{item.name} <span style={{ fontSize: 10, color: t.textMuted }}>({item.unit})</span></td>
-                            <td style={{ ...S.tdR, color: low, fontSize: 15 }}>{isFoam(item.id) ? qty.toFixed(2) : qty}{isFoam(item.id) && <div style={{ fontSize: 9, color: t.textMuted, fontWeight: 500 }}>{bblToGals(qty, item.id)} gal</div>}{qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444", lineHeight: 1 }}>OUT</div>}{!isFoam(item.id) && qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706", lineHeight: 1 }}>LOW</div>}</td>
-                            <td style={{ ...S.tdR, whiteSpace: "nowrap" }}>
-                              {[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
-                                <button key={n} style={{ ...S.btn, fontSize: n === -1 || n === 1 ? 14 : 10, fontWeight: n === -1 || n === 1 ? 400 : 700, marginLeft: n === 1 ? 4 : 2, color: n < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(item.id, Math.max(0, qty + n))}>{label}</button>
-                              ))}
+                            <td style={S.td}>
+                              <div>{item.name} <span style={{ fontSize: 10, color: t.textMuted }}>({item.unit})</span></div>
+                              {pcsItem && <div style={{ fontSize: 11, color: t.textMuted, paddingLeft: 10, marginTop: 2 }}>↳ {pcsQty} pcs</div>}
+                            </td>
+                            <td style={{ ...S.tdR, color: low, fontSize: 15 }}>
+                              <div>{isFoam(item.id) ? qty.toFixed(2) : qty}{isFoam(item.id) && <span style={{ fontSize: 9, color: t.textMuted, fontWeight: 500, marginLeft: 3 }}>{bblToGals(qty, item.id)} gal</span>}</div>
+                              {qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444" }}>OUT</div>}
+                              {!isFoam(item.id) && qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706" }}>LOW</div>}
+                            </td>
+                            <td style={{ ...S.tdR, whiteSpace: "nowrap", verticalAlign: "top", paddingTop: 8 }}>
+                              {isFoam(item.id)
+                                ? [[-10,"-10g"],[-5,"-5g"],[-1,"-1g"],[1,"+1g"],[5,"+5g"],[10,"+10g"]].map(([g, label]) => (
+                                    <button key={g} style={{ ...S.btn, fontSize: 10, fontWeight: 700, marginLeft: 2, color: g < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(item.id, Math.max(0, Math.round((qty + galsToBbl(g, item.id)) * 100) / 100))}>{label}</button>
+                                  ))
+                                : [[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
+                                    <button key={n} style={{ ...S.btn, fontSize: n === -1 || n === 1 ? 14 : 10, fontWeight: n === -1 || n === 1 ? 400 : 700, marginLeft: 2, color: n < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(item.id, Math.max(0, qty + n))}>{label}</button>
+                                  ))
+                              }
+                              {pcsItem && <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 2 }}>
+                                <span style={{ fontSize: 9, color: t.textMuted, marginRight: 2 }}>pcs:</span>
+                                {[[-10,"-10"],[-1,"−"],[1,"+"],[10,"+10"]].map(([n, label]) => (
+                                  <button key={n} style={{ ...S.btn, fontSize: 10, height: 26, minWidth: 26, padding: "0 4px", color: n < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(pcsItem.id, Math.max(0, pcsQty + n))}>{label}</button>
+                                ))}
+                                <span style={{ fontSize: 12, fontWeight: 700, color: t.text, marginLeft: 3 }}>{pcsQty}</span>
+                              </div>}
                             </td>
                           </tr>
                         );
