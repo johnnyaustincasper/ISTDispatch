@@ -499,10 +499,8 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onLoadTruck, onReturnMaterial, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
-    // Show job if assigned to this crew member by ID, OR assigned to their truck (legacy)
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
-    const assignedByTruck = truck && j.truckId === truck.id;
-    if (!assignedByMember && !assignedByTruck) return false;
+    if (!assignedByMember) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
     return !latest || latest.status !== "completed";
   });
