@@ -71,7 +71,7 @@ const TICKET_STATUSES = [
   { value: "in_repair", label: "In Repair", color: "#6d28d9", bg: "#ede9fe" },
   { value: "resolved", label: "Resolved", color: "#15803d", bg: "#dcfce7" },
 ];
-const OFFICE_PROFILES = ["Skip", "Jordan", "Johnny", "Duck"];
+const OFFICE_PROFILES = ["Skip", "Jordan", "Johnny", "Duck", "Carolyn"];
 
 const todayStr = () => new Date().toISOString().split("T")[0];
 const naturalSort = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
