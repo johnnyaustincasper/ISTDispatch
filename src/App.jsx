@@ -646,8 +646,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const renderTruckForm = (mode) => {
             const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
             const itemsForMode = mode === "return"
-              ? INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0)
-              : INVENTORY_ITEMS.filter(i => !i.isPieces);
+              ? INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0 || (i.isPieces && truckInventory[i.parentId] > 0))
+              : INVENTORY_ITEMS;
             const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", textAlign: "right", boxSizing: "border-box" };
             return (
               <div>
@@ -675,75 +675,32 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                         const onTruck = truckInventory[item.id] || 0;
                         const pi = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
 
-                        if (mode === "return") {
-                          const stillHaveRaw = loadQtys[item.id + "_gal"] || "";
-                          const stillHaveBbl = loadQtys[item.id] || 0;
-                          const stillHaveUnits = isFoam(item.id) ? stillHaveBbl : (loadQtys[item.id] || 0);
-                          const used = Math.max(0, Math.round((onTruck - stillHaveUnits) * 100) / 100);
-                          const pq = pi ? (loadQtys[pi.id] || 0) : 0;
-                          return (
-                            <div key={item.id} style={{ marginBottom: 12 }}>
-                              <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 90px 56px", gap: "4px 8px", alignItems: "center" }}>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
-                                <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: t.textMuted }}>
-                                  {isFoam(item.id) ? bblToGals(onTruck, item.id) : onTruck}
-                                  {isFoam(item.id) && <div style={{ fontSize: 9 }}>gal</div>}
-                                </div>
-                                <div>
-                                  {isFoam(item.id)
-                                    ? <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                        <input type="number" min="0" step="1" placeholder="0" value={stillHaveRaw}
-                                          onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.min(onTruck, Math.round(g/(["cc_a","cc_b"].includes(item.id)?50:48)*100)/100); setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
-                                          style={{ ...inputStyle, width: 64 }} />
-                                        <span style={{ fontSize: 10, color: t.textMuted }}>gal</span>
-                                      </div>
-                                    : <input type="number" min="0" step="1" placeholder="0" value={loadQtys[item.id] || ""}
-                                        onChange={e => { const v = Math.min(onTruck, Math.max(0, parseInt(e.target.value)||0)); setLoadQtys(q => ({...q,[item.id]:v})); }}
-                                        style={inputStyle} />
-                                  }
-                                </div>
-                                <div style={{ textAlign: "center" }}>
-                                  <div style={{ fontSize: 13, fontWeight: 700, color: used > 0 ? "#dc2626" : t.textMuted }}>
-                                    {isFoam(item.id) ? bblToGals(used, item.id) : used}
-                                  </div>
-                                  {isFoam(item.id) && used > 0 && <div style={{ fontSize: 9, color: "#dc2626" }}>{used.toFixed(2)} bbl</div>}
-                                </div>
-                              </div>
-                              {pi && (
-                                <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 90px 56px", gap: "4px 8px", alignItems: "center", marginTop: 6, paddingLeft: 12, paddingTop: 6, borderTop: "1px dashed " + t.borderLight }}>
-                                  <div style={{ fontSize: 12, color: t.textMuted }}>↳ Pieces</div>
-                                  <div style={{ textAlign: "center", fontSize: 12, color: t.textMuted }}>{truckInventory[pi.id] || 0}</div>
-                                  <input type="number" min="0" step="1" placeholder="0" value={loadQtys[pi.id] || ""}
-                                    onChange={e => setLoadQtys(q => ({...q,[pi.id]:Math.max(0,parseInt(e.target.value)||0)}))}
-                                    style={inputStyle} />
-                                  <div style={{ textAlign: "center", fontSize: 12, fontWeight: 700, color: Math.max(0,(truckInventory[pi.id]||0)-pq) > 0 ? "#dc2626" : t.textMuted }}>{Math.max(0,(truckInventory[pi.id]||0)-pq)}</div>
-                                </div>
-                              )}
-                            </div>
-                          );
-                        }
+                        const label = item.isPieces ? "Pieces" : item.name;
+                        const subLabel = item.isPieces
+                          ? null
+                          : isFoam(item.id)
+                            ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse`
+                            : `${warehouseQty} in warehouse`;
 
-                        // Load mode — simple two-column layout: name/subtext | input
-                        return (
-                          <div key={item.id} style={{ marginBottom: 14 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-                              <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
-                                <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
-                                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>
-                                  {isFoam(item.id) ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse` : `${warehouseQty} in warehouse`}
-                                </div>
+                        if (mode === "return") {
+                          const stillHaveUnits = isFoam(item.id) ? (loadQtys[item.id] || 0) : (loadQtys[item.id] || 0);
+                          const used = Math.max(0, Math.round((onTruck - stillHaveUnits) * 100) / 100);
+                          return (
+                            <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 56px 90px 56px", gap: "4px 8px", alignItems: "center", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid " + t.borderLight }}>
+                              <div>
+                                <div style={{ fontSize: item.isPieces ? 12 : 13, fontWeight: 600, color: item.isPieces ? t.textMuted : t.text }}>{label}</div>
                               </div>
-                              <div style={{ flexShrink: 0, width: isFoam(item.id) ? 120 : 80 }}>
+                              <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: t.textMuted }}>
+                                {isFoam(item.id) ? <>{bblToGals(onTruck, item.id)}<div style={{ fontSize: 9 }}>gal</div></> : onTruck}
+                              </div>
+                              <div>
                                 {isFoam(item.id)
-                                  ? <div>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                        <input type="number" min="0" step="1" placeholder="0"
-                                          value={loadQtys[item.id + "_gal"] || ""}
-                                          onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.round(g/(["cc_a","cc_b"].includes(item.id)?50:48)*100)/100; setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
-                                          style={{ ...inputStyle, width: 80 }} />
-                                        <span style={{ fontSize: 11, color: t.textMuted }}>gal</span>
-                                      </div>
-                                      {(loadQtys[item.id]||0) > 0 && <div style={{ fontSize: 11, color: t.accent, fontWeight: 700, textAlign: "right", marginTop: 3 }}>{(loadQtys[item.id]||0).toFixed(2)} bbl</div>}
+                                  ? <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                      <input type="number" min="0" step="1" placeholder="0"
+                                        value={loadQtys[item.id + "_gal"] || ""}
+                                        onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.min(onTruck, Math.round(g/(["cc_a","cc_b"].includes(item.id)?50:48)*100)/100); setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
+                                        style={{ ...inputStyle, width: 64 }} />
+                                      <span style={{ fontSize: 10, color: t.textMuted }}>gal</span>
                                     </div>
                                   : <input type="number" min="0" step="1" placeholder="0"
                                       value={loadQtys[item.id] || ""}
@@ -751,18 +708,41 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                                       style={inputStyle} />
                                 }
                               </div>
-                            </div>
-                            {pi && (
-                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginTop: 8, paddingLeft: 12, paddingTop: 6, borderTop: "1px dashed " + t.borderLight }}>
-                                <div style={{ fontSize: 12, color: t.textMuted }}>↳ Pieces in warehouse: {inventory.find(r => r.itemId === pi.id)?.qty || 0}</div>
-                                <div style={{ width: 80, flexShrink: 0 }}>
-                                  <input type="number" min="0" step="1" placeholder="0"
-                                    value={loadQtys[pi.id] || ""}
-                                    onChange={e => setLoadQtys(q => ({...q,[pi.id]:Math.max(0,parseInt(e.target.value)||0)}))}
-                                    style={inputStyle} />
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 13, fontWeight: 700, color: used > 0 ? "#dc2626" : t.textMuted }}>
+                                  {isFoam(item.id) ? bblToGals(used, item.id) : used}
                                 </div>
+                                {isFoam(item.id) && used > 0 && <div style={{ fontSize: 9, color: "#dc2626" }}>{used.toFixed(2)} bbl</div>}
                               </div>
-                            )}
+                            </div>
+                          );
+                        }
+
+                        // Load mode
+                        return (
+                          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
+                            <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+                              <div style={{ fontSize: item.isPieces ? 12 : 13, fontWeight: 600, color: item.isPieces ? t.textMuted : t.text }}>{label}</div>
+                              {subLabel && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{subLabel}</div>}
+                            </div>
+                            <div style={{ flexShrink: 0, width: isFoam(item.id) ? 120 : 80 }}>
+                              {isFoam(item.id)
+                                ? <div>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                      <input type="number" min="0" step="1" placeholder="0"
+                                        value={loadQtys[item.id + "_gal"] || ""}
+                                        onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.round(g/(["cc_a","cc_b"].includes(item.id)?50:48)*100)/100; setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
+                                        style={{ ...inputStyle, width: 80 }} />
+                                      <span style={{ fontSize: 11, color: t.textMuted }}>gal</span>
+                                    </div>
+                                    {(loadQtys[item.id]||0) > 0 && <div style={{ fontSize: 11, color: t.accent, fontWeight: 700, textAlign: "right", marginTop: 3 }}>{(loadQtys[item.id]||0).toFixed(2)} bbl</div>}
+                                  </div>
+                                : <input type="number" min="0" step="1" placeholder="0"
+                                    value={loadQtys[item.id] || ""}
+                                    onChange={e => setLoadQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
+                                    style={inputStyle} />
+                              }
+                            </div>
                           </div>
                         );
                       })}
