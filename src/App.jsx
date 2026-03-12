@@ -1084,6 +1084,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   });
   const orderSort = (a, b) => (a.order ?? 999) - (b.order ?? 999) || naturalSort(a, b);
   const sortedTrucks = [...trucks].sort(orderSort);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
   const handleAddJob = () => { onAddJob({ ...jobForm }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ")"); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [null, null, null, null], date: todayStr(), notes: "", jobCategory: "" }); setCrewPickerSlot(null); setShowAddJob(false); };
@@ -1567,7 +1568,6 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
           const isFgTube = (item) => item.hasPieces;
           const isFgPcs = (item) => item.isPieces;
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b"].includes(id) ? 50 : 48));
           const S = {
