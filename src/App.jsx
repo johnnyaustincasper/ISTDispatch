@@ -2082,24 +2082,27 @@ export default function App() {
   const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
     if (!truckId) return;
     const truckRef = doc(db, "truckInventory", truckId);
-    const updatedTruck = { ...(truckInventory[truckId] || {}) };
-    for (const m of materials) {
-      const stillHave = m.stillHave || 0;
-      if (returnMode === "unload") {
+    if (returnMode === "unload") {
+      // Add stillHave quantities back to warehouse
+      for (const m of materials) {
+        const stillHave = m.stillHave || 0;
         if (stillHave > 0) {
-          // For pieces: they came from opened tubes on site — add directly to warehouse
-          // For tubes: stillHave goes back to warehouse
           const rec = inventory.find(r => r.itemId === m.itemId);
           const current = rec?.qty || 0;
           await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100);
         }
-        updatedTruck[m.itemId] = 0;
-      } else {
-        // Keep on truck — update truck inventory to stillHave
-        updatedTruck[m.itemId] = stillHave;
       }
+      // Wipe the entire truck document — cleanest possible zero-out
+      await setDoc(truckRef, {});
+    } else {
+      // Keep on truck — set each item to stillHave, wipe the rest
+      const updatedTruck = {};
+      for (const m of materials) {
+        const stillHave = m.stillHave || 0;
+        if (stillHave > 0) updatedTruck[m.itemId] = stillHave;
+      }
+      await setDoc(truckRef, updatedTruck);
     }
-    await setDoc(truckRef, updatedTruck);
   };
   const handleCloseOutJob = async (jobId, materialsReturned) => {
     if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsReturned, closedAt: new Date().toISOString() });
