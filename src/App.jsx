@@ -2115,18 +2115,18 @@ export default function App() {
     if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsReturned, closedAt: new Date().toISOString() });
   };
   const handleLoadTruck = async (itemsLoaded, truckId, carriedItems = []) => {
-    // itemsLoaded = pulled from warehouse (deduct inventory)
-    // carriedItems = already on truck (add to truck total only, no warehouse change)
+    // Start fresh — carried items are the new baseline (replaces old truck state)
+    // itemsLoaded = pulled from warehouse (deduct inventory + add to truck)
+    // carriedItems = already on truck (no warehouse change, just sets baseline)
     const truckRef = doc(db, "truckInventory", truckId);
-    const currentTruck = truckInventory[truckId] || {};
-    const updatedTruck = { ...currentTruck };
+    const updatedTruck = {};
+    for (const m of carriedItems) {
+      if (m.qty > 0) updatedTruck[m.itemId] = m.qty;
+    }
     for (const m of itemsLoaded) {
       const rec = inventory.find(r => r.itemId === m.itemId);
       const current = rec?.qty || 0;
       await handleUpdateInventory(m.itemId, Math.max(0, current - m.qty));
-      updatedTruck[m.itemId] = (updatedTruck[m.itemId] || 0) + m.qty;
-    }
-    for (const m of carriedItems) {
       updatedTruck[m.itemId] = (updatedTruck[m.itemId] || 0) + m.qty;
     }
     await setDoc(truckRef, updatedTruck);
