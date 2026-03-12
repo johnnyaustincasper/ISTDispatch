@@ -2095,11 +2095,18 @@ export default function App() {
       // Wipe the entire truck document — cleanest possible zero-out
       await setDoc(truckRef, {});
     } else {
-      // Keep on truck — set each item to stillHave, wipe the rest
-      const updatedTruck = {};
+      // Keep on truck — read fresh from Firestore, then override with stillHave entries
+      const freshSnap = await getDoc(truckRef);
+      const freshTruck = freshSnap.exists() ? freshSnap.data() : {};
+      // Start from fresh truck data, then apply stillHave counts (overwrites used items with 0→removed)
+      const updatedTruck = { ...freshTruck };
       for (const m of materials) {
         const stillHave = m.stillHave || 0;
-        if (stillHave > 0) updatedTruck[m.itemId] = stillHave;
+        if (stillHave > 0) {
+          updatedTruck[m.itemId] = stillHave;
+        } else {
+          delete updatedTruck[m.itemId]; // used up — remove from truck
+        }
       }
       await setDoc(truckRef, updatedTruck);
     }
