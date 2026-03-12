@@ -831,7 +831,25 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               </Card>
               {!loadTruckMode ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  <button onClick={() => { setLoadTruckMode("load"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                  <button onClick={() => {
+                    setLoadTruckMode("load");
+                    setLoadQtys({});
+                    // Pre-fill carryover with what's already on the truck
+                    const prefill = {};
+                    INVENTORY_ITEMS.forEach(i => {
+                      const qty = truckInventory[i.id] || 0;
+                      if (qty > 0) {
+                        if (isFoam(i.id)) {
+                          const gals = bblToGals(qty, i.id);
+                          prefill[i.id + "_gal"] = String(gals);
+                          prefill[i.id] = qty;
+                        } else {
+                          prefill[i.id] = qty;
+                        }
+                      }
+                    });
+                    setCarriedQtys(prefill);
+                  }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                     Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse</div>
                   </button>
                   <button onClick={() => { setLoadTruckMode("return"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
