@@ -680,7 +680,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                             <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 64px 110px 64px", gap: "4px 8px", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight }}>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
-                                {item.hasPieces && (() => { const pi = INVENTORY_ITEMS.find(x => x.parentId === item.id); const pq = loadQtys[pi?.id] || 0; const pOnTruck = truckInventory[pi?.id] || 0; const pUsed = Math.max(0, pOnTruck - pq); return pi ? <div style={{ marginTop: 4 }}><div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3 }}>Pieces — on truck: {pOnTruck}</div><div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 10, color: "#15803d" }}>Still:</span>{[[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"]].map(([n,l]) => <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [pi.id]: Math.min(pOnTruck, Math.max(0, (q[pi.id]||0) + n)) }))} style={{ height: 26, minWidth: 26, padding: "0 4px", borderRadius: 6, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?12:9, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{l}</button>)}<span style={{ fontWeight: 700, fontSize: 13 }}>{pq}</span><span style={{ fontSize: 10, color: "#dc2626", marginLeft: 6 }}>Used: {pUsed}</span></div></div> : null; })()}
+                                {item.hasPieces && (() => { const pi = INVENTORY_ITEMS.find(x => x.parentId === item.id); const pq = loadQtys[pi?.id] || 0; return pi ? <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed " + t.borderLight }}><div style={{ fontSize: 10, color: t.textMuted, marginBottom: 4 }}>Partial tube pieces — enter how many you still have:</div><div style={{ display: "flex", alignItems: "center", gap: 4 }}><span style={{ fontSize: 11, color: "#15803d", fontWeight: 600 }}>Pieces:</span>{[[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n,l]) => <button key={n} onClick={() => setLoadQtys(q => ({ ...q, [pi.id]: Math.max(0, (q[pi.id]||0) + n) }))} style={{ height: 26, minWidth: 26, padding: "0 4px", borderRadius: 6, border: "1px solid " + t.border, background: t.bg, fontSize: n===-1||n===1?12:9, cursor: "pointer", fontFamily: "inherit", color: n < 0 ? "#b91c1c" : "#15803d" }}>{l}</button>)}<span style={{ fontWeight: 700, fontSize: 14, minWidth: 24, textAlign: "center", color: pq > 0 ? "#15803d" : t.textMuted }}>{pq}</span></div></div> : null; })()}
                               </div>
                               {/* Loaded */}
                               <div style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: t.textMuted }}>
@@ -769,7 +769,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   : <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, textAlign: "center", marginBottom: 2 }}>What are you doing with the remaining material?</div>
                       <button onClick={() => {
-                        const returning = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 }));
+                        const returning = [
+                          ...INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 })),
+                          ...INVENTORY_ITEMS.filter(i => i.isPieces && (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 })),
+                        ];
                         onReturnMaterial(returning, truck?.id, "unload");
                         setLoadTruckMode(false); setLoadQtys({});
                       }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
@@ -777,7 +780,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                         <div style={{ fontSize: 12, fontWeight: 400, marginTop: 3, opacity: 0.85 }}>Return remaining material — truck inventory zeroes out</div>
                       </button>
                       <button onClick={() => {
-                        const keeping = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 }));
+                        const keeping = [
+                          ...INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 })),
+                          ...INVENTORY_ITEMS.filter(i => i.isPieces).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 })),
+                        ];
                         onReturnMaterial(keeping, truck?.id, "keep");
                         setLoadTruckMode(false); setLoadQtys({});
                       }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
@@ -2055,15 +2061,16 @@ export default function App() {
     for (const m of materials) {
       const stillHave = m.stillHave || 0;
       if (returnMode === "unload") {
-        // Return stillHave to warehouse, zero out truck
         if (stillHave > 0) {
+          // For pieces: they came from opened tubes on site — add directly to warehouse
+          // For tubes: stillHave goes back to warehouse
           const rec = inventory.find(r => r.itemId === m.itemId);
           const current = rec?.qty || 0;
           await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100);
         }
         updatedTruck[m.itemId] = 0;
       } else {
-        // Keep on truck — just update truck inventory to stillHave, no warehouse change
+        // Keep on truck — update truck inventory to stillHave
         updatedTruck[m.itemId] = stillHave;
       }
     }
