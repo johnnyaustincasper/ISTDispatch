@@ -655,7 +655,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     <div key={cat} style={{ marginBottom: 16 }}>
                       <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 8 }}>{cat}</div>
                       {mode === "return" && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "6px 10px", alignItems: "center", marginBottom: 6 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 64px 110px 64px", gap: "4px 8px", alignItems: "center", marginBottom: 4, paddingBottom: 4, borderBottom: "1px solid " + t.border }}>
                           <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase" }}>Item</div>
                           <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", textAlign: "center" }}>Loaded</div>
                           <div style={{ fontSize: 10, fontWeight: 700, color: "#15803d", textTransform: "uppercase", textAlign: "center" }}>Still Have</div>
@@ -669,18 +669,18 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                         const used = Math.max(0, Math.round((onTruck - stillHave) * 100) / 100);
                         if (mode === "return") {
                           return (
-                            <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto auto", gap: "6px 10px", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight }}>
+                            <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 64px 110px 64px", gap: "4px 8px", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight }}>
                               <div>
                                 <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
                               </div>
                               {/* Loaded */}
-                              <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: t.textMuted, minWidth: 60 }}>
+                              <div style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: t.textMuted }}>
                                 {isFoam(item.id) ? bblToGals(onTruck, item.id) + " gal" : onTruck}
                               </div>
                               {/* Still Have input */}
-                              <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 3 }}>
                                 {isFoam(item.id)
-                                  ? <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  ? <>
                                       <input
                                         type="number" min="0" step="1" placeholder="0"
                                         value={loadQtys[item.id + "_gal"] || ""}
@@ -689,23 +689,23 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                                           const bbls = Math.min(onTruck, Math.round(gals / (["cc_a","cc_b"].includes(item.id) ? 50 : 48) * 100) / 100);
                                           setLoadQtys(q => ({ ...q, [item.id + "_gal"]: e.target.value, [item.id]: bbls }));
                                         }}
-                                        style={{ width: 70, padding: "6px 8px", borderRadius: 7, border: "1px solid " + t.border, fontSize: 13, fontFamily: "inherit", textAlign: "right" }}
+                                        style={{ width: 62, padding: "6px 6px", borderRadius: 7, border: "1px solid " + t.border, fontSize: 13, fontFamily: "inherit", textAlign: "right" }}
                                       />
                                       <span style={{ fontSize: 10, color: t.textMuted }}>gal</span>
-                                    </div>
-                                  : <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                    </>
+                                  : <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                                       <button onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.max(0, (q[item.id]||0) - 1) }))} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid " + t.border, background: t.bg, fontSize: 14, cursor: "pointer" }}>−</button>
-                                      <span style={{ minWidth: 24, textAlign: "center", fontWeight: 700, fontSize: 14 }}>{stillHave}</span>
+                                      <span style={{ minWidth: 22, textAlign: "center", fontWeight: 700, fontSize: 14 }}>{stillHave}</span>
                                       <button onClick={() => setLoadQtys(q => ({ ...q, [item.id]: Math.min(onTruck, (q[item.id]||0) + 1) }))} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid " + t.border, background: t.bg, fontSize: 14, cursor: "pointer" }}>+</button>
                                     </div>
                                 }
                               </div>
                               {/* Used */}
-                              <div style={{ textAlign: "center", minWidth: 50 }}>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: used > 0 ? "#dc2626" : t.textMuted }}>
+                              <div style={{ textAlign: "center" }}>
+                                <div style={{ fontSize: 12, fontWeight: 700, color: used > 0 ? "#dc2626" : t.textMuted }}>
                                   {isFoam(item.id) ? bblToGals(used, item.id) + " gal" : used}
                                 </div>
-                                {isFoam(item.id) && used > 0 && <div style={{ fontSize: 10, color: "#dc2626" }}>{used.toFixed(2)} bbl</div>}
+                                {isFoam(item.id) && used > 0 && <div style={{ fontSize: 9, color: "#dc2626" }}>{used.toFixed(2)} bbl</div>}
                               </div>
                             </div>
                           );
