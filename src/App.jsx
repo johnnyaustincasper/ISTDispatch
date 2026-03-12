@@ -720,27 +720,27 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
                         // Load mode
                         return (
-                          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, marginBottom: 14 }}>
-                            <div style={{ flex: 1, minWidth: 0, paddingTop: 2 }}>
+                          <div key={item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, marginBottom: 14 }}>
+                            <div style={{ flex: 1, minWidth: 0 }}>
                               <div style={{ fontSize: item.isPieces ? 12 : 13, fontWeight: 600, color: item.isPieces ? t.textMuted : t.text }}>{label}</div>
                               {subLabel && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 1 }}>{subLabel}</div>}
                             </div>
-                            <div style={{ flexShrink: 0, width: isFoam(item.id) ? 120 : 80 }}>
+                            <div style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5 }}>
                               {isFoam(item.id)
-                                ? <div>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                      <input type="number" min="0" step="1" placeholder="0"
-                                        value={loadQtys[item.id + "_gal"] || ""}
-                                        onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.round(g/(["cc_a","cc_b"].includes(item.id)?50:48)*100)/100; setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
-                                        style={{ ...inputStyle, width: 80 }} />
-                                      <span style={{ fontSize: 11, color: t.textMuted }}>gal</span>
-                                    </div>
-                                    {(loadQtys[item.id]||0) > 0 && <div style={{ fontSize: 11, color: t.accent, fontWeight: 700, textAlign: "right", marginTop: 3 }}>{(loadQtys[item.id]||0).toFixed(2)} bbl</div>}
-                                  </div>
-                                : <input type="number" min="0" step="1" placeholder="0"
-                                    value={loadQtys[item.id] || ""}
-                                    onChange={e => setLoadQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
-                                    style={inputStyle} />
+                                ? <>
+                                    <input type="number" min="0" step="1" placeholder="0"
+                                      value={loadQtys[item.id + "_gal"] || ""}
+                                      onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.round(g/(["cc_a","cc_b"].includes(item.id)?50:48)*100)/100; setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
+                                      style={{ ...inputStyle, width: 80 }} />
+                                    <span style={{ fontSize: 12, color: t.textMuted, width: 24 }}>gal</span>
+                                  </>
+                                : <>
+                                    <input type="number" min="0" step="1" placeholder="0"
+                                      value={loadQtys[item.id] || ""}
+                                      onChange={e => setLoadQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
+                                      style={{ ...inputStyle, width: 80 }} />
+                                    <span style={{ fontSize: 12, color: t.textMuted, width: 24 }}>{item.isPieces ? "pcs" : "tubes"}</span>
+                                  </>
                               }
                             </div>
                           </div>
