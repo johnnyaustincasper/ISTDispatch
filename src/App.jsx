@@ -1891,7 +1891,19 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
       {pmJob && (
         <Modal title="Project Manager Update" onClose={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }}>
-          <div style={{ fontSize: "13.5px", color: t.textMuted, marginBottom: "18px" }}><strong style={{ color: t.text }}>{pmJob.builder || "No Customer"}</strong><br />{pmJob.address} — {pmJob.type}</div>
+          <div style={{ fontSize: "13.5px", color: t.textMuted, marginBottom: "12px" }}><strong style={{ color: t.text }}>{pmJob.builder || "No Customer"}</strong><br />{pmJob.address} — {pmJob.type}</div>
+          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "12px 14px", marginBottom: 16 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>Location Verification Required</div>
+            <div style={{ fontSize: 12, color: "#78350f", lineHeight: 1.6 }}>
+              When you tap <strong>Submit</strong>, your browser will ask permission to share your location. <strong>You must tap Allow</strong> — this verifies you were on site.
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11, color: "#92400e", lineHeight: 1.7 }}>
+              <strong>If you accidentally denied location:</strong><br />
+              <strong>Chrome:</strong> Tap the lock icon in the address bar → Permissions → Location → Allow<br />
+              <strong>Samsung Internet:</strong> Tap the lock icon → Location → Allow<br />
+              <strong>Either browser:</strong> Go to phone Settings → Apps → Chrome (or Samsung Internet) → Permissions → Location → Allow
+            </div>
+          </div>
           <TextArea label="Your update" placeholder="Add notes, instructions, status info for this job..." value={pmNote} onChange={(e) => setPmNote(e.target.value)} style={{ minHeight: "100px" }} />
           <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Job Checked</label>
           <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
