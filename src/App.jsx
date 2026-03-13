@@ -1298,13 +1298,15 @@ function RosterView({ trucks }) {
   );
 }
 
-function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
+function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
   const toggleJobExpand = (id) => setExpandedJobs(prev => ({ ...prev, [id]: !prev[id] }));
   const [showAddTruck, setShowAddTruck] = useState(false);
   const [truckHistoryView, setTruckHistoryView] = useState(null);
+  const [showAdminTicketForm, setShowAdminTicketForm] = useState(false);
+  const [adminTicketForm, setAdminTicketForm] = useState({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
   const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [null, null, null, null], date: todayStr(), notes: "", jobCategory: "" });
   const [crewPickerSlot, setCrewPickerSlot] = useState(null); // index 0-3 of slot being picked
   const [truckForm, setTruckForm] = useState({ name: "", members: "" });
@@ -1729,6 +1731,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
         {view === "tickets" && (
           <>
+            <SectionHeader title="Tickets" right={<Button onClick={() => setShowAdminTicketForm(true)}>+ New Ticket</Button>} />
             {/* Ticket type tab bar */}
             {(() => {
               const typeTabs = [
@@ -2103,6 +2106,35 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           </Modal>
         );
       })()}
+
+      {showAdminTicketForm && (
+        <Modal title="New Ticket" onClose={() => setShowAdminTicketForm(false)}>
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 8 }}>Ticket Type</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[{v:"equipment",l:"Equipment"},{v:"inventory",l:"Inventory"},{v:"timeoff",l:"Time Off"}].map(tab => (
+                <button key={tab.v} onClick={() => setAdminTicketForm(f => ({...f, ticketType: tab.v}))}
+                  style={{ flex: 1, padding: "8px 4px", borderRadius: 7, border: adminTicketForm.ticketType === tab.v ? "2px solid "+t.accent : "1px solid "+t.border, background: adminTicketForm.ticketType === tab.v ? t.accent : t.surface, color: adminTicketForm.ticketType === tab.v ? "#fff" : t.text, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{tab.l}</button>
+              ))}
+            </div>
+          </div>
+          <Select label="Crew / Truck" value={adminTicketForm.truckId} onChange={e => setAdminTicketForm(f => ({...f, truckId: e.target.value}))}
+            options={[{value:"",label:"— Office / General —"}, ...sortedTrucks.map(tr => ({value: tr.id, label: tr.members || tr.name}))]} />
+          <Select label="Priority" value={adminTicketForm.priority} onChange={e => setAdminTicketForm(f => ({...f, priority: e.target.value}))}
+            options={TICKET_PRIORITIES.map(p => ({value: p.value, label: p.label}))} />
+          <TextArea label="Description" placeholder="Describe the issue..." value={adminTicketForm.description} onChange={e => setAdminTicketForm(f => ({...f, description: e.target.value}))} />
+          <div style={{ display: "flex", gap: 10, marginTop: 6 }}>
+            <Button variant="secondary" onClick={() => setShowAdminTicketForm(false)} style={{ flex: 1 }}>Cancel</Button>
+            <Button disabled={!adminTicketForm.description.trim()} onClick={() => {
+              const tr = sortedTrucks.find(t => t.id === adminTicketForm.truckId);
+              onSubmitTicket({ truckId: adminTicketForm.truckId || null, truckName: tr ? (tr.members || tr.name) : "Office", submittedBy: adminName, description: adminTicketForm.description, priority: adminTicketForm.priority, ticketType: adminTicketForm.ticketType, status: "open", timestamp: new Date().toISOString() });
+              onLogAction("Admin submitted ticket: " + adminTicketForm.description);
+              setAdminTicketForm({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
+              setShowAdminTicketForm(false);
+            }} style={{ flex: 1 }}>Submit</Button>
+          </div>
+        </Modal>
+      )}
 
       {showAddTruck && (
         <Modal title="Add Crew" onClose={() => setShowAddTruck(false)}>
@@ -2766,6 +2798,6 @@ export default function App() {
     );
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
 }
