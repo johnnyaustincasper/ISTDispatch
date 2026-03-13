@@ -1135,23 +1135,30 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const handleRemoveJob = (job) => { onDeleteJob(job.id); onLogAction("Removed job: " + job.address + " (" + job.type + ")"); };
   const handlePmSubmit = () => {
     const jobLabel = pmJob.builder || pmJob.address;
-    const doSubmit = (geoTag) => {
-      if (pmNote.trim()) { onSubmitPmUpdate({ jobId: pmJob.id, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr(), geoTag }); onLogAction("PM note on " + jobLabel + ": \"" + pmNote.trim().slice(0, 80) + (pmNote.trim().length > 80 ? "..." : "") + "\""); }
-      const prevAM = pmJob.jobCheckedAM || "No";
-      const prevPM = pmJob.jobCheckedPM || "No";
-      const changes = {};
-      if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; changes.amGeoTag = geoTag; changes.amCheckedAt = new Date().toISOString(); onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
-      if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; changes.pmGeoTag = geoTag; changes.pmCheckedAt = new Date().toISOString(); onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
-      onEditJob(pmJob.id, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
-      setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No");
-    };
+    const jobId = pmJob.id;
+    const prevAM = pmJob.jobCheckedAM || "No";
+    const prevPM = pmJob.jobCheckedPM || "No";
+    const changes = {};
+    if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; changes.amCheckedAt = new Date().toISOString(); onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
+    if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; changes.pmCheckedAt = new Date().toISOString(); onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
+    if (pmNote.trim()) { onSubmitPmUpdate({ jobId, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr() }); onLogAction("PM note on " + jobLabel + ": \"" + pmNote.trim().slice(0, 80) + (pmNote.trim().length > 80 ? "..." : "") + "\""); }
+    // Submit immediately — no waiting on GPS
+    onEditJob(jobId, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
+    setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No");
+    // Try to capture geo in background and patch it in
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (pos) => doSubmit({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) }),
-        () => doSubmit(null), // location denied — submit anyway without geo
-        { timeout: 8000, maximumAge: 0, enableHighAccuracy: true }
+        (pos) => {
+          const geoTag = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) };
+          const patch = {};
+          if (pmCheckedAM !== prevAM) patch.amGeoTag = geoTag;
+          if (pmCheckedPM !== prevPM) patch.pmGeoTag = geoTag;
+          if (Object.keys(patch).length > 0) onEditJob(jobId, patch);
+        },
+        () => {}, // silently ignore if denied
+        { timeout: 10000, maximumAge: 0, enableHighAccuracy: true }
       );
-    } else { doSubmit(null); }
+    }
   };
   const handleRemoveTruck = (tr) => { onDeleteTruck(tr.id); onLogAction("Removed crew: " + tr.name); };
   const sortedLog = [...activityLog].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
