@@ -1135,14 +1135,23 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const handleRemoveJob = (job) => { onDeleteJob(job.id); onLogAction("Removed job: " + job.address + " (" + job.type + ")"); };
   const handlePmSubmit = () => {
     const jobLabel = pmJob.builder || pmJob.address;
-    if (pmNote.trim()) { onSubmitPmUpdate({ jobId: pmJob.id, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr() }); onLogAction("PM note on " + jobLabel + ": \"" + pmNote.trim().slice(0, 80) + (pmNote.trim().length > 80 ? "..." : "") + "\""); }
-    const prevAM = pmJob.jobCheckedAM || "No";
-    const prevPM = pmJob.jobCheckedPM || "No";
-    const changes = {};
-    if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
-    if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
-    onEditJob(pmJob.id, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
-    setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No");
+    const doSubmit = (geoTag) => {
+      if (pmNote.trim()) { onSubmitPmUpdate({ jobId: pmJob.id, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr(), geoTag }); onLogAction("PM note on " + jobLabel + ": \"" + pmNote.trim().slice(0, 80) + (pmNote.trim().length > 80 ? "..." : "") + "\""); }
+      const prevAM = pmJob.jobCheckedAM || "No";
+      const prevPM = pmJob.jobCheckedPM || "No";
+      const changes = {};
+      if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; changes.amGeoTag = geoTag; changes.amCheckedAt = new Date().toISOString(); onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
+      if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; changes.pmGeoTag = geoTag; changes.pmCheckedAt = new Date().toISOString(); onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
+      onEditJob(pmJob.id, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
+      setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No");
+    };
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => doSubmit({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) }),
+        () => doSubmit(null), // location denied — submit anyway without geo
+        { timeout: 8000, maximumAge: 0, enableHighAccuracy: true }
+      );
+    } else { doSubmit(null); }
   };
   const handleRemoveTruck = (tr) => { onDeleteTruck(tr.id); onLogAction("Removed crew: " + tr.name); };
   const sortedLog = [...activityLog].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
@@ -1341,8 +1350,12 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
 
                         {/* Pill row — always visible */}
                         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "10px", flexWrap: "wrap" }}>
-                          <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
-                          <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
+                          {job.amGeoTag
+                            ? <a href={`https://www.google.com/maps?q=${job.amGeoTag.lat},${job.amGeoTag.lng}`} target="_blank" rel="noreferrer" style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: "#dcfce7", color: "#15803d", textDecoration: "none" }}>AM ✓ 📍</a>
+                            : <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>}
+                          {job.pmGeoTag
+                            ? <a href={`https://www.google.com/maps?q=${job.pmGeoTag.lat},${job.pmGeoTag.lng}`} target="_blank" rel="noreferrer" style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: "#dcfce7", color: "#15803d", textDecoration: "none" }}>PM ✓ 📍</a>
+                            : <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>}
                           <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "2px" }}>{job.type}</span>
                           {job.jobCategory && <span style={{ fontSize: "11px", fontWeight: 600, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}
                           <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>{new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
