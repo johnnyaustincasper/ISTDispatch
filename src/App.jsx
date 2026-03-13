@@ -509,10 +509,13 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const [activeJob, setActiveJob] = useState(null);
   const [materialCountJob, setMaterialCountJob] = useState(null);
   const [materialQtys, setMaterialQtys] = useState({});
-  const [closeoutJob, setCloseoutJob] = useState(null); // job pending materials entry before closeout
+  const [closeoutJob, setCloseoutJob] = useState(null);
   const [closeoutMaterialQtys, setCloseoutMaterialQtys] = useState({});
-  const [editMaterialsJob, setEditMaterialsJob] = useState(null); // editing materials on a completed job
+  const [editMaterialsJob, setEditMaterialsJob] = useState(null);
   const [editMaterialQtys, setEditMaterialQtys] = useState({});
+  const [histCalMonth, setHistCalMonth] = useState(new Date().getMonth());
+  const [histCalYear, setHistCalYear] = useState(new Date().getFullYear());
+  const [histDayJobs, setHistDayJobs] = useState(null); // { date, jobs[] }
   const [loadTruckMode, setLoadTruckMode] = useState(false);
   const [loadQtys, setLoadQtys] = useState({});   // from warehouse
   const [carriedQtys, setCarriedQtys] = useState({});  // already on truck
@@ -576,7 +579,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
     const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
     const materialsUsed = bypass ? null : (() => {
       const used = {};
-      INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(i => {
+      INVENTORY_ITEMS.forEach(i => {
         const qty = closeoutMaterialQtys[i.id];
         if (qty && parseFloat(qty) > 0) {
           used[i.id] = isFoam(i.id) ? Math.round(parseFloat(qty) / (["cc_a","cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(qty);
@@ -627,6 +630,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
           <button style={tabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
           <button style={tabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>Truck</button>
+          <button style={tabStyle(crewView === "history")} onClick={() => setCrewView("history")}>History</button>
           <button style={tabStyle(crewView === "tickets")} onClick={() => setCrewView("tickets")}>
             Tickets
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
@@ -676,51 +680,104 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               );
             })}
 
-            {myCompletedJobs.length > 0 && (
-              <>
-                <div style={{ fontSize: 11, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.7, marginTop: 24, marginBottom: 10 }}>Completed Today</div>
-                {myCompletedJobs.map(job => {
-                  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
-                  const mu = job.materialsUsed || {};
-                  const hasMaterials = Object.keys(mu).length > 0;
-                  return (
-                    <Card key={job.id} style={{ opacity: 0.85, borderLeft: "3px solid #15803d" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <div>
-                          <div style={{ fontWeight: 600, color: t.text, fontSize: "14px" }}>{job.builder || "No Customer Listed"}</div>
-                          <div style={{ fontSize: "12px", color: t.textMuted }}>{job.address}</div>
-                          <div style={{ fontSize: "12px", color: t.textMuted }}>{job.type}</div>
-                        </div>
-                        <Badge color="#15803d" bg="#dcfce7">Done</Badge>
-                      </div>
-                      {hasMaterials ? (
-                        <div style={{ marginTop: 10, fontSize: 12, color: t.textSecondary }}>
-                          {Object.entries(mu).map(([itemId, qty]) => {
-                            const item = INVENTORY_ITEMS.find(i => i.id === itemId);
-                            if (!item) return null;
-                            let display = qty;
-                            if (isFoam(itemId)) {
-                              const gals = Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48));
-                              display = gals + " gal";
-                            }
-                            return <div key={itemId}>{item.name} — <strong>{display} {isFoam(itemId) ? "" : item.unit}</strong></div>;
-                          })}
-                        </div>
-                      ) : (
-                        <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>No materials logged</div>
-                      )}
-                      <Button variant="secondary" onClick={() => { setEditMaterialsJob(job); setEditMaterialQtys({}); }} style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
-                        {hasMaterials ? "Edit Materials" : "Log Materials"}
-                      </Button>
-                    </Card>
-                  );
-                })}
-              </>
-            )}
+
           </>
         )}
 
         {/* ── LOAD TRUCK MODAL ── */}
+        {crewView === "history" && (() => {
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+          const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+          const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+          // All completed jobs for this crew member
+          const allMyCompleted = jobs.filter(j => {
+            if (!(j.crewMemberIds || []).includes(crewMemberId)) return false;
+            return updates.some(u => u.jobId === j.id && u.status === "completed");
+          });
+          // Map: date string -> jobs completed that day
+          const completedByDate = {};
+          allMyCompleted.forEach(j => {
+            const cu = updates.filter(u => u.jobId === j.id && u.status === "completed").sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0];
+            if (!cu) return;
+            const d = cu.timestamp.slice(0,10);
+            if (!completedByDate[d]) completedByDate[d] = [];
+            completedByDate[d].push(j);
+          });
+          const firstDay = new Date(histCalYear, histCalMonth, 1).getDay();
+          const daysInMonth = new Date(histCalYear, histCalMonth + 1, 0).getDate();
+          const cells = [];
+          for (let i = 0; i < firstDay; i++) cells.push(null);
+          for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+          const ds = (d) => histCalYear + "-" + String(histCalMonth+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+          return (
+            <div>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                <button onClick={() => { if (histCalMonth === 0) { setHistCalMonth(11); setHistCalYear(histCalYear-1); } else setHistCalMonth(histCalMonth-1); }} style={{ background: "none", border: "1px solid "+t.border, borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: t.text, fontSize: 16 }}>{"<"}</button>
+                <div style={{ fontWeight: 700, fontSize: 16, color: t.text }}>{monthNames[histCalMonth]} {histCalYear}</div>
+                <button onClick={() => { if (histCalMonth === 11) { setHistCalMonth(0); setHistCalYear(histCalYear+1); } else setHistCalMonth(histCalMonth+1); }} style={{ background: "none", border: "1px solid "+t.border, borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: t.text, fontSize: 16 }}>{">"}</button>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 4 }}>
+                {dayNames.map(d => <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", padding: "4px 0" }}>{d}</div>)}
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3 }}>
+                {cells.map((day, idx) => {
+                  if (!day) return <div key={"e"+idx} />;
+                  const dateStr = ds(day);
+                  const dayJobs = completedByDate[dateStr] || [];
+                  const hasJobs = dayJobs.length > 0;
+                  const isToday = dateStr === new Date().toISOString().slice(0,10);
+                  return (
+                    <div key={dateStr} onClick={() => hasJobs && setHistDayJobs({ date: dateStr, jobs: dayJobs })}
+                      style={{ minHeight: 48, borderRadius: 8, border: "1px solid " + (isToday ? t.accent : t.border), background: hasJobs ? "#dcfce7" : t.surface, cursor: hasJobs ? "pointer" : "default", padding: "4px 5px", position: "relative" }}>
+                      <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isToday ? t.accent : t.text }}>{day}</div>
+                      {hasJobs && <div style={{ fontSize: 10, fontWeight: 700, color: "#15803d", marginTop: 2 }}>{dayJobs.length} job{dayJobs.length > 1 ? "s" : ""}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+              {histDayJobs && (
+                <div style={{ marginTop: 20 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>{new Date(histDayJobs.date+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"})}</div>
+                    <button onClick={() => setHistDayJobs(null)} style={{ background: "none", border: "none", color: t.textMuted, fontSize: 18, cursor: "pointer" }}>✕</button>
+                  </div>
+                  {histDayJobs.jobs.map(job => {
+                    const mu = job.materialsUsed || {};
+                    const hasMaterials = Object.keys(mu).length > 0;
+                    return (
+                      <Card key={job.id} style={{ borderLeft: "3px solid #15803d" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                          <div>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{job.builder || "No Customer"}</div>
+                            <div style={{ fontSize: 12, color: t.textMuted }}>{job.address}</div>
+                            <div style={{ fontSize: 12, color: t.textMuted }}>{job.type}</div>
+                          </div>
+                          <Badge color="#15803d" bg="#dcfce7">Done</Badge>
+                        </div>
+                        {hasMaterials ? (
+                          <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 6 }}>
+                            {Object.entries(mu).map(([itemId, qty]) => {
+                              const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                              if (!item) return null;
+                              let display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                              return <div key={itemId}>{item.name} — <strong>{display}</strong></div>;
+                            })}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic", marginTop: 6 }}>No materials logged</div>
+                        )}
+                        <Button variant="secondary" onClick={() => { setEditMaterialsJob(job); setEditMaterialQtys({}); }} style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
+                          {hasMaterials ? "Edit Materials" : "Log Materials"}
+                        </Button>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {crewView === "truck" && (() => {
           const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b"].includes(id) ? 50 : 48) * 100) / 100;
@@ -1006,12 +1063,21 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 ? item.name + " (on truck: " + Math.round(onTruck * (["cc_a","cc_b"].includes(item.id) ? 50 : 48)) + " gal)"
                 : item.name + " (on truck: " + onTruck + " " + item.unit + ")";
               const placeholder = isFoam(item.id) ? "gallons used" : item.unit + " used";
+              const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
               return (
-                <div key={item.id} style={{ marginBottom: 12 }}>
+                <div key={item.id} style={{ marginBottom: 14 }}>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
                   <input type="number" min="0" placeholder={placeholder} value={closeoutMaterialQtys[item.id] || ""}
                     onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                  {pcsItem && (
+                    <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used</label>
+                      <input type="number" min="0" placeholder="pieces used" value={closeoutMaterialQtys[pcsItem.id] || ""}
+                        onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1027,29 +1093,34 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       {editMaterialsJob && (() => {
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
         const existing = editMaterialsJob.materialsUsed || {};
-        const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && ((truckInventory[i.id] || 0) > 0 || existing[i.id]));
+        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && ((truckInventory[i.id] || 0) > 0 || existing[i.id]));
+        const getVal = (item) => { const e = existing[item.id]; const r = editMaterialQtys[item.id]; if (r !== undefined) return r; if (e) return isFoam(item.id) ? String(Math.round(e * (["cc_a","cc_b"].includes(item.id) ? 50 : 48))) : String(e); return ""; };
         return (
           <Modal title="Edit Materials" onClose={() => setEditMaterialsJob(null)}>
             <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
               <strong style={{ color: t.text }}>{editMaterialsJob.builder || "No Customer"}</strong><br />{editMaterialsJob.address}
             </div>
-            {truckItems.map(item => {
-              const prevQty = existing[item.id];
-              let defaultVal = "";
-              if (prevQty) {
-                defaultVal = isFoam(item.id) ? String(Math.round(prevQty * (["cc_a","cc_b"].includes(item.id) ? 50 : 48))) : String(prevQty);
-              }
-              const val = editMaterialQtys[item.id] !== undefined ? editMaterialQtys[item.id] : defaultVal;
+            {tubeItems.map(item => {
               const onTruck = truckInventory[item.id] || 0;
               const label = isFoam(item.id)
                 ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
                 : item.name + (onTruck > 0 ? " (on truck: " + onTruck + " " + item.unit + ")" : "");
+              const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
+              const showPcs = pcsItem && ((truckInventory[pcsItem.id] || 0) > 0 || existing[pcsItem.id]);
               return (
-                <div key={item.id} style={{ marginBottom: 12 }}>
+                <div key={item.id} style={{ marginBottom: 14 }}>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
-                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used" : item.unit + " used"} value={val}
+                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used" : item.unit + " used"} value={getVal(item)}
                     onChange={e => setEditMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                  {(pcsItem && (showPcs || true)) && (
+                    <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used</label>
+                      <input type="number" min="0" placeholder="pieces used" value={getVal(pcsItem)}
+                        onChange={e => setEditMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -1057,7 +1128,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               <Button variant="secondary" onClick={() => setEditMaterialsJob(null)} style={{ flex: 1 }}>Cancel</Button>
               <Button onClick={() => {
                 const used = {};
-                INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(i => {
+                INVENTORY_ITEMS.forEach(i => {
                   const raw = editMaterialQtys[i.id] !== undefined ? editMaterialQtys[i.id] : (existing[i.id] ? (isFoam(i.id) ? String(Math.round(existing[i.id] * (["cc_a","cc_b"].includes(i.id) ? 50 : 48))) : String(existing[i.id])) : "");
                   if (raw && parseFloat(raw) > 0) {
                     used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
