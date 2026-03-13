@@ -1821,7 +1821,8 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                         <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600, color: t.text, fontSize: "14.5px" }}>{tr.members || tr.name}</div>
+                        <div style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckHistoryView({ truck: tr, calMonth: new Date().getMonth(), calYear: new Date().getFullYear(), selectedDate: null })}>{tr.members || tr.name}</div>
+                        <div style={{ fontSize: 11, color: t.textMuted }}>View unload history</div>
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
@@ -2038,6 +2039,83 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
           <Button onClick={handleAddJob} disabled={!jobForm.address.trim()} style={{ width: "100%" }}>Add Job to Schedule</Button>
         </Modal>
       )}
+
+      {/* ── TRUCK UNLOAD HISTORY MODAL ── */}
+      {truckHistoryView && (() => {
+        const { truck: hTruck, calMonth, calYear, selectedDate } = truckHistoryView;
+        const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+        const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+        // Returns for this truck grouped by date
+        const truckReturns = returnLog.filter(r => r.truckId === hTruck.id);
+        const returnsByDate = {};
+        truckReturns.forEach(r => {
+          const d = r.timestamp.slice(0,10);
+          if (!returnsByDate[d]) returnsByDate[d] = [];
+          returnsByDate[d].push(r);
+        });
+        const firstDay = new Date(calYear, calMonth, 1).getDay();
+        const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+        const cells = [];
+        for (let i = 0; i < firstDay; i++) cells.push(null);
+        for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+        const ds = (d) => calYear + "-" + String(calMonth+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
+        const today = new Date().toISOString().slice(0,10);
+        const dayReturns = selectedDate ? (returnsByDate[selectedDate] || []) : [];
+        return (
+          <Modal title={(hTruck.members || hTruck.name) + " — Unload History"} onClose={() => setTruckHistoryView(null)}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <button onClick={() => setTruckHistoryView(v => { const m = v.calMonth === 0 ? 11 : v.calMonth - 1; const y = v.calMonth === 0 ? v.calYear - 1 : v.calYear; return {...v, calMonth: m, calYear: y, selectedDate: null}; })} style={{ background: "none", border: "1px solid "+t.border, borderRadius: 6, padding: "5px 11px", cursor: "pointer", color: t.text, fontSize: 15 }}>{"<"}</button>
+              <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{monthNames[calMonth]} {calYear}</div>
+              <button onClick={() => setTruckHistoryView(v => { const m = v.calMonth === 11 ? 0 : v.calMonth + 1; const y = v.calMonth === 11 ? v.calYear + 1 : v.calYear; return {...v, calMonth: m, calYear: y, selectedDate: null}; })} style={{ background: "none", border: "1px solid "+t.border, borderRadius: 6, padding: "5px 11px", cursor: "pointer", color: t.text, fontSize: 15 }}>{">"}</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 2, marginBottom: 4 }}>
+              {dayNames.map(d => <div key={d} style={{ textAlign: "center", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", padding: "3px 0" }}>{d}</div>)}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7,1fr)", gap: 3, marginBottom: 16 }}>
+              {cells.map((day, idx) => {
+                if (!day) return <div key={"e"+idx} />;
+                const dateStr = ds(day);
+                const hasReturns = !!(returnsByDate[dateStr]?.length);
+                const isSelected = dateStr === selectedDate;
+                const isToday = dateStr === today;
+                return (
+                  <div key={dateStr} onClick={() => hasReturns && setTruckHistoryView(v => ({...v, selectedDate: isSelected ? null : dateStr}))}
+                    style={{ minHeight: 44, borderRadius: 7, border: "1px solid " + (isSelected ? t.accent : isToday ? t.accent : t.border), background: isSelected ? t.accent : hasReturns ? "#dbeafe" : t.surface, cursor: hasReturns ? "pointer" : "default", padding: "4px 4px" }}>
+                    <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isSelected ? "#fff" : isToday ? t.accent : t.text }}>{day}</div>
+                    {hasReturns && <div style={{ fontSize: 9, fontWeight: 700, color: isSelected ? "#fff" : "#1d4ed8", marginTop: 1 }}>{returnsByDate[dateStr].length} return{returnsByDate[dateStr].length > 1 ? "s" : ""}</div>}
+                  </div>
+                );
+              })}
+            </div>
+            {selectedDate && (
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: t.text, marginBottom: 10 }}>
+                  {new Date(selectedDate+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}
+                </div>
+                {dayReturns.map((ret, i) => {
+                  const time = new Date(ret.timestamp).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true,timeZone:"America/Chicago"});
+                  const itemEntries = Object.entries(ret.items || {});
+                  return (
+                    <div key={ret.id} style={{ background: t.bg, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + t.border }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, marginBottom: 8 }}>Returned at {time}</div>
+                      {itemEntries.map(([itemId, qty]) => {
+                        const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                        if (!item) return null;
+                        let display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                        return <div key={itemId} style={{ fontSize: 13, color: t.text, marginBottom: 3 }}>{item.name} — <strong>{display}</strong></div>;
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {!selectedDate && Object.keys(returnsByDate).length === 0 && (
+              <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", paddingBottom: 8 }}>No unloads recorded yet for this truck.</div>
+            )}
+          </Modal>
+        );
+      })()}
 
       {showAddTruck && (
         <Modal title="Add Crew" onClose={() => setShowAddTruck(false)}>
@@ -2316,6 +2394,8 @@ export default function App() {
   const [updates, setUpdates] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
+  const [returnLog, setReturnLog] = useState([]);
+  const [truckHistoryView, setTruckHistoryView] = useState(null); // { truck, calMonth, calYear, selectedDate }
   const [pmUpdates, setPmUpdates] = useState([]);
   const [members, setMembers] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -2331,7 +2411,8 @@ export default function App() {
     const unsubMembers = onSnapshot(collection(db, "crewMembers"), (snap) => { setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubInv = onSnapshot(collection(db, "inventory"), (snap) => { setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubTruckInv = onSnapshot(collection(db, "truckInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckInventory(m); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); };
+    const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); };
   }, []);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
@@ -2361,13 +2442,19 @@ export default function App() {
     const truckRef = doc(db, "truckInventory", truckId);
     if (returnMode === "unload") {
       // Add stillHave quantities back to warehouse
+      const logItems = {};
       for (const m of materials) {
         const stillHave = m.stillHave || 0;
         if (stillHave > 0) {
           const rec = inventory.find(r => r.itemId === m.itemId);
           const current = rec?.qty || 0;
           await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100);
+          logItems[m.itemId] = stillHave;
         }
+      }
+      // Log the return event
+      if (Object.keys(logItems).length > 0) {
+        await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: new Date().toISOString() });
       }
       // Wipe the entire truck document — cleanest possible zero-out
       await setDoc(truckRef, {});
