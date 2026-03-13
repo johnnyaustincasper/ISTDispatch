@@ -630,7 +630,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
           <button style={tabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
           <button style={tabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>Truck</button>
-          <button style={tabStyle(crewView === "history")} onClick={() => setCrewView("history")}>History</button>
+          <button style={tabStyle(crewView === "history")} onClick={() => setCrewView("history")}>Calendar</button>
           <button style={tabStyle(crewView === "tickets")} onClick={() => setCrewView("tickets")}>
             Tickets
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
