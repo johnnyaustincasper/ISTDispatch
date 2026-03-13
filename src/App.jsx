@@ -511,6 +511,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const [activeJob, setActiveJob] = useState(null);
   const [materialCountJob, setMaterialCountJob] = useState(null);
   const [materialQtys, setMaterialQtys] = useState({});
+  const [confirmUnload, setConfirmUnload] = useState(false);
   const [closeoutJob, setCloseoutJob] = useState(null);
   const [closeoutMaterialQtys, setCloseoutMaterialQtys] = useState({});
   const [editMaterialsJob, setEditMaterialsJob] = useState(null);
@@ -968,10 +969,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                     Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse</div>
                   </button>
-                  <button onClick={() => {
-                    const returning = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: truckInventory[i.id] || 0 }));
-                    onReturnMaterial(returning, truck?.id, "unload");
-                  }} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                  <button onClick={() => setConfirmUnload(true)} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                     Unload to Warehouse<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Returns everything on your truck back to warehouse</div>
                   </button>
                 </div>
@@ -1016,6 +1014,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
             <Button variant="secondary" onClick={() => setActiveJob(null)} style={{ flex: 1 }}>Cancel</Button>
             <Button onClick={handleSubmit} style={{ flex: 1 }}>Submit</Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── UNLOAD CONFIRMATION ── */}
+      {confirmUnload && (
+        <Modal title="Unload to Warehouse" onClose={() => setConfirmUnload(false)}>
+          <div style={{ fontSize: 15, color: t.text, marginBottom: 8 }}>Are you sure you want to return everything back to the warehouse inventory?</div>
+          <div style={{ fontSize: 13, color: t.danger, fontWeight: 600, marginBottom: 20 }}>You can't undo this once you press Yes.</div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <Button variant="secondary" onClick={() => setConfirmUnload(false)} style={{ flex: 1 }}>No</Button>
+            <Button variant="danger" onClick={() => {
+              const returning = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: truckInventory[i.id] || 0 }));
+              onReturnMaterial(returning, truck?.id, "unload");
+              setConfirmUnload(false);
+            }} style={{ flex: 1 }}>Yes, Unload</Button>
           </div>
         </Modal>
       )}
