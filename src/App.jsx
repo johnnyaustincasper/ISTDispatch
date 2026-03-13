@@ -800,7 +800,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               <div>
                 <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
                   {mode === "load"
-                    ? <><div style={{ marginBottom: 8 }}>Fill out both columns. <strong>Only warehouse pulls affect inventory.</strong></div><div style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px", gap: "4px 8px", alignItems: "center", marginBottom: 4 }}><div/><div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textAlign: "center", textTransform: "uppercase" }}>On Truck</div><div style={{ fontSize: 11, fontWeight: 700, color: "#1e40af", textAlign: "center", textTransform: "uppercase" }}>From WH</div></div></>
+                    ? <div style={{ marginBottom: 8 }}>Count <strong>everything on your truck</strong> — what was already there plus what you're grabbing today. Enter the total.</div>
                     : "Enter what you still have on the truck. Anything not entered was used on the job."}
                 </div>
                 {categories.map(cat => {
@@ -865,41 +865,26 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                           );
                         }
 
-                        // Load mode — two columns: On Truck (carryover) + From Warehouse
+                        // Load mode — single column: total on truck today
                         const unit = isFoam(item.id) ? "gal" : item.isPieces ? "pcs" : "tubes";
                         return (
-                          <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 90px", gap: "4px 8px", alignItems: "center", marginBottom: 12 }}>
+                          <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: "4px 8px", alignItems: "center", marginBottom: 12 }}>
                             <div>
                               <div style={{ fontSize: item.isPieces ? 12 : 13, fontWeight: 600, color: item.isPieces ? t.textMuted : t.text }}>{label}</div>
                               {subLabel && <div style={{ fontSize: 10, color: t.textMuted }}>{subLabel}</div>}
                             </div>
-                            {/* On Truck (carryover) */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                              {isFoam(item.id)
-                                ? <input type="number" min="0" step="1" placeholder="0"
-                                    value={carriedQtys[item.id + "_gal"] || ""}
-                                    onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.round(g/(["cc_a","cc_b"].includes(item.id)?50:48)*100)/100; setCarriedQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
-                                    style={{ ...inputStyle, width: 60 }} />
-                                : <input type="number" min="0" step="1" placeholder="0"
-                                    value={carriedQtys[item.id] || ""}
-                                    onChange={e => setCarriedQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
-                                    style={{ ...inputStyle, width: 60 }} />
-                              }
-                              <span style={{ fontSize: 10, color: t.textMuted }}>{unit}</span>
-                            </div>
-                            {/* From Warehouse */}
                             <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                               {isFoam(item.id)
                                 ? <input type="number" min="0" step="1" placeholder="0"
                                     value={loadQtys[item.id + "_gal"] || ""}
                                     onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.round(g/(["cc_a","cc_b"].includes(item.id)?50:48)*100)/100; setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
-                                    style={{ ...inputStyle, width: 60, borderColor: "#2563eb" }} />
+                                    style={{ ...inputStyle, width: 70 }} />
                                 : <input type="number" min="0" step="1" placeholder="0"
                                     value={loadQtys[item.id] || ""}
                                     onChange={e => setLoadQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
-                                    style={{ ...inputStyle, width: 60, borderColor: "#2563eb" }} />
+                                    style={{ ...inputStyle, width: 70 }} />
                               }
-                              <span style={{ fontSize: 10, color: "#2563eb" }}>{unit}</span>
+                              <span style={{ fontSize: 10, color: t.textMuted }}>{unit}</span>
                             </div>
                           </div>
                         );
@@ -909,10 +894,9 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 })}
                 {mode === "load"
                   ? <button onClick={() => {
-                      // Only warehouse pulls hit inventory; carryover goes straight to truck total
-                      const warehouseItems = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
-                      const carriedItems = INVENTORY_ITEMS.filter(i => (carriedQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: carriedQtys[i.id] }));
-                      onLoadTruck(warehouseItems, truck?.id, carriedItems);
+                      // Everything they entered = total leaving on truck today, all deducted from warehouse
+                      const allItems = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
+                      onLoadTruck(allItems, truck?.id);
                       setLoadTruckMode(false); setLoadQtys({}); setCarriedQtys({});
                     }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 12 }}>
                       Confirm Load Out
@@ -981,21 +965,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   <button onClick={() => {
                     setLoadTruckMode("load");
                     setLoadQtys({});
-                    // Pre-fill carryover with what's already on the truck
-                    const prefill = {};
-                    INVENTORY_ITEMS.forEach(i => {
-                      const qty = truckInventory[i.id] || 0;
-                      if (qty > 0) {
-                        if (isFoam(i.id)) {
-                          const gals = bblToGals(qty, i.id);
-                          prefill[i.id + "_gal"] = String(gals);
-                          prefill[i.id] = qty;
-                        } else {
-                          prefill[i.id] = qty;
-                        }
-                      }
-                    });
-                    setCarriedQtys(prefill);
                   }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                     Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse</div>
                   </button>
@@ -2481,20 +2450,18 @@ export default function App() {
   const handleSaveJobMaterials = async (jobId, materialsUsed) => {
     if (jobId) await updateDoc(doc(db, "jobs", jobId), { materialsUsed: materialsUsed || null });
   };
-  const handleLoadTruck = async (itemsLoaded, truckId, carriedItems = []) => {
-    // Start fresh — carried items are the new baseline (replaces old truck state)
-    // itemsLoaded = pulled from warehouse (deduct inventory + add to truck)
-    // carriedItems = already on truck (no warehouse change, just sets baseline)
+  const handleLoadTruck = async (itemsLoaded, truckId) => {
+    // Everything entered = total on truck today. All of it deducts from warehouse.
+    // Truck is zeroed first, then set to exactly what was entered.
     const truckRef = doc(db, "truckInventory", truckId);
     const updatedTruck = {};
-    for (const m of carriedItems) {
-      if (m.qty > 0) updatedTruck[m.itemId] = m.qty;
-    }
     for (const m of itemsLoaded) {
-      const rec = inventory.find(r => r.itemId === m.itemId);
-      const current = rec?.qty || 0;
-      await handleUpdateInventory(m.itemId, Math.max(0, current - m.qty));
-      updatedTruck[m.itemId] = (updatedTruck[m.itemId] || 0) + m.qty;
+      if (m.qty > 0) {
+        const rec = inventory.find(r => r.itemId === m.itemId);
+        const current = rec?.qty || 0;
+        await handleUpdateInventory(m.itemId, Math.max(0, current - m.qty));
+        updatedTruck[m.itemId] = m.qty;
+      }
     }
     await setDoc(truckRef, updatedTruck);
   };
