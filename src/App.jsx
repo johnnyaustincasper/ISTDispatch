@@ -56,8 +56,10 @@ const INVENTORY_ITEMS = [
   { id: "blown_cel",  name: "Blown Cellulose",   unit: "bags",  category: "Blown" },
   { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Lambswool" },
   // Rockwool
-  { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool" },
-  { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool" },
+  { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool", hasPieces: true },
+  { id: "rw_4_pcs",  name: 'Rockwool 4"',        unit: "pcs",   category: "Rockwool", isPieces: true, parentId: "rw_4_t" },
+  { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool", hasPieces: true },
+  { id: "rw_6_pcs",  name: 'Rockwool 6"',        unit: "pcs",   category: "Rockwool", isPieces: true, parentId: "rw_6_t" },
 ];
 const TICKET_PRIORITIES = [
   { value: "low", label: "Low — Can Wait", color: "#1d4ed8", bg: "#dbeafe" },
