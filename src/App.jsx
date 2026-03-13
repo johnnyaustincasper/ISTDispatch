@@ -496,7 +496,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 }
 
 // ─── Crew Dashboard ───
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onLoadTruck, onReturnMaterial, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -509,6 +509,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const [activeJob, setActiveJob] = useState(null);
   const [materialCountJob, setMaterialCountJob] = useState(null);
   const [materialQtys, setMaterialQtys] = useState({});
+  const [closeoutJob, setCloseoutJob] = useState(null); // job pending materials entry before closeout
+  const [closeoutMaterialQtys, setCloseoutMaterialQtys] = useState({});
+  const [editMaterialsJob, setEditMaterialsJob] = useState(null); // editing materials on a completed job
+  const [editMaterialQtys, setEditMaterialQtys] = useState({});
   const [loadTruckMode, setLoadTruckMode] = useState(false);
   const [loadQtys, setLoadQtys] = useState({});   // from warehouse
   const [carriedQtys, setCarriedQtys] = useState({});  // already on truck
@@ -556,9 +560,44 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const getLatestStatus = (jobId) => { const u = getJobUpdates(jobId); return u.length > 0 ? u[0].status : "not_started"; };
 
   const handleSubmit = () => {
+    if (status === "completed") {
+      // Intercept — show materials entry before finalizing closeout
+      setCloseoutJob({ job: activeJob, status, eta, notes });
+      setCloseoutMaterialQtys({});
+      setActiveJob(null); setStatus("in_progress"); setEta(""); setNotes("");
+      return;
+    }
     onSubmitUpdate({ jobId: activeJob.id, truckId: truck.id, crewName, status, eta, notes, timestamp: new Date().toISOString(), timeStr: timeStr() });
     setActiveJob(null); setStatus("in_progress"); setEta(""); setNotes("");
   };
+
+  const handleCloseoutConfirm = (bypass) => {
+    const { job, status: s, eta: e, notes: n } = closeoutJob;
+    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+    const materialsUsed = bypass ? null : (() => {
+      const used = {};
+      INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(i => {
+        const qty = closeoutMaterialQtys[i.id];
+        if (qty && parseFloat(qty) > 0) {
+          used[i.id] = isFoam(i.id) ? Math.round(parseFloat(qty) / (["cc_a","cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(qty);
+        }
+      });
+      return Object.keys(used).length > 0 ? used : null;
+    })();
+    onSubmitUpdate({ jobId: job.id, truckId: truck.id, crewName, status: s, eta: e, notes: n, timestamp: new Date().toISOString(), timeStr: timeStr() });
+    onCloseOutJob(job.id, materialsUsed);
+    setCloseoutJob(null); setCloseoutMaterialQtys({});
+  };
+
+  // Completed jobs for today (or recent) that belong to this crew member
+  const today = new Date().toISOString().slice(0, 10);
+  const myCompletedJobs = jobs.filter(j => {
+    const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
+    if (!assignedByMember) return false;
+    const completedUpdate = updates.filter(u => u.jobId === j.id && u.status === "completed")[0];
+    if (!completedUpdate) return false;
+    return completedUpdate.timestamp.slice(0, 10) === today;
+  });
   const handleTicketSubmit = () => {
     const desc = ticketType === "timeoff"
       ? (toStart ? (toEnd && toEnd !== toStart ? formatToDate(toStart) + " – " + formatToDate(toEnd) : formatToDate(toStart)) : "") + (ticketDesc.trim() ? (toStart ? " — " : "") + ticketDesc.trim() : "")
@@ -631,6 +670,48 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 </Card>
               );
             })}
+
+            {myCompletedJobs.length > 0 && (
+              <>
+                <div style={{ fontSize: 11, fontWeight: 800, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.7, marginTop: 24, marginBottom: 10 }}>Completed Today</div>
+                {myCompletedJobs.map(job => {
+                  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+                  const mu = job.materialsUsed || {};
+                  const hasMaterials = Object.keys(mu).length > 0;
+                  return (
+                    <Card key={job.id} style={{ opacity: 0.85, borderLeft: "3px solid #15803d" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, color: t.text, fontSize: "14px" }}>{job.builder || "No Customer Listed"}</div>
+                          <div style={{ fontSize: "12px", color: t.textMuted }}>{job.address}</div>
+                          <div style={{ fontSize: "12px", color: t.textMuted }}>{job.type}</div>
+                        </div>
+                        <Badge color="#15803d" bg="#dcfce7">Done</Badge>
+                      </div>
+                      {hasMaterials ? (
+                        <div style={{ marginTop: 10, fontSize: 12, color: t.textSecondary }}>
+                          {Object.entries(mu).map(([itemId, qty]) => {
+                            const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                            if (!item) return null;
+                            let display = qty;
+                            if (isFoam(itemId)) {
+                              const gals = Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48));
+                              display = gals + " gal";
+                            }
+                            return <div key={itemId}>{item.name} — <strong>{display} {isFoam(itemId) ? "" : item.unit}</strong></div>;
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ marginTop: 8, fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>No materials logged</div>
+                      )}
+                      <Button variant="secondary" onClick={() => { setEditMaterialsJob(job); setEditMaterialQtys({}); }} style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
+                        {hasMaterials ? "Edit Materials" : "Log Materials"}
+                      </Button>
+                    </Card>
+                  );
+                })}
+              </>
+            )}
           </>
         )}
 
@@ -900,6 +981,90 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           </div>
         </Modal>
       )}
+
+      {/* ── CLOSEOUT MATERIALS MODAL ── */}
+      {closeoutJob && (() => {
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+        const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
+        return (
+          <Modal title="Materials Used" onClose={() => setCloseoutJob(null)}>
+            <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
+              <strong style={{ color: t.text }}>{closeoutJob.job.builder || "No Customer"}</strong><br />{closeoutJob.job.address}
+            </div>
+            <div style={{ fontSize: 13, color: t.textSecondary, marginBottom: 16, background: t.bg, padding: "10px 12px", borderRadius: 6, borderLeft: "3px solid " + t.accent }}>
+              Enter what you used on this job. Leave blank for items you did not use.
+            </div>
+            {truckItems.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 16 }}>No materials loaded on truck.</div>}
+            {truckItems.map(item => {
+              const onTruck = truckInventory[item.id] || 0;
+              const label = isFoam(item.id)
+                ? item.name + " (on truck: " + Math.round(onTruck * (["cc_a","cc_b"].includes(item.id) ? 50 : 48)) + " gal)"
+                : item.name + " (on truck: " + onTruck + " " + item.unit + ")";
+              const placeholder = isFoam(item.id) ? "gallons used" : item.unit + " used";
+              return (
+                <div key={item.id} style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
+                  <input type="number" min="0" placeholder={placeholder} value={closeoutMaterialQtys[item.id] || ""}
+                    onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <Button variant="secondary" onClick={() => handleCloseoutConfirm(true)} style={{ flex: 1, fontSize: 13 }}>Bypass Material Count</Button>
+              <Button onClick={() => handleCloseoutConfirm(false)} style={{ flex: 1 }}>Confirm Closeout</Button>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* ── EDIT MATERIALS MODAL ── */}
+      {editMaterialsJob && (() => {
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+        const existing = editMaterialsJob.materialsUsed || {};
+        const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && ((truckInventory[i.id] || 0) > 0 || existing[i.id]));
+        return (
+          <Modal title="Edit Materials" onClose={() => setEditMaterialsJob(null)}>
+            <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
+              <strong style={{ color: t.text }}>{editMaterialsJob.builder || "No Customer"}</strong><br />{editMaterialsJob.address}
+            </div>
+            {truckItems.map(item => {
+              const prevQty = existing[item.id];
+              let defaultVal = "";
+              if (prevQty) {
+                defaultVal = isFoam(item.id) ? String(Math.round(prevQty * (["cc_a","cc_b"].includes(item.id) ? 50 : 48))) : String(prevQty);
+              }
+              const val = editMaterialQtys[item.id] !== undefined ? editMaterialQtys[item.id] : defaultVal;
+              const onTruck = truckInventory[item.id] || 0;
+              const label = isFoam(item.id)
+                ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
+                : item.name + (onTruck > 0 ? " (on truck: " + onTruck + " " + item.unit + ")" : "");
+              return (
+                <div key={item.id} style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
+                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used" : item.unit + " used"} value={val}
+                    onChange={e => setEditMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <Button variant="secondary" onClick={() => setEditMaterialsJob(null)} style={{ flex: 1 }}>Cancel</Button>
+              <Button onClick={() => {
+                const used = {};
+                INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(i => {
+                  const raw = editMaterialQtys[i.id] !== undefined ? editMaterialQtys[i.id] : (existing[i.id] ? (isFoam(i.id) ? String(Math.round(existing[i.id] * (["cc_a","cc_b"].includes(i.id) ? 50 : 48))) : String(existing[i.id])) : "");
+                  if (raw && parseFloat(raw) > 0) {
+                    used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
+                  }
+                });
+                onSaveJobMaterials(editMaterialsJob.id, Object.keys(used).length > 0 ? used : null);
+                setEditMaterialsJob(null); setEditMaterialQtys({});
+              }} style={{ flex: 1 }}>Save</Button>
+            </div>
+          </Modal>
+        );
+      })()}
 
       {showTicketForm && (
         <Modal title="Submit Ticket" onClose={() => setShowTicketForm(false)}>
@@ -2143,8 +2308,11 @@ export default function App() {
       await setDoc(truckRef, updatedTruck);
     }
   };
-  const handleCloseOutJob = async (jobId, materialsReturned) => {
-    if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsReturned, closedAt: new Date().toISOString() });
+  const handleCloseOutJob = async (jobId, materialsUsed) => {
+    if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsUsed: materialsUsed || null, closedAt: new Date().toISOString() });
+  };
+  const handleSaveJobMaterials = async (jobId, materialsUsed) => {
+    if (jobId) await updateDoc(doc(db, "jobs", jobId), { materialsUsed: materialsUsed || null });
   };
   const handleLoadTruck = async (itemsLoaded, truckId, carriedItems = []) => {
     // Start fresh — carried items are the new baseline (replaces old truck state)
@@ -2445,7 +2613,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
   return null;
