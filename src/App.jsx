@@ -968,8 +968,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                     Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse</div>
                   </button>
-                  <button onClick={() => { setLoadTruckMode("return"); setLoadQtys({}); }} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                    End of Day Count<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Enter what's still on the truck — system calculates what was used</div>
+                  <button onClick={() => {
+                    const returning = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: truckInventory[i.id] || 0 }));
+                    onReturnMaterial(returning, truck?.id, "unload");
+                  }} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                    Unload to Warehouse<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Returns everything on your truck back to warehouse</div>
                   </button>
                 </div>
               ) : renderTruckForm(loadTruckMode)}
@@ -1055,7 +1058,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               );
             })}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-              <Button variant="secondary" onClick={() => handleCloseoutConfirm(true)} style={{ flex: 1, fontSize: 13 }}>Bypass Material Count</Button>
+              <Button variant="secondary" onClick={() => setCloseoutJob(null)} style={{ flex: 1 }}>Cancel</Button>
               <Button onClick={() => handleCloseoutConfirm(false)} style={{ flex: 1 }}>Confirm Closeout</Button>
             </div>
           </Modal>
