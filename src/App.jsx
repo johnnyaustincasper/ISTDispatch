@@ -1074,7 +1074,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
                   {pcsItem && (
                     <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
-                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used</label>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used (on truck: {truckInventory[pcsItem.id] || 0} pcs)</label>
                       <input type="number" min="0" placeholder="pieces used" value={closeoutMaterialQtys[pcsItem.id] || ""}
                         onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
                         style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
