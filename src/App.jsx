@@ -766,9 +766,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                         ) : (
                           <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic", marginTop: 6 }}>No materials logged</div>
                         )}
-                        <Button variant="secondary" onClick={() => { setEditMaterialsJob(job); setEditMaterialQtys({}); }} style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
-                          {hasMaterials ? "Edit Materials" : "Log Materials"}
-                        </Button>
+                        {histDayJobs.date === today && (
+                          <Button variant="secondary" onClick={() => { setEditMaterialsJob(job); setEditMaterialQtys({}); }} style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
+                            {hasMaterials ? "Edit Materials" : "Log Materials"}
+                          </Button>
+                        )}
                       </Card>
                     );
                   })}
