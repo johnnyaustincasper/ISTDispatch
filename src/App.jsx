@@ -801,7 +801,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               <div>
                 <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
                   {mode === "load"
-                    ? <div style={{ marginBottom: 8 }}>Count <strong>everything on your truck</strong> — what was already there plus what you're grabbing today. Enter the total.</div>
+                    ? <div style={{ marginBottom: 8, color: "#dc2626", fontWeight: 600 }}>Count <strong>everything on your truck</strong> — what was already there plus what you're grabbing today. Enter the total.</div>
                     : "Enter what you still have on the truck. Anything not entered was used on the job."}
                 </div>
                 {categories.map(cat => {
