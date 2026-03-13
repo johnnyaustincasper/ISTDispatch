@@ -1287,6 +1287,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
   const [expandedJobs, setExpandedJobs] = useState({});
   const toggleJobExpand = (id) => setExpandedJobs(prev => ({ ...prev, [id]: !prev[id] }));
   const [showAddTruck, setShowAddTruck] = useState(false);
+  const [truckHistoryView, setTruckHistoryView] = useState(null);
   const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [null, null, null, null], date: todayStr(), notes: "", jobCategory: "" });
   const [crewPickerSlot, setCrewPickerSlot] = useState(null); // index 0-3 of slot being picked
   const [truckForm, setTruckForm] = useState({ name: "", members: "" });
@@ -2364,7 +2365,6 @@ export default function App() {
   const [tickets, setTickets] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [returnLog, setReturnLog] = useState([]);
-  const [truckHistoryView, setTruckHistoryView] = useState(null); // { truck, calMonth, calYear, selectedDate }
   const [pmUpdates, setPmUpdates] = useState([]);
   const [members, setMembers] = useState([]);
   const [inventory, setInventory] = useState([]);
