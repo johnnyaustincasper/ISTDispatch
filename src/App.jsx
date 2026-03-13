@@ -584,6 +584,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       });
       return Object.keys(used).length > 0 ? used : null;
     })();
+    // Deduct used materials from truck inventory
+    if (materialsUsed && truck?.id) {
+      const deductions = Object.entries(materialsUsed).map(([itemId, qty]) => ({ itemId, stillHave: Math.max(0, Math.round(((truckInventory[itemId] || 0) - qty) * 100) / 100) }));
+      onReturnMaterial(deductions, truck.id, "keep");
+    }
     onSubmitUpdate({ jobId: job.id, truckId: truck.id, crewName, status: s, eta: e, notes: n, timestamp: new Date().toISOString(), timeStr: timeStr() });
     onCloseOutJob(job.id, materialsUsed);
     setCloseoutJob(null); setCloseoutMaterialQtys({});
