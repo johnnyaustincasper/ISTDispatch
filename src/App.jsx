@@ -1124,6 +1124,18 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
                   }
                 });
+                // Deduct diff from truck inventory: newQty - oldQty
+                const deductions = [];
+                INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(i => {
+                  const newQty = used[i.id] || 0;
+                  const oldQty = existing[i.id] || 0;
+                  const diff = newQty - oldQty;
+                  if (diff !== 0) {
+                    const onTruck = truckInventory[i.id] || 0;
+                    deductions.push({ itemId: i.id, stillHave: Math.max(0, Math.round((onTruck - diff) * 100) / 100) });
+                  }
+                });
+                if (deductions.length > 0) onReturnMaterial(deductions, truck?.id, "keep");
                 onSaveJobMaterials(editMaterialsJob.id, Object.keys(used).length > 0 ? used : null);
                 setEditMaterialsJob(null); setEditMaterialQtys({});
               }} style={{ flex: 1 }}>Save</Button>
