@@ -223,14 +223,17 @@ function AdminLogin({ onLogin, onBack }) {
   const [mode, setMode] = useState(null); // null | "enter" | "create"
   const [error, setError] = useState("");
   const [storedHash, setStoredHash] = useState(null);
+  const [loadingPin, setLoadingPin] = useState(false);
 
   const hashPin = (p) => { let h = 0; const s = p + "ist_salt"; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return String(h); };
 
   const handleSelect = async (name) => {
+    if (loadingPin) return;
     setSelected(name);
     setPin("");
     setConfirmPin("");
     setError("");
+    setLoadingPin(true);
     try {
       const snap = await getDoc(doc(db, "pins", name.toLowerCase()));
       if (snap.exists()) {
@@ -241,6 +244,8 @@ function AdminLogin({ onLogin, onBack }) {
       }
     } catch {
       setMode("create");
+    } finally {
+      setLoadingPin(false);
     }
   };
 
@@ -337,10 +342,11 @@ function AdminLogin({ onLogin, onBack }) {
         <p style={{ color: t.textMuted, fontSize: "13.5px", margin: "0 0 24px" }}>Select your profile</p>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           {OFFICE_PROFILES.map((name) => (
-            <Card key={name} onClick={() => handleSelect(name)} style={{ padding: "14px 18px", cursor: "pointer" }}>
+            <Card key={name} onClick={() => handleSelect(name)} style={{ padding: "14px 18px", cursor: loadingPin ? "wait" : "pointer", opacity: loadingPin && selected !== name ? 0.5 : 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
                 <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 }}>{name[0]}</div>
                 <div style={{ fontWeight: 500, color: t.text, fontSize: "15px" }}>{name}</div>
+                {loadingPin && selected === name && <div style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted }}>Loading...</div>}
               </div>
             </Card>
           ))}
