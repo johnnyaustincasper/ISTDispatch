@@ -190,7 +190,7 @@ function EmptyState({ text, sub }) {
 
 function RoleSelect({ onSelect }) {
   return (
-    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
+    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "calc(env(safe-area-inset-top, 0px) + 20px) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
       <div style={{ textAlign: "center", marginBottom: "40px" }}>
         <div style={{ fontSize: "14px", fontWeight: 600, letterSpacing: "2px", textTransform: "uppercase", color: t.accent }}>Insulation Services of Tulsa</div>
         <div style={{ fontSize: "32px", fontWeight: 700, color: t.text, marginTop: "6px" }}>IST Dispatch</div>
