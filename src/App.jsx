@@ -2418,6 +2418,7 @@ export default function App() {
     setTimeout(() => setMinLoadDone(true), 3700);
   }, []);
   const [role, setRole] = useState(null);
+  const [launcherDismissed, setLauncherDismissed] = useState(false);
   const [crewSession, setCrewSession] = useState(null);
   const [adminName, setAdminName] = useState(null);
   const [trucks, setTrucks] = useState([]);
@@ -2810,6 +2811,27 @@ export default function App() {
     );
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); }} />;
+  if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
+    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 20px" }}>
+      <div style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>IST Operations</div>
+      <div style={{ fontSize: 22, fontWeight: 800, color: t.text, marginBottom: 32 }}>Where to, {adminName}?</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%", maxWidth: 360 }}>
+        <button onClick={() => setLauncherDismissed(true)} style={{ padding: "20px 24px", borderRadius: 14, background: t.accent, border: "none", color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+          Dispatch
+          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 4 }}>Manage crews, jobs &amp; schedule</div>
+        </button>
+        <a href="https://isttakeoff.com" style={{ padding: "20px 24px", borderRadius: 14, background: "#15803d", border: "none", color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left", textDecoration: "none", display: "block" }}>
+          Quote Builder
+          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 4 }}>Build and send customer quotes</div>
+        </a>
+        <a href="https://istintel.com" style={{ padding: "20px 24px", borderRadius: 14, background: "#7c3aed", border: "none", color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left", textDecoration: "none", display: "block" }}>
+          IST Intel
+          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 4 }}>Permits and intelligence</div>
+        </a>
+      </div>
+      <button onClick={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} style={{ marginTop: 28, background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Sign Out</button>
+    </div>
+  );
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
   return null;
 }
