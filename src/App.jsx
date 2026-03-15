@@ -504,6 +504,129 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 }
 
 // ─── Crew Dashboard ───
+function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, setWeekOffset }) {
+  const getWeekRange = (offsetWeeks = 0) => {
+    const now = new Date();
+    const day = now.getDay();
+    const mon = new Date(now);
+    mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7);
+    mon.setHours(0,0,0,0);
+    const sat = new Date(mon);
+    sat.setDate(mon.getDate() + 5);
+    sat.setHours(23,59,59,999);
+    return { mon, sat };
+  };
+  const { mon, sat } = getWeekRange(weekOffset);
+  const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+  const localDateStr = (d) => { const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const dd = String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
+  const weekKey = localDateStr(mon);
+  const tsDocId = `${crewMemberId}_${weekKey}`;
+  const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
+
+  const [crewTsData, setCrewTsData] = useState({});
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "timesheets", tsDocId), snap => {
+      if (snap.exists()) setCrewTsData(snap.data());
+      else setCrewTsData({});
+    });
+    return unsub;
+  }, [tsDocId]);
+
+  const getJobWorkDate = (j) => {
+    const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
+    return started ? started.timestamp.slice(0,10) : j.date;
+  };
+  const weekJobs = jobs.filter(j => {
+    const workDate = getJobWorkDate(j);
+    if (!workDate) return false;
+    const jd = new Date(workDate + "T12:00:00");
+    if (jd < mon || jd > sat) return false;
+    const assigned = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(crewMemberId);
+    const submitted = updates.some(u => u.jobId === j.id && u.submittedBy === crewName);
+    return assigned || submitted;
+  });
+
+  const handlePrint = () => {
+    const rows = DAYS.map(day => {
+      const dayStr = localDateStr(day);
+      const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+      return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap;vertical-align:top">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:6px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " (" + j.type + ")" : ""}<br><span style="color:#6b7280;font-size:12px">Pay: $${parseFloat(crewTsData?.jobPay?.[j.id] || 0).toFixed(2)}</span></div>`).join("")}</td></tr>`;
+    }).join("");
+    const totalJobPay = weekJobs.reduce((s, j) => s + (parseFloat(crewTsData?.jobPay?.[j.id]) || 0), 0);
+    const overtimePay = parseFloat(crewTsData.overtimePay) || 0;
+    const html = `<!DOCTYPE html><html><head><title>Timesheet</title><style>body{font-family:sans-serif;padding:32px;color:#111}h2{margin-bottom:4px}p{color:#6b7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}.summary{margin-top:24px;padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb}.summary div{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e5e7eb}.summary div:last-child{border:none;font-weight:700}@media print{button{display:none}}</style></head><body><h2>Weekly Timesheet — ${crewName}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)}</p><table><thead><tr><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Day</th><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Jobs &amp; Pay</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><div><span>Regular Hours</span><span>${crewTsData.regularHours || 0}</span></div><div><span>Overtime Hours</span><span>${crewTsData.overtimeHours || 0}</span></div><div><span>Total Job Pay</span><span>$${totalJobPay.toFixed(2)}</span></div><div><span>Overtime Pay</span><span>$${overtimePay.toFixed(2)}</span></div><div><span>Total Pay</span><span>$${(totalJobPay + overtimePay).toFixed(2)}</span></div></div><p style="margin-top:24px;font-size:12px;color:#9ca3af">Printed ${new Date().toLocaleString()}</p></body></html>`;
+    const w = window.open("", "_blank");
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  };
+
+  const totalJobPay = weekJobs.reduce((s, j) => s + (parseFloat(crewTsData?.jobPay?.[j.id]) || 0), 0);
+  const overtimePay = parseFloat(crewTsData.overtimePay) || 0;
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div>
+          <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>Weekly Timesheet</div>
+          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{fmtDate(mon)} – {fmtDate(sat)}</div>
+        </div>
+        <Button onClick={handlePrint} variant="secondary" style={{ fontSize: 13 }}>Print</Button>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <Button variant="secondary" onClick={() => setWeekOffset(w => w - 1)} style={{ fontSize: 13 }}>Prev Week</Button>
+        {weekOffset !== 0 && <Button variant="secondary" onClick={() => setWeekOffset(0)} style={{ fontSize: 13 }}>This Week</Button>}
+        {weekOffset < 0 && <Button variant="secondary" onClick={() => setWeekOffset(w => w + 1)} style={{ fontSize: 13 }}>Next Week</Button>}
+      </div>
+      {DAYS.map(day => {
+        const dayStr = localDateStr(day);
+        const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+        return (
+          <Card key={dayStr} style={{ marginBottom: 10 }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 8 : 0 }}>{fmtDay(day)}</div>
+            {dayJobs.length === 0 ? (
+              <div style={{ fontSize: 12, color: t.textMuted }}>No jobs</div>
+            ) : dayJobs.map(j => (
+              <div key={j.id} style={{ padding: "6px 0", borderTop: "1px solid " + t.borderLight }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{j.builder || "No Customer"}</div>
+                    <div style={{ color: t.textMuted, fontSize: 12 }}>{j.address}{j.type ? " — " + j.type : ""}</div>
+                  </div>
+                  {crewTsData?.jobPay?.[j.id] ? (
+                    <div style={{ fontSize: 13, fontWeight: 600, color: t.accent, flexShrink: 0 }}>${parseFloat(crewTsData.jobPay[j.id]).toFixed(2)}</div>
+                  ) : null}
+                </div>
+              </div>
+            ))}
+          </Card>
+        );
+      })}
+      <Card style={{ marginTop: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>Weekly Summary</div>
+        {[
+          { label: "Regular Hours", value: crewTsData.regularHours || "—" },
+          { label: "Overtime Hours", value: crewTsData.overtimeHours || "—" },
+          { label: "Total Job Pay", value: "$" + totalJobPay.toFixed(2) },
+          { label: "Overtime Pay", value: crewTsData.overtimePay ? "$" + overtimePay.toFixed(2) : "—" },
+        ].map(({ label, value }) => (
+          <div key={label} style={{ display: "flex", justifyContent: "space-between", paddingBottom: 7, marginBottom: 7, borderBottom: "1px solid " + t.borderLight }}>
+            <span style={{ fontSize: 13, color: t.text }}>{label}</span>
+            <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{value}</span>
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>Total Pay</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>${(totalJobPay + overtimePay).toFixed(2)}</span>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -986,131 +1109,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           );
         })()}
 
-        {crewView === "timesheet" && (() => {
-          // Week: Mon–Sat of the current week
-          const getWeekRange = (offsetWeeks = 0) => {
-            const now = new Date();
-            const day = now.getDay(); // 0=Sun
-            const mon = new Date(now);
-            mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7);
-            mon.setHours(0,0,0,0);
-            const sat = new Date(mon);
-            sat.setDate(mon.getDate() + 5);
-            sat.setHours(23,59,59,999);
-            return { mon, sat };
-          };
-          const weekOffset = tsWeekOffset;
-          const setWeekOffset = setTsWeekOffset;
-          const { mon, sat } = getWeekRange(weekOffset);
-          const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
-          const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
-          const localDateStr = (d) => { const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const dd = String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
-          const weekKey = localDateStr(mon);
-          const tsDocId = `${crewMemberId}_${weekKey}`;
-          const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
-
-          const [crewTsData, setCrewTsData] = React.useState({});
-          React.useEffect(() => {
-            const unsub = onSnapshot(doc(db, "timesheets", tsDocId), snap => {
-              if (snap.exists()) setCrewTsData(snap.data());
-              else setCrewTsData({});
-            });
-            return unsub;
-          }, [tsDocId]);
-
-          const getJobWorkDate = (j) => {
-            const jobUpdates = updates.filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-            const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
-            return started ? started.timestamp.slice(0,10) : j.date;
-          };
-          const weekJobs = jobs.filter(j => {
-            const workDate = getJobWorkDate(j);
-            if (!workDate) return false;
-            const jd = new Date(workDate + "T12:00:00");
-            if (jd < mon || jd > sat) return false;
-            const assigned = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(crewMemberId);
-            const submitted = updates.some(u => u.jobId === j.id && u.submittedBy === crewName);
-            return assigned || submitted;
-          });
-
-          const handlePrint = () => {
-            const rows = DAYS.map(day => {
-              const dayStr = localDateStr(day);
-              const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
-              return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:4px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " <em>(" + j.type + ")</em>" : ""}</div>`).join("")}</td></tr>`;
-            }).join("");
-            const html = `<!DOCTYPE html><html><head><title>Timesheet</title><style>body{font-family:sans-serif;padding:32px;color:#111}h2{margin-bottom:4px}p{color:#6b7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}@media print{button{display:none}}</style></head><body><h2>Weekly Timesheet — ${crewName}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)}</p><table><thead><tr><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Day</th><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Jobs</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:24px;font-size:12px;color:#9ca3af">Printed ${new Date().toLocaleString()}</p></body></html>`;
-            const w = window.open("", "_blank");
-            w.document.write(html);
-            w.document.close();
-            w.focus();
-            setTimeout(() => w.print(), 300);
-          };
-
-          return (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>Weekly Timesheet</div>
-                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{fmtDate(mon)} – {fmtDate(sat)}</div>
-                </div>
-                <Button onClick={handlePrint} variant="secondary" style={{ fontSize: 13 }}>Print</Button>
-              </div>
-
-              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-                <Button variant="secondary" onClick={() => setWeekOffset(w => w - 1)} style={{ fontSize: 13 }}>Prev Week</Button>
-                {weekOffset !== 0 && <Button variant="secondary" onClick={() => setWeekOffset(0)} style={{ fontSize: 13 }}>This Week</Button>}
-                {weekOffset < 0 && <Button variant="secondary" onClick={() => setWeekOffset(w => w + 1)} style={{ fontSize: 13 }}>Next Week</Button>}
-              </div>
-
-              {DAYS.map(day => {
-                const dayStr = localDateStr(day);
-                const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
-                return (
-                  <Card key={dayStr} style={{ marginBottom: 10 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 8 : 0 }}>{fmtDay(day)}</div>
-                    {dayJobs.length === 0 ? (
-                      <div style={{ fontSize: 12, color: t.textMuted }}>No jobs</div>
-                    ) : dayJobs.map(j => (
-                      <div key={j.id} style={{ padding: "6px 0", borderTop: "1px solid " + t.borderLight }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                          <div>
-                            <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{j.builder || "No Customer"}</div>
-                            <div style={{ color: t.textMuted, fontSize: 12 }}>{j.address}{j.type ? " — " + j.type : ""}</div>
-                          </div>
-                          {crewTsData?.jobPay?.[j.id] ? (
-                            <div style={{ fontSize: 13, fontWeight: 600, color: t.accent, flexShrink: 0 }}>${parseFloat(crewTsData.jobPay[j.id]).toFixed(2)}</div>
-                          ) : null}
-                        </div>
-                      </div>
-                    ))}
-                  </Card>
-                );
-              })}
-
-              {/* Summary */}
-              <Card style={{ marginTop: 8 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>Weekly Summary</div>
-                {[
-                  { label: "Regular Hours", value: crewTsData.regularHours || "—" },
-                  { label: "Overtime Hours", value: crewTsData.overtimeHours || "—" },
-                  { label: "Total Job Pay", value: "$" + weekJobs.reduce((s, j) => s + (parseFloat(crewTsData?.jobPay?.[j.id]) || 0), 0).toFixed(2) },
-                  { label: "Overtime Pay", value: crewTsData.overtimePay ? "$" + parseFloat(crewTsData.overtimePay).toFixed(2) : "—" },
-                ].map(({ label, value }) => (
-                  <div key={label} style={{ display: "flex", justifyContent: "space-between", paddingBottom: 7, marginBottom: 7, borderBottom: "1px solid " + t.borderLight }}>
-                    <span style={{ fontSize: 13, color: t.text }}>{label}</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{value}</span>
-                  </div>
-                ))}
-                <div style={{ display: "flex", justifyContent: "space-between" }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>Total Pay</span>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>${(weekJobs.reduce((s, j) => s + (parseFloat(crewTsData?.jobPay?.[j.id]) || 0), 0) + (parseFloat(crewTsData.overtimePay) || 0)).toFixed(2)}</span>
-                </div>
-              </Card>
-            </div>
-          );
-        })()}
-
+        {crewView === "timesheet" && <CrewTimesheetTab crewMemberId={crewMemberId} crewName={crewName} jobs={jobs} updates={updates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} />}
         {crewView === "tickets" && (
           <>
             <SectionHeader title="My Tickets" right={<Button onClick={() => setShowTicketForm(true)}>+ Submit Ticket</Button>} />
@@ -1340,6 +1339,135 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
 // ─── Admin Dashboard ───
 // ─── Roster View ─────────────────────────────────────────────────────────────
+function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onClose }) {
+  const getWeekRange = (offsetWeeks = 0) => {
+    const now = new Date();
+    const day = now.getDay();
+    const mon = new Date(now);
+    mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7);
+    mon.setHours(0,0,0,0);
+    const sat = new Date(mon);
+    sat.setDate(mon.getDate() + 5);
+    sat.setHours(23,59,59,999);
+    return { mon, sat };
+  };
+  const { mon, sat } = getWeekRange(weekOffset);
+  const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+  const localDateStr = (d) => { const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const dd = String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
+  const weekKey = localDateStr(mon);
+  const tsDocId = `${member.id}_${weekKey}`;
+  const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
+
+  const getJobWorkDate = (j) => {
+    const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
+    return started ? started.timestamp.slice(0,10) : j.date;
+  };
+  const weekJobs = (jobs || []).filter(j => {
+    const workDate = getJobWorkDate(j);
+    if (!workDate) return false;
+    const jd = new Date(workDate + "T12:00:00");
+    if (jd < mon || jd > sat) return false;
+    const assigned = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(member.id);
+    const submitted = (updates || []).some(u => u.jobId === j.id && u.submittedBy === member.name);
+    return assigned || submitted;
+  });
+
+  const [tsData, setTsData] = useState({});
+  const [tsSaving, setTsSaving] = useState(false);
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "timesheets", tsDocId), snap => {
+      if (snap.exists()) setTsData(snap.data());
+      else setTsData({});
+    });
+    return unsub;
+  }, [tsDocId]);
+
+  const updateTsField = (field, val) => setTsData(prev => ({ ...prev, [field]: val }));
+  const updateJobPay = (jobId, val) => setTsData(prev => ({ ...prev, jobPay: { ...(prev.jobPay || {}), [jobId]: val } }));
+  const saveTsData = async () => {
+    setTsSaving(true);
+    await setDoc(doc(db, "timesheets", tsDocId), { ...tsData, memberId: member.id, memberName: member.name, weekStart: weekKey }, { merge: true });
+    setTsSaving(false);
+  };
+
+  const totalJobPay = weekJobs.reduce((sum, j) => sum + (parseFloat(tsData?.jobPay?.[j.id]) || 0), 0);
+  const overtimePay = parseFloat(tsData.overtimePay) || 0;
+  const inputStyle = { fontSize: 13, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit", width: 90, textAlign: "right" };
+
+  const handlePrint = () => {
+    const rows = DAYS.map(day => {
+      const dayStr = localDateStr(day);
+      const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+      return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap;vertical-align:top">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:6px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " (" + j.type + ")" : ""}<br><span style="color:#6b7280;font-size:12px">Pay: $${parseFloat(tsData?.jobPay?.[j.id] || 0).toFixed(2)}</span></div>`).join("")}</td></tr>`;
+    }).join("");
+    const html = `<!DOCTYPE html><html><head><title>Timesheet</title><style>body{font-family:sans-serif;padding:32px;color:#111}h2{margin-bottom:4px}p{color:#6b7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}.summary{margin-top:24px;padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb}.summary div{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e5e7eb}.summary div:last-child{border:none;font-weight:700}@media print{button{display:none}}</style></head><body><h2>Weekly Timesheet — ${member.name}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)}</p><table><thead><tr><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Day</th><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Jobs &amp; Pay</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><div><span>Regular Hours</span><span>${tsData.regularHours || 0}</span></div><div><span>Overtime Hours</span><span>${tsData.overtimeHours || 0}</span></div><div><span>Total Job Pay</span><span>$${totalJobPay.toFixed(2)}</span></div><div><span>Overtime Pay</span><span>$${overtimePay.toFixed(2)}</span></div><div><span>Total Pay</span><span>$${(totalJobPay + overtimePay).toFixed(2)}</span></div></div><p style="margin-top:24px;font-size:12px;color:#9ca3af">Printed ${new Date().toLocaleString()}</p></body></html>`;
+    const w = window.open("", "_blank");
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 300);
+  };
+
+  return (
+    <Modal title={`Timesheet — ${member.name}`} onClose={onClose}>
+      <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>{fmtDate(mon)} – {fmtDate(sat)}</div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        <Button variant="secondary" onClick={() => setWeekOffset(w => w - 1)} style={{ fontSize: 12 }}>Prev Week</Button>
+        {weekOffset !== 0 && <Button variant="secondary" onClick={() => setWeekOffset(0)} style={{ fontSize: 12 }}>This Week</Button>}
+        {weekOffset < 0 && <Button variant="secondary" onClick={() => setWeekOffset(w => w + 1)} style={{ fontSize: 12 }}>Next Week</Button>}
+        <Button onClick={handlePrint} variant="secondary" style={{ fontSize: 12, marginLeft: "auto" }}>Print</Button>
+      </div>
+      {DAYS.map(day => {
+        const dayStr = localDateStr(day);
+        const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+        return (
+          <div key={dayStr} style={{ marginBottom: 10, padding: "10px 12px", background: t.bg, borderRadius: 8, border: "1px solid " + t.borderLight }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 6 : 0 }}>{fmtDay(day)}</div>
+            {dayJobs.length === 0 ? (
+              <div style={{ fontSize: 12, color: t.textMuted }}>No jobs</div>
+            ) : dayJobs.map(j => (
+              <div key={j.id} style={{ paddingTop: 6, borderTop: "1px solid " + t.borderLight }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{j.builder || "No Customer"}</div>
+                    <div style={{ color: t.textMuted, fontSize: 12 }}>{j.address}{j.type ? " — " + j.type : ""}</div>
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                    <span style={{ fontSize: 12, color: t.textMuted }}>$</span>
+                    <input type="number" min="0" step="0.01" placeholder="0.00" value={tsData?.jobPay?.[j.id] ?? ""} onChange={e => updateJobPay(j.id, e.target.value)} style={inputStyle} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })}
+      <div style={{ marginTop: 16, padding: "14px", background: t.card, border: "1px solid " + t.border, borderRadius: 8 }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 10 }}>Weekly Summary</div>
+        {[{ label: "Regular Hours", field: "regularHours" }, { label: "Overtime Hours", field: "overtimeHours" }, { label: "Overtime Pay ($)", field: "overtimePay" }].map(({ label, field }) => (
+          <div key={field} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingBottom: 8, marginBottom: 8, borderBottom: "1px solid " + t.borderLight }}>
+            <span style={{ fontSize: 13, color: t.text }}>{label}</span>
+            <input type="number" min="0" step="0.01" placeholder="0" value={tsData[field] ?? ""} onChange={e => updateTsField(field, e.target.value)} style={inputStyle} />
+          </div>
+        ))}
+        <div style={{ display: "flex", justifyContent: "space-between", paddingBottom: 8, marginBottom: 8, borderBottom: "1px solid " + t.borderLight }}>
+          <span style={{ fontSize: 13, color: t.text }}>Total Job Pay</span>
+          <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>${totalJobPay.toFixed(2)}</span>
+        </div>
+        <div style={{ display: "flex", justifyContent: "space-between" }}>
+          <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>Total Pay</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>${(totalJobPay + overtimePay).toFixed(2)}</span>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <Button onClick={saveTsData} disabled={tsSaving} style={{ flex: 1 }}>{tsSaving ? "Saving..." : "Save"}</Button>
+      </div>
+    </Modal>
+  );
+}
+
 function RosterView({ trucks, jobs, updates }) {
   const [members, setMembers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -1442,7 +1570,8 @@ function RosterView({ trucks, jobs, updates }) {
         ));
       })()}
 
-      {timesheetMember && (() => {
+      {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} updates={updates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
+      {false && (() => {
       const getWeekRange = (offsetWeeks = 0) => {
         const now = new Date();
         const day = now.getDay();
@@ -1585,7 +1714,7 @@ function RosterView({ trucks, jobs, updates }) {
   );
 }
 
-function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
