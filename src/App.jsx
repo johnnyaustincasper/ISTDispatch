@@ -188,54 +188,52 @@ function EmptyState({ text, sub }) {
 
 // ─── Screens ───
 
-function RoleSelect({ onSelect }) {
+const kbStyles = `
+  @keyframes kenburns {
+    0%   { transform: scale(1.0) translate(0%, 0%); }
+    50%  { transform: scale(1.12) translate(-2%, -1%); }
+    100% { transform: scale(1.0) translate(0%, 0%); }
+  }
+  .kb-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center; }
+  .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
+  .kb-back-btn { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.2)!important;color:#fff!important;backdrop-filter:blur(8px); }
+  .kb-card { background:rgba(255,255,255,0.1)!important;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.2)!important;box-shadow:0 4px 24px rgba(0,0,0,0.3)!important;transition:background 0.2s,transform 0.2s!important; }
+  .kb-card:hover { background:rgba(255,255,255,0.18)!important;transform:translateY(-2px); }
+  .kb-input { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.25)!important;color:#fff!important; }
+  .kb-input::placeholder { color:rgba(255,255,255,0.4)!important; }
+  .kb-input:focus { border-color:rgba(255,255,255,0.6)!important; }
+`;
+
+function AuthShell({ children, centered = false }) {
   return (
-    <div style={{ minHeight: "100dvh", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "calc(env(safe-area-inset-top, 0px) + 20px) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)", overflow: "hidden" }}>
-      {/* Ken Burns background */}
-      <style>{`
-        @keyframes kenburns {
-          0%   { transform: scale(1.0) translate(0%, 0%); }
-          50%  { transform: scale(1.12) translate(-2%, -1%); }
-          100% { transform: scale(1.0) translate(0%, 0%); }
-        }
-        .kb-img {
-          position: absolute; inset: 0; width: 100%; height: 100%;
-          object-fit: cover; object-position: center;
-          animation: kenburns 20s ease-in-out infinite;
-          transform-origin: center center;
-        }
-        .kb-overlay {
-          position: absolute; inset: 0;
-          background: linear-gradient(to bottom, rgba(0,0,0,0.55) 0%, rgba(0,0,0,0.35) 50%, rgba(0,0,0,0.65) 100%);
-        }
-        .role-card {
-          background: rgba(255,255,255,0.1) !important;
-          backdrop-filter: blur(12px);
-          border: 1px solid rgba(255,255,255,0.2) !important;
-          box-shadow: 0 4px 24px rgba(0,0,0,0.3) !important;
-          transition: background 0.2s, transform 0.2s !important;
-        }
-        .role-card:hover { background: rgba(255,255,255,0.18) !important; transform: translateY(-2px); }
-      `}</style>
+    <div style={{ minHeight: "100dvh", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", paddingTop: centered ? 0 : "10vh", padding: centered ? "20px" : "calc(env(safe-area-inset-top,0px) + 10vh) 20px calc(env(safe-area-inset-bottom,0px) + 40px)", overflow: "hidden" }}>
+      <style>{kbStyles}</style>
       <img className="kb-img" src="/tulsa.jpg" alt="" />
       <div className="kb-overlay" />
+      <div style={{ position: "relative", zIndex: 1, maxWidth: "420px", width: "100%" }}>
+        {children}
+      </div>
+    </div>
+  );
+}
 
-      {/* Content */}
-      <div style={{ position: "relative", zIndex: 1, textAlign: "center", marginBottom: "40px" }}>
+function RoleSelect({ onSelect }) {
+  return (
+    <AuthShell centered>
+      <div style={{ textAlign: "center", marginBottom: "40px" }}>
         <div style={{ fontSize: "12px", fontWeight: 600, letterSpacing: "3px", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>Insulation Services of Tulsa</div>
         <div style={{ fontSize: "36px", fontWeight: 700, color: "#fff", marginTop: "8px", letterSpacing: "-0.5px" }}>IST Dispatch</div>
         <div style={{ width: "40px", height: "2px", background: t.accent, margin: "14px auto 0", borderRadius: "1px" }} />
       </div>
-
-      <div style={{ position: "relative", zIndex: 1, display: "flex", gap: "14px", flexWrap: "wrap", justifyContent: "center", maxWidth: "460px", width: "100%" }}>
-        <div className="role-card" onClick={() => onSelect("admin")} style={{ flex: "1 1 180px", textAlign: "center", padding: "32px 20px", cursor: "pointer", borderRadius: "12px" }}>
+      <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", justifyContent: "center" }}>
+        <div className="kb-card" onClick={() => onSelect("admin")} style={{ flex: "1 1 160px", textAlign: "center", padding: "32px 20px", cursor: "pointer", borderRadius: "12px" }}>
           <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <svg width="20" height="20" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
           </div>
           <div style={{ fontSize: "16px", fontWeight: 600, color: "#fff" }}>Office</div>
           <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)", marginTop: "4px" }}>Schedule jobs & manage crews</div>
         </div>
-        <div className="role-card" onClick={() => onSelect("crew")} style={{ flex: "1 1 180px", textAlign: "center", padding: "32px 20px", cursor: "pointer", borderRadius: "12px" }}>
+        <div className="kb-card" onClick={() => onSelect("crew")} style={{ flex: "1 1 160px", textAlign: "center", padding: "32px 20px", cursor: "pointer", borderRadius: "12px" }}>
           <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <svg width="20" height="20" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
           </div>
@@ -243,7 +241,7 @@ function RoleSelect({ onSelect }) {
           <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)", marginTop: "4px" }}>View jobs & send updates</div>
         </div>
       </div>
-    </div>
+    </AuthShell>
   );
 }
 
@@ -298,11 +296,10 @@ function AdminLogin({ onLogin, onBack }) {
 
   if (selected && mode === "enter") {
     return (
-      <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
-        <div style={{ maxWidth: "340px", width: "100%" }}>
-          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+      <AuthShell>
+          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
+            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
             <div>
               <div style={{ fontSize: "18px", fontWeight: 600, color: t.text }}>{selected}</div>
               <div style={{ fontSize: "13px", color: t.textMuted }}>Enter your 4-digit PIN</div>
@@ -321,21 +318,19 @@ function AdminLogin({ onLogin, onBack }) {
           />
           {error && <div style={{ color: t.danger, fontSize: "13px", marginTop: "8px", textAlign: "center" }}>{error}</div>}
           <Button onClick={handleEnterPin} disabled={pin.length !== 4} style={{ width: "100%", marginTop: "14px" }}>Log In</Button>
-        </div>
-      </div>
+      </AuthShell>
     );
   }
 
   if (selected && mode === "create") {
     return (
-      <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
-        <div style={{ maxWidth: "340px", width: "100%" }}>
-          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+      <AuthShell>
+          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
+            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
             <div style={{ fontSize: "18px", fontWeight: 600, color: t.text }}>{selected}</div>
           </div>
-          <p style={{ color: t.textMuted, fontSize: "13.5px", margin: "0 0 20px" }}>First time? Set up a 4-digit PIN.</p>
+          <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", margin: "0 0 20px" }}>First time? Set up a 4-digit PIN.</p>
           <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Create PIN</label>
           <input
             type="password"
@@ -360,30 +355,27 @@ function AdminLogin({ onLogin, onBack }) {
           />
           {error && <div style={{ color: t.danger, fontSize: "13px", marginTop: "8px", textAlign: "center" }}>{error}</div>}
           <Button onClick={handleCreatePin} disabled={pin.length !== 4 || confirmPin.length !== 4} style={{ width: "100%", marginTop: "14px" }}>Set PIN & Log In</Button>
-        </div>
-      </div>
+      </AuthShell>
     );
   }
 
   return (
-    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
-      <div style={{ maxWidth: "380px", width: "100%" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
-        <h1 style={{ fontSize: "22px", fontWeight: 600, color: t.text, margin: "0 0 6px" }}>Office Login</h1>
-        <p style={{ color: t.textMuted, fontSize: "13.5px", margin: "0 0 24px" }}>Select your profile</p>
+    <AuthShell>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+        <h1 style={{ fontSize: "22px", fontWeight: 600, color: "#fff", margin: "0 0 6px" }}>Office Login</h1>
+        <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", margin: "0 0 24px" }}>Select your profile</p>
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           {OFFICE_PROFILES.map((name) => (
             <Card key={name} onClick={() => handleSelect(name)} style={{ padding: "14px 18px", cursor: loadingPin ? "wait" : "pointer", opacity: loadingPin && selected !== name ? 0.5 : 1 }}>
               <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 }}>{name[0]}</div>
+                <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 }}>{name[0]}</div>
                 <div style={{ fontWeight: 500, color: t.text, fontSize: "15px" }}>{name}</div>
                 {loadingPin && selected === name && <div style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted }}>Loading...</div>}
               </div>
             </Card>
           ))}
         </div>
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 
@@ -478,11 +470,10 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   const subtitle = step === "pick" ? "Select your name" : step === "setup" ? "You'll use this every time" : step === "confirm" ? "Enter your PIN again" : step === "email" ? "Add your email for job alerts (optional)" : "Enter your PIN";
 
   return (
-    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "flex-start", paddingTop: "10vh", padding: "calc(env(safe-area-inset-top, 0px) + 10vh) 20px calc(env(safe-area-inset-bottom, 0px) + 40px)" }}>
-      <div style={{ maxWidth: "380px", width: "100%" }}>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: t.textMuted, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
-        <h1 style={{ fontSize: "22px", fontWeight: 600, color: t.text, margin: "0 0 6px" }}>{title}</h1>
-        <p style={{ color: t.textMuted, fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
+    <AuthShell>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+        <h1 style={{ fontSize: "22px", fontWeight: 600, color: "#fff", margin: "0 0 6px" }}>{title}</h1>
+        <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
 
         {step === "pick" && (
           loadingMembers ? <EmptyState text="Loading..." /> :
@@ -529,8 +520,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
             <button onClick={() => { setStep("pick"); setPin(""); setSetupPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
           </>
         )}
-      </div>
-    </div>
+    </AuthShell>
   );
 }
 
