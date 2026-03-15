@@ -1007,7 +1007,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const weekJobs = jobs.filter(j => {
             if (!j.date) return false;
             const jd = new Date(j.date + "T12:00:00");
-            return jd >= mon && jd <= sat && Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(crewMemberId);
+            if (jd < mon || jd > sat) return false;
+            const assigned = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(crewMemberId);
+            const submitted = updates.some(u => u.jobId === j.id && u.submittedBy === crewName);
+            return assigned || submitted;
           });
 
           const handlePrint = () => {
@@ -1415,7 +1418,10 @@ function RosterView({ trucks, jobs }) {
       const weekJobs = (jobs || []).filter(j => {
         if (!j.date) return false;
         const jd = new Date(j.date + "T12:00:00");
-        return jd >= mon && jd <= sat && Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(timesheetMember.id);
+        if (jd < mon || jd > sat) return false;
+        const assigned = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(timesheetMember.id);
+        const submitted = (updates || []).some(u => u.jobId === j.id && u.submittedBy === timesheetMember.name);
+        return assigned || submitted;
       });
       const handlePrint = () => {
         const rows = DAYS.map(day => {
@@ -2503,7 +2509,15 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
                 {calViewJob.jobCategory && <span style={{ fontSize: "12.5px", fontWeight: 600, color: calViewJob.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{calViewJob.jobCategory}</span>}
                 <span style={{ fontSize: "12.5px", color: t.textMuted }}>{new Date(calViewJob.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
               </div>
-              {crew && <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "6px" }}>Crew: {crew.name}</div>}
+              {(() => {
+                // Show crew who actually submitted updates; fall back to assigned crewMemberIds
+                const updaterNames = [...new Set(jobCrew.map(u => u.submittedBy).filter(Boolean))];
+                const assignedNames = (calViewJob.crewMemberIds || []).filter(Boolean).map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+                const crewNames = updaterNames.length > 0 ? updaterNames : assignedNames;
+                return crewNames.length > 0 ? (
+                  <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "6px" }}>Crew: {crewNames.join(" and ")}</div>
+                ) : null;
+              })()}
               {calViewJob.notes && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginTop: "10px", borderLeft: "3px solid " + t.accent }}>Office: {calViewJob.notes}</div>}
             </div>
 
