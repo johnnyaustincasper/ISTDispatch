@@ -1002,6 +1002,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const { mon, sat } = getWeekRange(weekOffset);
           const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
           const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+          const localDateStr = (d) => { const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const dd = String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
           const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
 
           const weekJobs = jobs.filter(j => {
@@ -1015,7 +1016,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
           const handlePrint = () => {
             const rows = DAYS.map(day => {
-              const dayStr = day.toISOString().split("T")[0];
+              const dayStr = localDateStr(day);
               const dayJobs = weekJobs.filter(j => j.date === dayStr);
               return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:4px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " <em>(" + j.type + ")</em>" : ""}</div>`).join("")}</td></tr>`;
             }).join("");
@@ -1044,7 +1045,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               </div>
 
               {DAYS.map(day => {
-                const dayStr = day.toISOString().split("T")[0];
+                const dayStr = localDateStr(day);
                 const dayJobs = weekJobs.filter(j => j.date === dayStr);
                 return (
                   <Card key={dayStr} style={{ marginBottom: 10 }}>
@@ -1414,6 +1415,7 @@ function RosterView({ trucks, jobs }) {
       const { mon, sat } = getWeekRange(tsWeekOffset);
       const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
       const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+      const localDateStr = (d) => { const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const dd = String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
       const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
       const weekJobs = (jobs || []).filter(j => {
         if (!j.date) return false;
@@ -1425,7 +1427,7 @@ function RosterView({ trucks, jobs }) {
       });
       const handlePrint = () => {
         const rows = DAYS.map(day => {
-          const dayStr = day.toISOString().split("T")[0];
+          const dayStr = localDateStr(day);
           const dayJobs = weekJobs.filter(j => j.date === dayStr);
           return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:4px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " <em>(" + j.type + ")</em>" : ""}</div>`).join("")}</td></tr>`;
         }).join("");
@@ -1446,7 +1448,7 @@ function RosterView({ trucks, jobs }) {
             <Button onClick={handlePrint} style={{ fontSize: 12, marginLeft: "auto" }}>Print</Button>
           </div>
           {DAYS.map(day => {
-            const dayStr = day.toISOString().split("T")[0];
+            const dayStr = localDateStr(day);
             const dayJobs = weekJobs.filter(j => j.date === dayStr);
             return (
               <div key={dayStr} style={{ marginBottom: 10, padding: "10px 12px", background: t.bg, borderRadius: 8, border: "1px solid " + t.borderLight }}>
