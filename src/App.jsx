@@ -2946,25 +2946,28 @@ export default function App() {
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
-    <div style={{ minHeight: "100dvh", background: t.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "32px 20px" }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>IST Operations</div>
-      <div style={{ fontSize: 22, fontWeight: 800, color: t.text, marginBottom: 32 }}>Where to, {adminName}?</div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 14, width: "100%", maxWidth: 360 }}>
-        <button onClick={() => setLauncherDismissed(true)} style={{ padding: "20px 24px", borderRadius: 14, background: t.accent, border: "none", color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+    <AuthShell centered>
+      <div style={{ textAlign: "center", marginBottom: 36 }}>
+        <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "3px", textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}>IST Operations</div>
+        <div style={{ fontSize: 28, fontWeight: 800, color: "#fff", marginTop: 8 }}>Where to, {adminName}?</div>
+        <div style={{ width: 40, height: 2, background: t.accent, margin: "12px auto 0", borderRadius: 1 }} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <button onClick={() => setLauncherDismissed(true)} className="kb-card" style={{ padding: "20px 24px", borderRadius: 14, border: "none", color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
           Dispatch
-          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 4 }}>Manage crews, jobs &amp; schedule</div>
+          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.75, marginTop: 4 }}>Manage crews, jobs &amp; schedule</div>
         </button>
-        <a href="https://isttakeoff.com" style={{ padding: "20px 24px", borderRadius: 14, background: "#15803d", border: "none", color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left", textDecoration: "none", display: "block" }}>
+        <a href="https://isttakeoff.com" className="kb-card" style={{ padding: "20px 24px", borderRadius: 14, color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left", textDecoration: "none", display: "block" }}>
           Quote Builder
-          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 4 }}>Build and send customer quotes</div>
+          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.75, marginTop: 4 }}>Build and send customer quotes</div>
         </a>
-        <a href="https://istintel.com" style={{ padding: "20px 24px", borderRadius: 14, background: "#7c3aed", border: "none", color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left", textDecoration: "none", display: "block" }}>
+        <a href="https://istintel.com" className="kb-card" style={{ padding: "20px 24px", borderRadius: 14, color: "#fff", fontWeight: 700, fontSize: 17, cursor: "pointer", fontFamily: "inherit", textAlign: "left", textDecoration: "none", display: "block" }}>
           IST Intel
-          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.85, marginTop: 4 }}>Permits and intelligence</div>
+          <div style={{ fontSize: 12, fontWeight: 400, opacity: 0.75, marginTop: 4 }}>Permits and intelligence</div>
         </a>
       </div>
-      <button onClick={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} style={{ marginTop: 28, background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Sign Out</button>
-    </div>
+      <button onClick={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} style={{ marginTop: 24, background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", width: "100%" }}>Sign Out</button>
+    </AuthShell>
   );
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
   return null;
