@@ -640,6 +640,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           <button style={tabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
           <button style={tabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>Truck</button>
           <button style={tabStyle(crewView === "history")} onClick={() => setCrewView("history")}>Calendar</button>
+          <button style={tabStyle(crewView === "timesheet")} onClick={() => setCrewView("timesheet")}>Timesheet</button>
           <button style={tabStyle(crewView === "tickets")} onClick={() => setCrewView("tickets")}>
             Tickets
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
@@ -984,6 +985,86 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           );
         })()}
 
+        {crewView === "timesheet" && (() => {
+          // Week: Mon–Sat of the current week
+          const getWeekRange = (offsetWeeks = 0) => {
+            const now = new Date();
+            const day = now.getDay(); // 0=Sun
+            const mon = new Date(now);
+            mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7);
+            mon.setHours(0,0,0,0);
+            const sat = new Date(mon);
+            sat.setDate(mon.getDate() + 5);
+            sat.setHours(23,59,59,999);
+            return { mon, sat };
+          };
+          const [weekOffset, setWeekOffset] = React.useState(0);
+          const { mon, sat } = getWeekRange(weekOffset);
+          const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+          const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
+
+          const weekJobs = jobs.filter(j => {
+            if (!j.date) return false;
+            const jd = new Date(j.date + "T12:00:00");
+            return jd >= mon && jd <= sat && Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(crewMemberId);
+          });
+
+          const handlePrint = () => {
+            const rows = DAYS.map(day => {
+              const dayStr = day.toISOString().split("T")[0];
+              const dayJobs = weekJobs.filter(j => j.date === dayStr);
+              return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:4px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " <em>(" + j.type + ")</em>" : ""}</div>`).join("")}</td></tr>`;
+            }).join("");
+            const html = `<!DOCTYPE html><html><head><title>Timesheet</title><style>body{font-family:sans-serif;padding:32px;color:#111}h2{margin-bottom:4px}p{color:#6b7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}@media print{button{display:none}}</style></head><body><h2>Weekly Timesheet — ${crewName}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)}</p><table><thead><tr><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Day</th><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Jobs</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:24px;font-size:12px;color:#9ca3af">Printed ${new Date().toLocaleString()}</p></body></html>`;
+            const w = window.open("", "_blank");
+            w.document.write(html);
+            w.document.close();
+            w.focus();
+            setTimeout(() => w.print(), 300);
+          };
+
+          return (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>Weekly Timesheet</div>
+                  <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{fmtDate(mon)} – {fmtDate(sat)}</div>
+                </div>
+                <Button onClick={handlePrint} variant="secondary" style={{ fontSize: 13 }}>Print</Button>
+              </div>
+
+              <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+                <Button variant="secondary" onClick={() => setWeekOffset(w => w - 1)} style={{ fontSize: 13 }}>Prev Week</Button>
+                {weekOffset !== 0 && <Button variant="secondary" onClick={() => setWeekOffset(0)} style={{ fontSize: 13 }}>This Week</Button>}
+                {weekOffset < 0 && <Button variant="secondary" onClick={() => setWeekOffset(w => w + 1)} style={{ fontSize: 13 }}>Next Week</Button>}
+              </div>
+
+              {DAYS.map(day => {
+                const dayStr = day.toISOString().split("T")[0];
+                const dayJobs = weekJobs.filter(j => j.date === dayStr);
+                return (
+                  <Card key={dayStr} style={{ marginBottom: 10 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 8 : 0 }}>{fmtDay(day)}</div>
+                    {dayJobs.length === 0 ? (
+                      <div style={{ fontSize: 12, color: t.textMuted }}>No jobs</div>
+                    ) : dayJobs.map(j => (
+                      <div key={j.id} style={{ fontSize: 13, color: t.text, padding: "6px 0", borderTop: "1px solid " + t.borderLight }}>
+                        <div style={{ fontWeight: 600 }}>{j.builder || "No Customer"}</div>
+                        <div style={{ color: t.textMuted, fontSize: 12 }}>{j.address}{j.type ? " — " + j.type : ""}</div>
+                      </div>
+                    ))}
+                  </Card>
+                );
+              })}
+
+              <div style={{ fontSize: 12, color: t.textMuted, textAlign: "center", marginTop: 8 }}>
+                {weekJobs.length} job{weekJobs.length !== 1 ? "s" : ""} this week
+              </div>
+            </div>
+          );
+        })()}
+
         {crewView === "tickets" && (
           <>
             <SectionHeader title="My Tickets" right={<Button onClick={() => setShowTicketForm(true)}>+ Submit Ticket</Button>} />
@@ -1213,11 +1294,13 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
 // ─── Admin Dashboard ───
 // ─── Roster View ─────────────────────────────────────────────────────────────
-function RosterView({ trucks }) {
+function RosterView({ trucks, jobs }) {
   const [members, setMembers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState("");
   const [assigning, setAssigning] = useState(null);
+  const [timesheetMember, setTimesheetMember] = useState(null);
+  const [tsWeekOffset, setTsWeekOffset] = useState(0);
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "crewMembers"), snap => {
@@ -1280,7 +1363,7 @@ function RosterView({ trucks }) {
               <Card key={member.id} style={{ marginBottom: 8 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{member.name}</div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: t.accent, cursor: "pointer", textDecoration: "underline" }} onClick={() => { setTimesheetMember(member); setTsWeekOffset(0); }}>{member.name}</div>
                     <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
                       {member.email ? member.email : "No email yet"}
                     </div>
@@ -1312,6 +1395,71 @@ function RosterView({ trucks }) {
           </div>
         ));
       })()}
+
+      {timesheetMember && (() => {
+      const getWeekRange = (offsetWeeks = 0) => {
+        const now = new Date();
+        const day = now.getDay();
+        const mon = new Date(now);
+        mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7);
+        mon.setHours(0,0,0,0);
+        const sat = new Date(mon);
+        sat.setDate(mon.getDate() + 5);
+        sat.setHours(23,59,59,999);
+        return { mon, sat };
+      };
+      const { mon, sat } = getWeekRange(tsWeekOffset);
+      const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+      const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+      const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
+      const weekJobs = (jobs || []).filter(j => {
+        if (!j.date) return false;
+        const jd = new Date(j.date + "T12:00:00");
+        return jd >= mon && jd <= sat && Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(timesheetMember.id);
+      });
+      const handlePrint = () => {
+        const rows = DAYS.map(day => {
+          const dayStr = day.toISOString().split("T")[0];
+          const dayJobs = weekJobs.filter(j => j.date === dayStr);
+          return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:4px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " <em>(" + j.type + ")</em>" : ""}</div>`).join("")}</td></tr>`;
+        }).join("");
+        const html = `<!DOCTYPE html><html><head><title>Timesheet</title><style>body{font-family:sans-serif;padding:32px;color:#111}h2{margin-bottom:4px}p{color:#6b7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}@media print{button{display:none}}</style></head><body><h2>Weekly Timesheet — ${timesheetMember.name}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)}</p><table><thead><tr><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Day</th><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Jobs</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:24px;font-size:12px;color:#9ca3af">Printed ${new Date().toLocaleString()}</p></body></html>`;
+        const w = window.open("", "_blank");
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        setTimeout(() => w.print(), 300);
+      };
+      return (
+        <Modal title={`Timesheet — ${timesheetMember.name}`} onClose={() => setTimesheetMember(null)}>
+          <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>{fmtDate(mon)} – {fmtDate(sat)}</div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            <Button variant="secondary" onClick={() => setTsWeekOffset(w => w - 1)} style={{ fontSize: 12 }}>Prev Week</Button>
+            {tsWeekOffset !== 0 && <Button variant="secondary" onClick={() => setTsWeekOffset(0)} style={{ fontSize: 12 }}>This Week</Button>}
+            {tsWeekOffset < 0 && <Button variant="secondary" onClick={() => setTsWeekOffset(w => w + 1)} style={{ fontSize: 12 }}>Next Week</Button>}
+            <Button onClick={handlePrint} style={{ fontSize: 12, marginLeft: "auto" }}>Print</Button>
+          </div>
+          {DAYS.map(day => {
+            const dayStr = day.toISOString().split("T")[0];
+            const dayJobs = weekJobs.filter(j => j.date === dayStr);
+            return (
+              <div key={dayStr} style={{ marginBottom: 10, padding: "10px 12px", background: t.bg, borderRadius: 8, border: "1px solid " + t.borderLight }}>
+                <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 6 : 0 }}>{fmtDay(day)}</div>
+                {dayJobs.length === 0 ? (
+                  <div style={{ fontSize: 12, color: t.textMuted }}>No jobs</div>
+                ) : dayJobs.map(j => (
+                  <div key={j.id} style={{ fontSize: 13, color: t.text, paddingTop: 5, borderTop: "1px solid " + t.borderLight }}>
+                    <div style={{ fontWeight: 600 }}>{j.builder || "No Customer"}</div>
+                    <div style={{ color: t.textMuted, fontSize: 12 }}>{j.address}{j.type ? " — " + j.type : ""}</div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+          <div style={{ fontSize: 12, color: t.textMuted, textAlign: "center", marginTop: 4 }}>{weekJobs.length} job{weekJobs.length !== 1 ? "s" : ""} this week</div>
+        </Modal>
+      );
+    })()}
     </div>
   );
 }
@@ -1865,7 +2013,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         )}
 
         {view === "roster" && (
-          <RosterView trucks={trucks} />
+          <RosterView trucks={trucks} jobs={jobs} />
         )}
 
         {view === "inventory" && (() => {
