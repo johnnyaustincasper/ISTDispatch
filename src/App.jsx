@@ -211,10 +211,7 @@ const kbStyles = `
 
 function AuthShell({ children, centered = false }) {
   return (
-    <div style={{ minHeight: "100dvh", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", paddingTop: centered ? 0 : "10vh", padding: centered ? "20px" : "calc(env(safe-area-inset-top,0px) + 10vh) 20px calc(env(safe-area-inset-bottom,0px) + 40px)", overflow: "hidden" }}>
-      <style>{kbStyles}</style>
-      <img className="kb-img" src="/tulsa.jpg" alt="" />
-      <div className="kb-overlay" />
+    <div style={{ minHeight: "100dvh", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : "calc(env(safe-area-inset-top,0px) + 10vh) 20px calc(env(safe-area-inset-bottom,0px) + 40px)", overflow: "hidden" }}>
       <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: "420px", width: "100%" }}>
         {children}
       </div>
@@ -2933,9 +2930,24 @@ export default function App() {
   };
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
-  if (!role) return <RoleSelect key="role-select" onSelect={setRole} />;
-  if (role === "admin" && !adminName) return <AdminLogin key="admin-login" onLogin={handleAdminLogin} onBack={() => setRole(null)} />;
-  if (role === "crew" && !crewSession) return <CrewLogin key="crew-login" trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
+  const isAuthScreen = !role || (role === "admin" && !adminName) || (role === "crew" && !crewSession) || (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed);
+
+  if (isAuthScreen) {
+    let screen;
+    if (!role) screen = <RoleSelect key="role-select" onSelect={setRole} />;
+    else if (role === "admin" && !adminName) screen = <AdminLogin key="admin-login" onLogin={handleAdminLogin} onBack={() => setRole(null)} />;
+    else if (role === "crew" && !crewSession) screen = <CrewLogin key="crew-login" trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
+    else screen = null; // launcher handled below inside this block
+    if (screen) return (
+      <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
+        <style>{kbStyles}</style>
+        <img className="kb-img" src="/tulsa.jpg" alt="" />
+        <div className="kb-overlay" />
+        {screen}
+      </div>
+    );
+  }
+
   if (role === "crew" && crewSession) {
     const truck = trucks.find((tr) => tr.id === crewSession.truckId) || null;
     if (!truck) return (
@@ -2951,7 +2963,11 @@ export default function App() {
     return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
-    <AuthShell centered>
+    <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
+      <style>{kbStyles}</style>
+      <img className="kb-img" src="/tulsa.jpg" alt="" />
+      <div className="kb-overlay" />
+      <AuthShell centered>
       <div style={{ textAlign: "center", marginBottom: 36 }}>
         <div style={{ fontSize: 12, fontWeight: 600, letterSpacing: "3px", textTransform: "uppercase", color: "rgba(255,255,255,0.6)" }}>IST Operations</div>
         <div style={{ fontSize: 28, fontWeight: 800, color: "#fff", marginTop: 8 }}>Where to, {adminName}?</div>
@@ -2973,6 +2989,7 @@ export default function App() {
       </div>
       <button onClick={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} style={{ marginTop: 24, background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 13, cursor: "pointer", fontFamily: "inherit", width: "100%" }}>Sign Out</button>
     </AuthShell>
+    </div>
   );
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
   return null;
