@@ -1298,7 +1298,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
 // ─── Admin Dashboard ───
 // ─── Roster View ─────────────────────────────────────────────────────────────
-function RosterView({ trucks, jobs }) {
+function RosterView({ trucks, jobs, updates }) {
   const [members, setMembers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState("");
@@ -2021,7 +2021,7 @@ function AdminDashboard({ adminName, trucks, jobs, updates, tickets, activityLog
         )}
 
         {view === "roster" && (
-          <RosterView trucks={trucks} jobs={jobs} />
+          <RosterView trucks={trucks} jobs={jobs} updates={updates} />
         )}
 
         {view === "inventory" && (() => {
