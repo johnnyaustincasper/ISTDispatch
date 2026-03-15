@@ -514,6 +514,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   });
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("jobs");
+  const [tsWeekOffset, setTsWeekOffset] = useState(0);
   const [activeJob, setActiveJob] = useState(null);
   const [materialCountJob, setMaterialCountJob] = useState(null);
   const [materialQtys, setMaterialQtys] = useState({});
@@ -998,7 +999,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
             sat.setHours(23,59,59,999);
             return { mon, sat };
           };
-          const [weekOffset, setWeekOffset] = React.useState(0);
+          const weekOffset = tsWeekOffset;
+          const setWeekOffset = setTsWeekOffset;
           const { mon, sat } = getWeekRange(weekOffset);
           const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
           const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
