@@ -194,8 +194,13 @@ const kbStyles = `
     50%  { transform: scale(1.12) translate(-2%, -1%); }
     100% { transform: scale(1.0) translate(0%, 0%); }
   }
+  @keyframes authFadeIn {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
   .kb-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center; }
   .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
+  .kb-content { animation: authFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) both; }
   .kb-back-btn { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.2)!important;color:#fff!important;backdrop-filter:blur(8px); }
   .kb-card { background:rgba(255,255,255,0.1)!important;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.2)!important;box-shadow:0 4px 24px rgba(0,0,0,0.3)!important;transition:background 0.2s,transform 0.2s!important; }
   .kb-card:hover { background:rgba(255,255,255,0.18)!important;transform:translateY(-2px); }
@@ -210,7 +215,7 @@ function AuthShell({ children, centered = false }) {
       <style>{kbStyles}</style>
       <img className="kb-img" src="/tulsa.jpg" alt="" />
       <div className="kb-overlay" />
-      <div style={{ position: "relative", zIndex: 1, maxWidth: "420px", width: "100%" }}>
+      <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: "420px", width: "100%" }}>
         {children}
       </div>
     </div>
@@ -2928,9 +2933,9 @@ export default function App() {
   };
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
-  if (!role) return <RoleSelect onSelect={setRole} />;
-  if (role === "admin" && !adminName) return <AdminLogin onLogin={handleAdminLogin} onBack={() => setRole(null)} />;
-  if (role === "crew" && !crewSession) return <CrewLogin trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
+  if (!role) return <RoleSelect key="role-select" onSelect={setRole} />;
+  if (role === "admin" && !adminName) return <AdminLogin key="admin-login" onLogin={handleAdminLogin} onBack={() => setRole(null)} />;
+  if (role === "crew" && !crewSession) return <CrewLogin key="crew-login" trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
   if (role === "crew" && crewSession) {
     const truck = trucks.find((tr) => tr.id === crewSession.truckId) || null;
     if (!truck) return (
