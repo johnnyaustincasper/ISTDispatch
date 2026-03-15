@@ -1411,6 +1411,39 @@ function RosterView({ trucks, jobs, updates }) {
   const [timesheetMember, setTimesheetMember] = useState(null);
   const [tsWeekOffset, setTsWeekOffset] = useState(0);
 
+  const printAllTimesheets = async () => {
+    const now = new Date();
+    const day = now.getDay();
+    const mon = new Date(now);
+    mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1));
+    mon.setHours(0,0,0,0);
+    const sat = new Date(mon); sat.setDate(mon.getDate() + 5); sat.setHours(23,59,59,999);
+    const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
+    const localDateStr = (d) => d.toLocaleDateString("en-CA");
+    const weekKey = localDateStr(mon);
+    const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
+    const getJobWorkDate = (j) => {
+      const ju = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+      const started = ju.find(u => u.status === "in_progress" || u.status === "completed");
+      return started ? started.timestamp.slice(0,10) : j.date;
+    };
+    const pages = await Promise.all(members.map(async member => {
+      const tsDocId = `${member.id}_${weekKey}`;
+      const snap = await getDoc(doc(db, "timesheets", tsDocId));
+      const dayNotes = snap.exists() ? (snap.data().dayNotes || {}) : {};
+      const weekJobs = (jobs || []).filter(j => {
+        const wd = getJobWorkDate(j); if (!wd) return false;
+        const jd = new Date(wd + "T12:00:00");
+        if (jd < mon || jd > sat) return false;
+        return (Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(member.id)) || (updates || []).some(u => u.jobId === j.id && u.submittedBy === member.name);
+      });
+      return buildTimesheetHtml(member.name, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay, dayNotes);
+    }));
+    const combined = `<!DOCTYPE html><html><head><title>All Timesheets</title><style>@page{size:letter;margin:0.5in}.page-break{page-break-after:always}</style></head><body>${pages.map((p,i) => `<div${i < pages.length - 1 ? ' class="page-break"' : ''}>${p.replace(/<!DOCTYPE html>.*?<body>/s,'').replace(/<\/body><\/html>/,'')}</div>`).join('')}</body></html>`;
+    const w = window.open("", "_blank"); w.document.write(combined); w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
+  };
+
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "crewMembers"), snap => {
       setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -1438,7 +1471,7 @@ function RosterView({ trucks, jobs, updates }) {
 
   return (
     <div>
-      <SectionHeader title="Roster" right={<Button onClick={() => setShowAdd(true)}>+ Add Member</Button>} />
+      <SectionHeader title="Roster" right={<div style={{ display: "flex", gap: 8 }}><Button variant="secondary" onClick={printAllTimesheets} style={{ fontSize: 12 }}>Print All Timesheets</Button><Button onClick={() => setShowAdd(true)}>+ Add Member</Button></div>} />
 
       {showAdd && (
         <Card style={{ marginBottom: 12 }}>
