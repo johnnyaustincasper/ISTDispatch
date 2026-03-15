@@ -1005,9 +1005,15 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const localDateStr = (d) => { const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const dd = String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
           const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
 
+          const getJobWorkDate = (j) => {
+            const jobUpdates = updates.filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+            const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
+            return started ? started.timestamp.slice(0,10) : j.date;
+          };
           const weekJobs = jobs.filter(j => {
-            if (!j.date) return false;
-            const jd = new Date(j.date + "T12:00:00");
+            const workDate = getJobWorkDate(j);
+            if (!workDate) return false;
+            const jd = new Date(workDate + "T12:00:00");
             if (jd < mon || jd > sat) return false;
             const assigned = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(crewMemberId);
             const submitted = updates.some(u => u.jobId === j.id && u.submittedBy === crewName);
@@ -1017,7 +1023,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const handlePrint = () => {
             const rows = DAYS.map(day => {
               const dayStr = localDateStr(day);
-              const dayJobs = weekJobs.filter(j => j.date === dayStr);
+              const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
               return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:4px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " <em>(" + j.type + ")</em>" : ""}</div>`).join("")}</td></tr>`;
             }).join("");
             const html = `<!DOCTYPE html><html><head><title>Timesheet</title><style>body{font-family:sans-serif;padding:32px;color:#111}h2{margin-bottom:4px}p{color:#6b7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}@media print{button{display:none}}</style></head><body><h2>Weekly Timesheet — ${crewName}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)}</p><table><thead><tr><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Day</th><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Jobs</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:24px;font-size:12px;color:#9ca3af">Printed ${new Date().toLocaleString()}</p></body></html>`;
@@ -1046,7 +1052,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
               {DAYS.map(day => {
                 const dayStr = localDateStr(day);
-                const dayJobs = weekJobs.filter(j => j.date === dayStr);
+                const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
                 return (
                   <Card key={dayStr} style={{ marginBottom: 10 }}>
                     <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 8 : 0 }}>{fmtDay(day)}</div>
@@ -1417,9 +1423,15 @@ function RosterView({ trucks, jobs, updates }) {
       const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
       const localDateStr = (d) => { const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const dd = String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${dd}`; };
       const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
+      const getJobWorkDate = (j) => {
+        const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
+        const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
+        return started ? started.timestamp.slice(0,10) : j.date;
+      };
       const weekJobs = (jobs || []).filter(j => {
-        if (!j.date) return false;
-        const jd = new Date(j.date + "T12:00:00");
+        const workDate = getJobWorkDate(j);
+        if (!workDate) return false;
+        const jd = new Date(workDate + "T12:00:00");
         if (jd < mon || jd > sat) return false;
         const assigned = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(timesheetMember.id);
         const submitted = (updates || []).some(u => u.jobId === j.id && u.submittedBy === timesheetMember.name);
@@ -1428,7 +1440,7 @@ function RosterView({ trucks, jobs, updates }) {
       const handlePrint = () => {
         const rows = DAYS.map(day => {
           const dayStr = localDateStr(day);
-          const dayJobs = weekJobs.filter(j => j.date === dayStr);
+          const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
           return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:4px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " <em>(" + j.type + ")</em>" : ""}</div>`).join("")}</td></tr>`;
         }).join("");
         const html = `<!DOCTYPE html><html><head><title>Timesheet</title><style>body{font-family:sans-serif;padding:32px;color:#111}h2{margin-bottom:4px}p{color:#6b7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}@media print{button{display:none}}</style></head><body><h2>Weekly Timesheet — ${timesheetMember.name}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)}</p><table><thead><tr><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Day</th><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Jobs</th></tr></thead><tbody>${rows}</tbody></table><p style="margin-top:24px;font-size:12px;color:#9ca3af">Printed ${new Date().toLocaleString()}</p></body></html>`;
@@ -1449,7 +1461,7 @@ function RosterView({ trucks, jobs, updates }) {
           </div>
           {DAYS.map(day => {
             const dayStr = localDateStr(day);
-            const dayJobs = weekJobs.filter(j => j.date === dayStr);
+            const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
             return (
               <div key={dayStr} style={{ marginBottom: 10, padding: "10px 12px", background: t.bg, borderRadius: 8, border: "1px solid " + t.borderLight }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 6 : 0 }}>{fmtDay(day)}</div>
