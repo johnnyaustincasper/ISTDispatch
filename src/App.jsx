@@ -504,11 +504,13 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 }
 
 // ─── Crew Dashboard ───
-function buildTimesheetHtml(name, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay) {
+function buildTimesheetHtml(name, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay, dayNotes = {}) {
   const rows = DAYS.map(day => {
     const dayStr = day.toLocaleDateString("en-CA");
     const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
-    return `<tr><td style="padding:3px 8px;border:1px solid #ccc;font-weight:600;white-space:nowrap;vertical-align:top;font-size:10px;width:90px">${fmtDay(day)}</td><td style="padding:3px 8px;border:1px solid #ccc;font-size:10px">${dayJobs.length === 0 ? '<span style="color:#aaa">—</span>' : dayJobs.map(j => `<span style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px"><span><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " (" + j.type + ")" : ""}</span><span style="margin-left:12px;white-space:nowrap;font-size:9px">Pay: <span style="display:inline-block;width:80px;border-bottom:1px solid #000">&nbsp;</span></span></span>`).join("")}</td></tr>`;
+    const note = dayNotes[dayStr];
+    const noteHtml = note ? `<div style="font-size:9px;font-style:italic;color:#555;margin-top:3px;border-top:1px dashed #ccc;padding-top:2px">${note}</div>` : "";
+    return `<tr><td style="padding:3px 8px;border:1px solid #ccc;font-weight:600;white-space:nowrap;vertical-align:top;font-size:10px;width:90px">${fmtDay(day)}</td><td style="padding:3px 8px;border:1px solid #ccc;font-size:10px">${dayJobs.length === 0 ? '<span style="color:#aaa">—</span>' : dayJobs.map(j => `<span style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px"><span><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " (" + j.type + ")" : ""}</span><span style="margin-left:12px;white-space:nowrap;font-size:9px">Pay: <span style="display:inline-block;width:80px;border-bottom:1px solid #000">&nbsp;</span></span></span>`).join("")}${noteHtml}</td></tr>`;
   }).join("");
   return `<!DOCTYPE html><html><head><title>Timesheet</title><style>@page{size:letter;margin:0.5in}*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:10px;color:#111;margin:0}h2{font-size:13px;margin:0 0 2px}p{font-size:9px;color:#666;margin:0 0 8px}table{width:100%;border-collapse:collapse}th{padding:3px 8px;border:1px solid #ccc;background:#f5f5f5;text-align:left;font-size:10px}.summary{margin-top:8px;border:1px solid #ccc;border-radius:4px;overflow:hidden}.srow{display:flex;justify-content:space-between;align-items:center;padding:3px 8px;border-bottom:1px solid #eee;font-size:10px}.srow:last-child{border:none;font-weight:700}.blank{display:inline-block;width:100px;border-bottom:1px solid #000}@media print{body{-webkit-print-color-adjust:exact}}</style></head><body><h2>Weekly Timesheet — ${name}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)} &nbsp;|&nbsp; Printed ${new Date().toLocaleDateString()}</p><table><thead><tr><th style="width:90px">Day</th><th>Jobs &amp; Pay</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><div class="srow"><span>Regular Hours</span><span class="blank">&nbsp;</span></div><div class="srow"><span>Overtime Hours</span><span class="blank">&nbsp;</span></div><div class="srow"><span>Total Job Pay</span><span class="blank">&nbsp;</span></div><div class="srow"><span>Overtime Pay</span><span class="blank">&nbsp;</span></div><div class="srow"><span>Total Pay</span><span class="blank">&nbsp;</span></div></div></body></html>`;
 }
@@ -529,7 +531,26 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
   const fmtDate = (d) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
   const fmtDay = (d) => d.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
   const localDateStr = (d) => d.toLocaleDateString("en-CA");
+  const weekKey = localDateStr(mon);
+  const tsDocId = `${crewMemberId}_${weekKey}`;
   const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
+
+  const [tsNotes, setTsNotes] = useState({});
+  const [noteDay, setNoteDay] = useState(null);
+  const [noteText, setNoteText] = useState("");
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "timesheets", tsDocId), snap => {
+      setTsNotes(snap.exists() ? (snap.data().dayNotes || {}) : {});
+    });
+    return unsub;
+  }, [tsDocId]);
+
+  const saveNote = async () => {
+    await setDoc(doc(db, "timesheets", tsDocId), { dayNotes: { ...tsNotes, [noteDay]: noteText }, memberId: crewMemberId, memberName: crewName, weekStart: weekKey }, { merge: true });
+    setNoteDay(null);
+  };
+
   const getJobWorkDate = (j) => {
     const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
     const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
@@ -544,7 +565,7 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
   });
 
   const handlePrint = () => {
-    const html = buildTimesheetHtml(crewName, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay);
+    const html = buildTimesheetHtml(crewName, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay, tsNotes);
     const w = window.open("", "_blank"); w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
 
@@ -565,15 +586,21 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
       {DAYS.map(day => {
         const dayStr = localDateStr(day);
         const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+        const note = tsNotes[dayStr];
         return (
-          <Card key={dayStr} style={{ marginBottom: 10 }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 8 : 0 }}>{fmtDay(day)}</div>
-            {dayJobs.length === 0 ? <div style={{ fontSize: 12, color: t.textMuted }}>No jobs</div> : dayJobs.map(j => (
-              <div key={j.id} style={{ padding: "6px 0", borderTop: "1px solid " + t.borderLight }}>
+          <Card key={dayStr} style={{ marginBottom: 10, cursor: "pointer" }} onClick={() => { setNoteDay(dayStr); setNoteText(note || ""); }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: dayJobs.length > 0 || note ? 8 : 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{fmtDay(day)}</div>
+              <span style={{ fontSize: 11, color: t.accent }}>+ Note</span>
+            </div>
+            {dayJobs.length === 0 && !note ? <div style={{ fontSize: 12, color: t.textMuted }}>No jobs — tap to add a note</div> : null}
+            {dayJobs.map(j => (
+              <div key={j.id} style={{ padding: "4px 0", borderTop: "1px solid " + t.borderLight }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{j.builder || "No Customer"}</div>
                 <div style={{ color: t.textMuted, fontSize: 12 }}>{j.address}{j.type ? " — " + j.type : ""}</div>
               </div>
             ))}
+            {note ? <div style={{ marginTop: 6, fontSize: 12, color: t.textSecondary, fontStyle: "italic", borderTop: "1px solid " + t.borderLight, paddingTop: 4 }}>{note}</div> : null}
           </Card>
         );
       })}
@@ -586,6 +613,16 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
           </div>
         ))}
       </Card>
+
+      {noteDay && (
+        <Modal title={`Note — ${fmtDay(new Date(noteDay + "T12:00:00"))}`} onClose={() => setNoteDay(null)}>
+          <TextArea label="Additional work or notes for this day" placeholder="e.g. Helped on Johnson job, assisted with blowing attic around 3pm" value={noteText} onChange={e => setNoteText(e.target.value)} />
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <Button variant="secondary" onClick={() => setNoteDay(null)} style={{ flex: 1 }}>Cancel</Button>
+            <Button onClick={saveNote} style={{ flex: 1 }}>Save</Button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
