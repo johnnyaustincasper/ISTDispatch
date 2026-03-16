@@ -1290,13 +1290,15 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       {/* ── CLOSEOUT MATERIALS MODAL ── */}
       {dailyMaterialsJob && (() => {
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
-        const today = new Date().toISOString().slice(0, 10);
+        const today = dailyMaterialsJob._editingDate || new Date().toISOString().slice(0, 10);
+        const isEditingPast = !!dailyMaterialsJob._editingDate;
+        const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
         const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
         return (
-          <Modal title="Log Today's Materials" onClose={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }}>
+          <Modal title={isEditingPast ? "Edit Materials — " + fmtDateLabel(today) : "Log Today's Materials"} onClose={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }}>
             <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
               <strong style={{ color: t.text }}>{dailyMaterialsJob.builder || "No Customer"}</strong><br />{dailyMaterialsJob.address}
-              <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>Job stays open — just logging today's usage</div>
+              <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>{isEditingPast ? fmtDateLabel(today) : "Job stays open — just logging today's usage"}</div>
             </div>
             {tubeItems.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 14 }}>No materials loaded on truck.</div>}
             {tubeItems.map(item => {
@@ -1352,12 +1354,52 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
         const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
         return (
-          <Modal title="Materials Used" onClose={() => setCloseoutJob(null)}>
+          <Modal title="Close Out Job" onClose={() => setCloseoutJob(null)}>
             <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
               <strong style={{ color: t.text }}>{closeoutJob.job.builder || "No Customer"}</strong><br />{closeoutJob.job.address}
             </div>
+            {/* Daily material log review */}
+            {(() => {
+              const logs = closeoutJob.job.dailyMaterialLogs || [];
+              if (logs.length === 0) return null;
+              const fmtDate = (ds) => { const [y,m,d] = ds.split("-"); const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return months[parseInt(m)-1] + " " + parseInt(d); };
+              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, fontWeight: 600, marginBottom: 8 }}>Materials Logged — Previous Days</div>
+                  {logs.sort((a,b) => a.date.localeCompare(b.date)).map((log, idx) => (
+                    <div key={idx} style={{ background: t.bg, border: "1px solid " + t.border, borderRadius: 8, padding: "10px 12px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: t.text, marginBottom: 4 }}>{fmtDate(log.date)}</div>
+                        <div style={{ fontSize: 12, color: t.textSecondary }}>
+                          {Object.entries(log.materials).map(([itemId, qty]) => {
+                            const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                            if (!item) return null;
+                            const display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                            return <span key={itemId} style={{ marginRight: 10 }}>{item.name}: <strong>{display}</strong></span>;
+                          })}
+                        </div>
+                      </div>
+                      <button onClick={() => {
+                        const preQtys = {};
+                        INVENTORY_ITEMS.forEach(i => {
+                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b"].includes(i.id);
+                          const val = log.materials[i.id];
+                          if (val) preQtys[i.id] = isFoamItem ? String(Math.round(val * (["cc_a","cc_b"].includes(i.id) ? 50 : 48))) : String(val);
+                        });
+                        setDailyMaterialsJob({ ...closeoutJob.job, _editingDate: log.date });
+                        setDailyMaterialQtys(preQtys);
+                      }} style={{ fontSize: 12, fontWeight: 600, color: t.accent, background: t.accentBg, border: "1px solid " + t.accent, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>Edit</button>
+                    </div>
+                  ))}
+                  <div style={{ borderTop: "1px solid " + t.border, marginTop: 12, paddingTop: 12 }}>
+                    <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, fontWeight: 600, marginBottom: 10 }}>Today's Materials</div>
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ fontSize: 13, color: t.textSecondary, marginBottom: 16, background: t.bg, padding: "10px 12px", borderRadius: 6, borderLeft: "3px solid " + t.accent }}>
-              Enter what you used on this job. Leave blank for items you did not use.
+              Enter what you used today. Leave blank for items you did not use.
             </div>
             {truckItems.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 16 }}>No materials loaded on truck.</div>}
             {truckItems.map(item => {
