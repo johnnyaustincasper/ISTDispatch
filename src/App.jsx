@@ -1214,20 +1214,30 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 }
               </Card>
               {/* Procedures */}
-              <Card style={{ marginBottom: 16, borderLeft: "4px solid #dc2626" }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: "#dc2626", marginBottom: 10 }}>⚠️ DAILY PROCEDURE</div>
-                <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 8 }}>
-                  {[
-                    "Every morning — count everything on your truck plus what you're pulling from the warehouse. Enter the total and tap Confirm Load Out.",
-                    "After each job — tap Log Materials on the job card and enter what you used. Do this before leaving the job site.",
-                    "Multi-day jobs — log materials at the end of every day worked. You will not be able to close out the job until all days are accounted for.",
-                    "When the job is finished — mark it as Completed. If today's materials are already logged, it will close out immediately. If not, you'll be prompted to enter them first.",
-                    "Every evening when you return to the shop — tap Unload to Warehouse to return all remaining materials back to inventory."
-                  ].map((step, i) => (
-                    <li key={i} style={{ fontSize: 12, color: "#dc2626", fontWeight: 600, lineHeight: 1.6 }}>{step}</li>
-                  ))}
-                </ol>
-              </Card>
+              {(() => {
+                const [open, setOpen] = React.useState(false);
+                return (
+                  <Card style={{ marginBottom: 16, borderLeft: "4px solid #dc2626" }}>
+                    <button onClick={() => setOpen(o => !o)} style={{ width: "100%", background: "none", border: "none", padding: 0, cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", fontFamily: "inherit" }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#dc2626" }}>⚠️ DAILY PROCEDURE</div>
+                      <span style={{ fontSize: 16, color: "#dc2626", transition: "transform 0.2s", display: "inline-block", transform: open ? "rotate(180deg)" : "rotate(0deg)" }}>▾</span>
+                    </button>
+                    {open && (
+                      <ol style={{ margin: "10px 0 0 0", paddingLeft: 18, display: "flex", flexDirection: "column", gap: 8 }}>
+                        {[
+                          "Every morning — count everything on your truck plus what you're pulling from the warehouse. Enter the total and tap Confirm Load Out.",
+                          "After each job — tap Log Materials on the job card and enter what you used. Do this before leaving the job site.",
+                          "Multi-day jobs — log materials at the end of every day worked. You will not be able to close out the job until all days are accounted for.",
+                          "When the job is finished — mark it as Completed. If today's materials are already logged, it will close out immediately. If not, you'll be prompted to enter them first.",
+                          "Every evening when you return to the shop — tap Unload to Warehouse to return all remaining materials back to inventory."
+                        ].map((step, i) => (
+                          <li key={i} style={{ fontSize: 12, color: "#dc2626", fontWeight: 600, lineHeight: 1.6 }}>{step}</li>
+                        ))}
+                      </ol>
+                    )}
+                  </Card>
+                );
+              })()}
 
               {!loadTruckMode ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
