@@ -1941,6 +1941,67 @@ function RosterView({ trucks, jobs, updates }) {
   );
 }
 
+function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem, pcsQty, onUpdateInventory }) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState("");
+  const [pcsVal, setPcsVal] = useState("");
+  const t = THEME;
+
+  const open = () => {
+    setVal(isFoam ? String(bblToGals(qty, itemId)) : String(qty));
+    setPcsVal(pcsItem ? String(pcsQty) : "");
+    setEditing(true);
+  };
+
+  const save = () => {
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed) && parsed >= 0) {
+      const newQty = isFoam ? Math.round(galsToBbl(parsed, itemId) * 100) / 100 : parsed;
+      onUpdateInventory(itemId, Math.max(0, newQty));
+    }
+    if (pcsItem) {
+      const p = parseFloat(pcsVal);
+      if (!isNaN(p) && p >= 0) onUpdateInventory(pcsItem.id, Math.max(0, Math.round(p)));
+    }
+    setEditing(false);
+  };
+
+  if (!editing) {
+    return (
+      <button onClick={open} style={{ fontSize: 11, fontWeight: 600, color: t.accent, background: t.accentBg, border: "1px solid " + t.accent, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+        Edit
+      </button>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 130 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <input
+          type="number" min="0" autoFocus
+          value={val} onChange={e => setVal(e.target.value)}
+          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+          placeholder={isFoam ? "gallons" : "qty"}
+          style={{ width: 80, padding: "6px 8px", borderRadius: 6, border: "1px solid " + t.accent, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }}
+        />
+        <button onClick={save} style={{ padding: "6px 10px", borderRadius: 6, background: t.accent, color: "#fff", border: "none", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+        <button onClick={() => setEditing(false)} style={{ padding: "6px 8px", borderRadius: 6, background: "none", color: t.textMuted, border: "1px solid " + t.border, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+      </div>
+      {pcsItem && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center", paddingLeft: 4 }}>
+          <span style={{ fontSize: 10, color: t.textMuted }}>pcs:</span>
+          <input
+            type="number" min="0"
+            value={pcsVal} onChange={e => setPcsVal(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") save(); }}
+            style={{ width: 60, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
@@ -2547,22 +2608,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                                 <div style={{ fontSize: 16, fontWeight: 800, color: pcsQty > 0 ? "#1e40af" : "#9ca3af" }}>{pcsQty}</div>
                               </div>}
                             </td>
-                            <td style={{ ...S.tdR, whiteSpace: "nowrap", verticalAlign: "top", paddingTop: 8 }}>
-                              {isFoam(item.id)
-                                ? [[-10,"-10g"],[-5,"-5g"],[-1,"-1g"],[1,"+1g"],[5,"+5g"],[10,"+10g"]].map(([g, label]) => (
-                                    <button key={g} style={{ ...S.btn, fontSize: 10, fontWeight: 700, marginLeft: 2, color: g < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(item.id, Math.max(0, Math.round((qty + galsToBbl(g, item.id)) * 100) / 100))}>{label}</button>
-                                  ))
-                                : [[-10,"-10"],[-5,"-5"],[-1,"−"],[1,"+"],[5,"+5"],[10,"+10"]].map(([n, label]) => (
-                                    <button key={n} style={{ ...S.btn, fontSize: n === -1 || n === 1 ? 14 : 10, fontWeight: n === -1 || n === 1 ? 400 : 700, marginLeft: 2, color: n < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(item.id, Math.max(0, qty + n))}>{label}</button>
-                                  ))
-                              }
-                              {pcsItem && <div style={{ marginTop: 6, display: "flex", alignItems: "center", gap: 2 }}>
-                                <span style={{ fontSize: 9, color: t.textMuted, marginRight: 2 }}>pcs:</span>
-                                {[[-10,"-10"],[-1,"−"],[1,"+"],[10,"+10"]].map(([n, label]) => (
-                                  <button key={n} style={{ ...S.btn, fontSize: 10, height: 26, minWidth: 26, padding: "0 4px", color: n < 0 ? "#b91c1c" : "#15803d" }} onClick={() => onUpdateInventory(pcsItem.id, Math.max(0, pcsQty + n))}>{label}</button>
-                                ))}
-                                <span style={{ fontSize: 12, fontWeight: 700, color: t.text, marginLeft: 3 }}>{pcsQty}</span>
-                              </div>}
+                            <td style={{ ...S.tdR, verticalAlign: "top", paddingTop: 8 }}>
+                              <InventoryEditCell
+                                itemId={item.id}
+                                qty={qty}
+                                isFoam={isFoam(item.id)}
+                                bblToGals={bblToGals}
+                                galsToBbl={galsToBbl}
+                                pcsItem={pcsItem}
+                                pcsQty={pcsQty}
+                                onUpdateInventory={onUpdateInventory}
+                              />
                             </td>
                           </tr>
                         );
