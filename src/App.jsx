@@ -1218,7 +1218,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 <div style={{ fontWeight: 700, fontSize: 13, color: "#dc2626", marginBottom: 10 }}>⚠️ DAILY PROCEDURE</div>
                 <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 8 }}>
                   {[
-                    "Every morning — count everything on your truck plus what you're pulling from the warehouse. Enter the total and tap Load Out.",
+                    "Every morning — count everything on your truck plus what you're pulling from the warehouse. Enter the total and tap Confirm Load Out.",
                     "After each job — tap Log Materials on the job card and enter what you used. Do this before leaving the job site.",
                     "Multi-day jobs — log materials at the end of every day worked. You will not be able to close out the job until all days are accounted for.",
                     "When the job is finished — mark it as Completed. If today's materials are already logged, it will close out immediately. If not, you'll be prompted to enter them first.",
