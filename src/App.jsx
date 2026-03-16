@@ -211,7 +211,7 @@ const kbStyles = `
 
 function AuthShell({ children, centered = false }) {
   return (
-    <div style={{ minHeight: "100dvh", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : "calc(env(safe-area-inset-top,0px) + 10vh) 20px calc(env(safe-area-inset-bottom,0px) + 40px)", overflow: "hidden" }}>
+    <div style={{ minHeight: "100dvh", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : "calc(env(safe-area-inset-top,0px) + 10vh) 20px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto" }}>
       <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: "420px", width: "100%" }}>
         {children}
       </div>
