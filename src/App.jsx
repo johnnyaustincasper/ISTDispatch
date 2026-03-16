@@ -650,7 +650,7 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onLogDailyMaterials, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -669,6 +669,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const [closeoutMaterialQtys, setCloseoutMaterialQtys] = useState({});
   const [editMaterialsJob, setEditMaterialsJob] = useState(null);
   const [editMaterialQtys, setEditMaterialQtys] = useState({});
+  const [dailyMaterialsJob, setDailyMaterialsJob] = useState(null);
+  const [dailyMaterialQtys, setDailyMaterialQtys] = useState({});
   const [histCalMonth, setHistCalMonth] = useState(new Date().getMonth());
   const [histCalYear, setHistCalYear] = useState(new Date().getFullYear());
   const [histDayJobs, setHistDayJobs] = useState(null); // { date, jobs[] }
@@ -814,6 +816,23 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
                   </div>
                   {job.notes && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginBottom: "10px", borderLeft: "3px solid " + t.accent }}>Office: {job.notes}</div>}
+                  {(job.dailyMaterialLogs || []).length > 0 && (
+                    <div style={{ marginBottom: "10px", background: t.bg, borderRadius: "6px", padding: "8px 12px" }}>
+                      <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Materials Logged</div>
+                      {(job.dailyMaterialLogs || []).map((log, idx) => (
+                        <div key={idx} style={{ fontSize: "12px", color: t.textSecondary, paddingBottom: "4px", marginBottom: "4px", borderBottom: idx < job.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
+                          <span style={{ color: t.textMuted, marginRight: "8px" }}>{log.date}</span>
+                          {Object.entries(log.materials).map(([itemId, qty]) => {
+                            const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                            if (!item) return null;
+                            const isFoam = ["oc_a","oc_b","cc_a","cc_b"].includes(itemId);
+                            const display = isFoam ? Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                            return <span key={itemId} style={{ marginRight: "8px" }}>{item.name}: <strong>{display}</strong></span>;
+                          })}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {jobUpdates.length > 0 && (
                     <div style={{ marginBottom: "10px" }}>
                       <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Update Log</div>
@@ -832,7 +851,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                       })}
                     </div>
                   )}
-                  <Button onClick={() => setActiveJob(job)} style={{ width: "100%" }}>Send Update</Button>
+                  <div style={{ display: "flex", gap: "8px" }}>
+                    <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
+                    <Button variant="secondary" onClick={() => { setDailyMaterialsJob(job); setDailyMaterialQtys({}); }} style={{ flex: 1 }}>Log Materials</Button>
+                  </div>
                 </Card>
               );
             })}
@@ -1205,6 +1227,66 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       )}
 
       {/* ── CLOSEOUT MATERIALS MODAL ── */}
+      {dailyMaterialsJob && (() => {
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
+        const today = new Date().toISOString().slice(0, 10);
+        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
+        return (
+          <Modal title="Log Today's Materials" onClose={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }}>
+            <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
+              <strong style={{ color: t.text }}>{dailyMaterialsJob.builder || "No Customer"}</strong><br />{dailyMaterialsJob.address}
+              <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>Job stays open — just logging today's usage</div>
+            </div>
+            {tubeItems.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 14 }}>No materials loaded on truck.</div>}
+            {tubeItems.map(item => {
+              const onTruck = truckInventory[item.id] || 0;
+              const label = isFoam(item.id)
+                ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
+                : item.name + (onTruck > 0 ? " (on truck: " + onTruck + " " + item.unit + ")" : "");
+              const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
+              return (
+                <div key={item.id} style={{ marginBottom: 14 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
+                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used today" : item.unit + " used today"} value={dailyMaterialQtys[item.id] || ""}
+                    onChange={e => setDailyMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
+                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                  {pcsItem && (
+                    <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used</label>
+                      <input type="number" min="0" placeholder="pieces used" value={dailyMaterialQtys[pcsItem.id] || ""}
+                        onChange={e => setDailyMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
+                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <Button variant="secondary" onClick={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }} style={{ flex: 1 }}>Cancel</Button>
+              <Button onClick={() => {
+                const used = {};
+                INVENTORY_ITEMS.forEach(i => {
+                  const raw = dailyMaterialQtys[i.id];
+                  if (raw && parseFloat(raw) > 0) {
+                    used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
+                  }
+                });
+                if (Object.keys(used).length > 0) {
+                  // Deduct from truck inventory
+                  const deductions = Object.entries(used).map(([itemId, qty]) => ({
+                    itemId, stillHave: Math.max(0, Math.round(((truckInventory[itemId] || 0) - qty) * 100) / 100)
+                  }));
+                  onReturnMaterial(deductions, truck?.id, "keep");
+                  // Save as a daily log entry (append to dailyMaterialLogs array in Firebase)
+                  onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() });
+                }
+                setDailyMaterialsJob(null); setDailyMaterialQtys({});
+              }} style={{ flex: 1 }}>Save</Button>
+            </div>
+          </Modal>
+        );
+      })()}
+
       {closeoutJob && (() => {
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
         const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
@@ -2924,6 +3006,13 @@ export default function App() {
   const handleSaveJobMaterials = async (jobId, materialsUsed) => {
     if (jobId) await updateDoc(doc(db, "jobs", jobId), { materialsUsed: materialsUsed || null });
   };
+  const handleLogDailyMaterials = async (jobId, entry) => {
+    if (!jobId) return;
+    const jobRef = doc(db, "jobs", jobId);
+    const snap = await getDoc(jobRef);
+    const existing = snap.exists() ? (snap.data().dailyMaterialLogs || []) : [];
+    await updateDoc(jobRef, { dailyMaterialLogs: [...existing, entry] });
+  };
   const handleLoadTruck = async (itemsLoaded, truckId) => {
     // Everything entered = total on truck today. All of it deducts from warehouse.
     // Truck is zeroed first, then set to exactly what was entered.
@@ -2975,7 +3064,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogDailyMaterials={handleLogDailyMaterials} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
