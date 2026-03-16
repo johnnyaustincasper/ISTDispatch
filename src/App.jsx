@@ -720,8 +720,35 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const getJobUpdates = (jobId) => updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const getLatestStatus = (jobId) => { const u = getJobUpdates(jobId); return u.length > 0 ? u[0].status : "not_started"; };
 
+  const getWorkedDays = (job) => {
+    // All unique calendar days this job had an in_progress or on_site update
+    const jobUpds = updates.filter(u => u.jobId === job.id);
+    const days = new Set();
+    jobUpds.forEach(u => {
+      if (u.status === "in_progress" || u.status === "on_site" || u.status === "started") {
+        days.add(u.timestamp.slice(0, 10));
+      }
+    });
+    return [...days].sort();
+  };
+
+  const getMissingMaterialDays = (job) => {
+    const worked = getWorkedDays(job);
+    const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
+    const today = new Date().toISOString().slice(0, 10);
+    // Exclude today — that's handled by closeout modal
+    return worked.filter(d => d !== today && !logged.has(d));
+  };
+
   const handleSubmit = () => {
     if (status === "completed") {
+      // Check all worked days have materials logged (except today — closeout handles today)
+      const missing = getMissingMaterialDays(activeJob);
+      if (missing.length > 0) {
+        const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1] + " " + parseInt(d); };
+        alert("Please log materials for all worked days before closing out.\n\nMissing: " + missing.map(fmt).join(", "));
+        return;
+      }
       // Intercept — show materials entry before finalizing closeout
       setCloseoutJob({ job: activeJob, status, eta, notes });
       setCloseoutMaterialQtys({});
@@ -816,6 +843,20 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
                   </div>
                   {job.notes && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginBottom: "10px", borderLeft: "3px solid " + t.accent }}>Office: {job.notes}</div>}
+                  {(() => {
+                    const jobUpds = updates.filter(u => u.jobId === job.id);
+                    const workedDays = [...new Set(jobUpds.filter(u => ["in_progress","on_site","started"].includes(u.status)).map(u => u.timestamp.slice(0,10)))].sort();
+                    const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
+                    const todayStr = new Date().toISOString().slice(0,10);
+                    const missing = workedDays.filter(d => d !== todayStr && !logged.has(d));
+                    if (missing.length === 0) return null;
+                    const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
+                    return (
+                      <div style={{ fontSize: "12px", color: "#b45309", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "6px", padding: "8px 10px", marginBottom: "10px" }}>
+                        ⚠️ Materials not logged for: <strong>{missing.map(fmt).join(", ")}</strong> — required before closeout
+                      </div>
+                    );
+                  })()}
                   {(job.dailyMaterialLogs || []).length > 0 && (
                     <div style={{ marginBottom: "10px", background: t.bg, borderRadius: "6px", padding: "8px 12px" }}>
                       <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Materials Logged</div>
@@ -851,10 +892,30 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                       })}
                     </div>
                   )}
-                  <div style={{ display: "flex", gap: "8px" }}>
-                    <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
-                    <Button variant="secondary" onClick={() => { setDailyMaterialsJob(job); setDailyMaterialQtys({}); }} style={{ flex: 1 }}>Log Materials</Button>
-                  </div>
+                  {(() => {
+                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const existingToday = (job.dailyMaterialLogs || []).find(l => l.date === todayStr);
+                    return (
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
+                        <Button variant="secondary" onClick={() => {
+                          setDailyMaterialsJob(job);
+                          if (existingToday) {
+                            // Pre-populate with existing values
+                            const preQtys = {};
+                            INVENTORY_ITEMS.forEach(i => {
+                              const isFoam = ["oc_a","oc_b","cc_a","cc_b"].includes(i.id);
+                              const val = existingToday.materials[i.id];
+                              if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b"].includes(i.id) ? 50 : 48))) : String(val);
+                            });
+                            setDailyMaterialQtys(preQtys);
+                          } else {
+                            setDailyMaterialQtys({});
+                          }
+                        }} style={{ flex: 1 }}>{existingToday ? "Edit Today" : "Log Materials"}</Button>
+                      </div>
+                    );
+                  })()}
                 </Card>
               );
             })}
@@ -1277,8 +1338,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     itemId, stillHave: Math.max(0, Math.round(((truckInventory[itemId] || 0) - qty) * 100) / 100)
                   }));
                   onReturnMaterial(deductions, truck?.id, "keep");
-                  // Save as a daily log entry (append to dailyMaterialLogs array in Firebase)
-                  onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() });
+                  // Save as a daily log entry (upsert by date)
+                  onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
                 }
                 setDailyMaterialsJob(null); setDailyMaterialQtys({});
               }} style={{ flex: 1 }}>Save</Button>
@@ -3006,12 +3067,15 @@ export default function App() {
   const handleSaveJobMaterials = async (jobId, materialsUsed) => {
     if (jobId) await updateDoc(doc(db, "jobs", jobId), { materialsUsed: materialsUsed || null });
   };
-  const handleLogDailyMaterials = async (jobId, entry) => {
+  const handleLogDailyMaterials = async (jobId, entry, upsert = false) => {
     if (!jobId) return;
     const jobRef = doc(db, "jobs", jobId);
     const snap = await getDoc(jobRef);
     const existing = snap.exists() ? (snap.data().dailyMaterialLogs || []) : [];
-    await updateDoc(jobRef, { dailyMaterialLogs: [...existing, entry] });
+    const updated = upsert
+      ? [...existing.filter(e => e.date !== entry.date), entry]
+      : [...existing, entry];
+    await updateDoc(jobRef, { dailyMaterialLogs: updated });
   };
   const handleLoadTruck = async (itemsLoaded, truckId) => {
     // Everything entered = total on truck today. All of it deducts from warehouse.
