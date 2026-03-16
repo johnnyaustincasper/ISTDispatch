@@ -742,15 +742,30 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
   const handleSubmit = () => {
     if (status === "completed") {
-      // Check all worked days have materials logged (except today — closeout handles today)
+      // Check all worked days have materials logged (including today)
       const missing = getMissingMaterialDays(activeJob);
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayLogged = (activeJob.dailyMaterialLogs || []).some(l => l.date === todayStr);
+      const allMissing = todayLogged ? missing : [...missing, todayStr];
+      if (allMissing.length > 0 && !todayLogged) {
+        // Today not logged — show closeout modal to capture today's materials
+        const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1] + " " + parseInt(d); };
+        if (missing.length > 0) {
+          alert("Please log materials for all worked days before closing out.\n\nMissing: " + missing.map(fmt).join(", "));
+          return;
+        }
+        setCloseoutJob({ job: activeJob, status, eta, notes });
+        setCloseoutMaterialQtys({});
+        setActiveJob(null); setStatus("in_progress"); setEta(""); setNotes("");
+        return;
+      }
       if (missing.length > 0) {
         const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1] + " " + parseInt(d); };
         alert("Please log materials for all worked days before closing out.\n\nMissing: " + missing.map(fmt).join(", "));
         return;
       }
-      // Intercept — show materials entry before finalizing closeout
-      setCloseoutJob({ job: activeJob, status, eta, notes });
+      // Today already logged — skip material entry, go straight to closeout
+      setCloseoutJob({ job: activeJob, status, eta, notes, skipMaterials: true });
       setCloseoutMaterialQtys({});
       setActiveJob(null); setStatus("in_progress"); setEta(""); setNotes("");
       return;
@@ -1398,37 +1413,46 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 </div>
               );
             })()}
-            <div style={{ fontSize: 13, color: t.textSecondary, marginBottom: 16, background: t.bg, padding: "10px 12px", borderRadius: 6, borderLeft: "3px solid " + t.accent }}>
-              Enter what you used today. Leave blank for items you did not use.
-            </div>
-            {truckItems.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 16 }}>No materials loaded on truck.</div>}
-            {truckItems.map(item => {
-              const onTruck = truckInventory[item.id] || 0;
-              const label = isFoam(item.id)
-                ? item.name + " (on truck: " + Math.round(onTruck * (["cc_a","cc_b"].includes(item.id) ? 50 : 48)) + " gal)"
-                : item.name + " (on truck: " + onTruck + " " + item.unit + ")";
-              const placeholder = isFoam(item.id) ? "gallons used" : item.unit + " used";
-              const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
-              return (
-                <div key={item.id} style={{ marginBottom: 14 }}>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
-                  <input type="number" min="0" placeholder={placeholder} value={closeoutMaterialQtys[item.id] || ""}
-                    onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
-                  {pcsItem && (
-                    <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
-                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used (on truck: {truckInventory[pcsItem.id] || 0} pcs)</label>
-                      <input type="number" min="0" placeholder="pieces used" value={closeoutMaterialQtys[pcsItem.id] || ""}
-                        onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
-                    </div>
-                  )}
+            {!closeoutJob.skipMaterials && (
+              <>
+                <div style={{ fontSize: 13, color: t.textSecondary, marginBottom: 16, background: t.bg, padding: "10px 12px", borderRadius: 6, borderLeft: "3px solid " + t.accent }}>
+                  Enter what you used today. Leave blank for items you did not use.
                 </div>
-              );
-            })}
+                {truckItems.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 16 }}>No materials loaded on truck.</div>}
+                {truckItems.map(item => {
+                  const onTruck = truckInventory[item.id] || 0;
+                  const label = isFoam(item.id)
+                    ? item.name + " (on truck: " + Math.round(onTruck * (["cc_a","cc_b"].includes(item.id) ? 50 : 48)) + " gal)"
+                    : item.name + " (on truck: " + onTruck + " " + item.unit + ")";
+                  const placeholder = isFoam(item.id) ? "gallons used" : item.unit + " used";
+                  const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
+                  return (
+                    <div key={item.id} style={{ marginBottom: 14 }}>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
+                      <input type="number" min="0" placeholder={placeholder} value={closeoutMaterialQtys[item.id] || ""}
+                        onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                      {pcsItem && (
+                        <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
+                          <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used (on truck: {truckInventory[pcsItem.id] || 0} pcs)</label>
+                          <input type="number" min="0" placeholder="pieces used" value={closeoutMaterialQtys[pcsItem.id] || ""}
+                            onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
+                            style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+            {closeoutJob.skipMaterials && (
+              <div style={{ fontSize: 13, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 6, padding: "10px 12px", marginBottom: 16 }}>
+                ✓ Materials already logged for today — ready to close out.
+              </div>
+            )}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <Button variant="secondary" onClick={() => setCloseoutJob(null)} style={{ flex: 1 }}>Cancel</Button>
-              <Button onClick={() => handleCloseoutConfirm(false)} style={{ flex: 1 }}>Confirm Closeout</Button>
+              <Button onClick={() => handleCloseoutConfirm(closeoutJob.skipMaterials)} style={{ flex: 1 }}>Confirm Closeout</Button>
             </div>
           </Modal>
         );
