@@ -1218,10 +1218,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 <div style={{ fontWeight: 700, fontSize: 13, color: "#dc2626", marginBottom: 10 }}>⚠️ DAILY PROCEDURE</div>
                 <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 8 }}>
                   {[
-                    "Every morning — count everything already on your truck plus what you're pulling from the warehouse. Enter the total into the boxes and tap Load Out.",
-                    "When you mark a job complete — fill out what materials you used. The app will automatically deduct it from your truck inventory.",
-                    "Every evening when you return to the shop — press the green Unload to Warehouse button. This returns everything remaining on your truck back to the warehouse.",
-                    "Repeat the same steps the next morning."
+                    "Every morning — count everything on your truck plus what you're pulling from the warehouse. Enter the total and tap Load Out.",
+                    "After each job — tap Log Materials on the job card and enter what you used. Do this before leaving the job site.",
+                    "Multi-day jobs — log materials at the end of every day worked. You will not be able to close out the job until all days are accounted for.",
+                    "When the job is finished — mark it as Completed. If today's materials are already logged, it will close out immediately. If not, you'll be prompted to enter them first.",
+                    "Every evening when you return to the shop — tap Unload to Warehouse to return all remaining materials back to inventory."
                   ].map((step, i) => (
                     <li key={i} style={{ fontSize: 12, color: "#dc2626", fontWeight: 600, lineHeight: 1.6 }}>{step}</li>
                   ))}
