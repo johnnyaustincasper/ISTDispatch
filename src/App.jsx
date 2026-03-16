@@ -1945,7 +1945,7 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
   const [pcsVal, setPcsVal] = useState("");
-  const t = THEME;
+
 
   const open = () => {
     setVal(isFoam ? String(bblToGals(qty, itemId)) : String(qty));
