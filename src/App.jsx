@@ -1115,6 +1115,40 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   </>
                 }
               </Card>
+              {/* Load Out Procedure */}
+              <Card style={{ marginBottom: 12, borderLeft: "4px solid #dc2626" }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#dc2626", marginBottom: 8 }}>⚠️ LOAD OUT PROCEDURE</div>
+                <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 5 }}>
+                  {["Pull your truck up to the warehouse bay door.",
+                    "Check the job ticket for material requirements BEFORE pulling anything.",
+                    "Count and load all foam sets — verify A and B drums match.",
+                    "Load all accessories: hoses, guns, tips, tape, protective gear.",
+                    "Do NOT leave the yard until all items are entered in the app.",
+                    "Secure all drums — no rolling or unsecured loads.",
+                    "Lock the warehouse bay before you leave."]
+                    .map((step, i) => (
+                      <li key={i} style={{ fontSize: 12, color: "#dc2626", fontWeight: 600, lineHeight: 1.5 }}>{step}</li>
+                    ))}
+                </ol>
+              </Card>
+
+              {/* Unload Procedure */}
+              <Card style={{ marginBottom: 16, borderLeft: "4px solid #dc2626" }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#dc2626", marginBottom: 8 }}>⚠️ UNLOAD TO WAREHOUSE PROCEDURE</div>
+                <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 5 }}>
+                  {["Pull truck into the bay — do NOT unload in the parking lot.",
+                    "Count ALL remaining material before touching anything.",
+                    "Enter remaining quantities in the app FIRST, then unload.",
+                    "Return foam drums to their designated spots — A and B side separated.",
+                    "Hang hoses properly — do not leave coiled on the floor.",
+                    "Report any damaged or low materials via a ticket before leaving.",
+                    "Lock the bay door and confirm in the app when done."]
+                    .map((step, i) => (
+                      <li key={i} style={{ fontSize: 12, color: "#dc2626", fontWeight: 600, lineHeight: 1.5 }}>{step}</li>
+                    ))}
+                </ol>
+              </Card>
+
               {!loadTruckMode ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <button onClick={() => {
