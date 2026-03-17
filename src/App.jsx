@@ -1255,38 +1255,54 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
             <div style={{ padding: "0 16px 32px" }}>
               <SectionHeader title="Truck Inventory" />
               {/* Current truck load */}
-              <Card style={{ marginBottom: 16 }}>
-                <div style={{ fontWeight: 700, fontSize: 13, color: t.textMuted, marginBottom: loadedItems.length ? 10 : 0 }}>Currently Loaded</div>
-                {loadedItems.length === 0
-                  ? <div style={{ fontSize: 13, color: t.textMuted }}>Nothing loaded on truck.</div>
-                  : <>
-                    {ocSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ocSets.toFixed(2)} sets ({bblToGals(ocSets, "oc_a")*2} gal total)</span></div>}
-                    {ccSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ccSets.toFixed(2)} sets ({bblToGals(ccSets, "cc_a")*2} gal total)</span></div>}
-                    {nonFoamLoaded.filter(i => !i.isPieces).map(item => {
-                      const pi = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
-                      const pq = pi ? (truckInventory[pi.id] || 0) : 0;
-                      return (
-                        <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
-                          <div>
-                            <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
-                            {pi && pq > 0 && <div style={{ fontSize: 11, color: t.textMuted, paddingLeft: 8 }}>↳ {pq} loose pcs</div>}
-                          </div>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} {item.unit}</span>
-                        </div>
-                      );
-                    })}
-                    {/* Loose pieces with no full tubes remaining */}
-                    {nonFoamLoaded.filter(i => i.isPieces && !(truckInventory[i.parentId] > 0)).map(item => (
-                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
-                        <div>
-                          <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>loose pieces (partial tube)</div>
-                        </div>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} pcs</span>
-                      </div>
-                    ))}
-                  </>
-                }
+              <Card style={{ marginBottom: 16, padding: 0, overflow: "hidden" }}>
+                <div style={{ padding: "10px 14px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontWeight: 700, fontSize: 14, color: t.text }}>My Truck Inventory</div>
+                  {loadedItems.length === 0 && <span style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded</span>}
+                </div>
+                {ocSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 14px", borderTop: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ocSets.toFixed(2)} sets ({bblToGals(ocSets, "oc_a")*2} gal)</span></div>}
+                {ccSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 14px", borderTop: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ccSets.toFixed(2)} sets ({bblToGals(ccSets, "cc_a")*2} gal)</span></div>}
+                {loadedItems.length > 0 && (() => {
+                  const truckCats = [...new Set(INVENTORY_ITEMS.filter(i => !i.isPieces && ((truckInventory[i.id] || 0) > 0 || (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0))).map(i => i.category))];
+                  return (
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead><tr>
+                        <th style={{ textAlign: "left", padding: "6px 14px", fontSize: 11, fontWeight: 600, color: t.textMuted, borderTop: "1px solid " + t.borderLight }}>Material</th>
+                        <th style={{ textAlign: "right", padding: "6px 14px", fontSize: 11, fontWeight: 600, color: t.textMuted, borderTop: "1px solid " + t.borderLight }}>Qty</th>
+                      </tr></thead>
+                      <tbody>
+                        {truckCats.map(cat => {
+                          const catItems = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces && ((truckInventory[i.id] || 0) > 0 || (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)));
+                          return (<React.Fragment key={cat}>
+                            <tr style={{ background: "#f8fafc" }}><td colSpan={2} style={{ padding: "4px 14px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>{cat}</td></tr>
+                            {catItems.map(item => {
+                              const qty = truckInventory[item.id] || 0;
+                              const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(p => p.parentId === item.id) : null;
+                              const pcsQty = pcsItem ? (truckInventory[pcsItem.id] || 0) : 0;
+                              const low = qty === 0 && pcsQty === 0 ? "#ef4444" : qty <= 1 && !pcsQty ? "#d97706" : t.text;
+                              return (
+                                <tr key={item.id} style={{ borderTop: "1px solid " + t.borderLight }}>
+                                  <td style={{ padding: "8px 14px" }}>
+                                    <div style={{ fontSize: 13, color: t.text }}>{item.name}</div>
+                                    {item.sqftPerTube && <div style={{ fontSize: 10, color: t.textMuted }}>{item.sqftPerTube} sqft/tube</div>}
+                                  </td>
+                                  <td style={{ padding: "8px 14px", textAlign: "right" }}>
+                                    {qty > 0 && <div style={{ fontWeight: 700, fontSize: 15, color: low }}>{qty} <span style={{ fontSize: 11, fontWeight: 400 }}>tubes</span></div>}
+                                    {item.sqftPerTube && qty > 0 && <div style={{ fontSize: 9, color: t.textMuted }}>{(item.sqftPerTube * qty).toFixed(0)} sqft</div>}
+                                    {pcsItem && pcsQty > 0 && <div style={{ marginTop: qty > 0 ? 4 : 0 }}>
+                                      <div style={{ fontSize: 14, fontWeight: 800, color: "#1e40af" }}>{pcsQty} <span style={{ fontSize: 11, fontWeight: 400 }}>pcs</span></div>
+                                      {item.sqftPerTube && item.pcsPerTube && <div style={{ fontSize: 9, color: t.textMuted }}>{((item.sqftPerTube / item.pcsPerTube) * pcsQty).toFixed(1)} sqft</div>}
+                                    </div>}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </React.Fragment>);
+                        })}
+                      </tbody>
+                    </table>
+                  );
+                })()}
               </Card>
               {/* Procedures */}
               <DailyProcedureCard />
