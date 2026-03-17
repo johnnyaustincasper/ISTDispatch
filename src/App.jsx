@@ -1943,19 +1943,31 @@ function RosterView({ trucks, jobs, updates }) {
 
 function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem, pcsQty, onUpdateInventory }) {
   const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState("");
+  const [bbls, setBbls] = useState("");
+  const [gals, setGals] = useState("");
   const [pcsVal, setPcsVal] = useState("");
 
+  const galPerBbl = ["cc_a","cc_b"].includes(itemId) ? 50 : 48;
+
   const open = () => {
-    setVal(String(isFoam ? Math.round(qty) : qty));
+    setBbls(isFoam ? String(Math.round(qty)) : "");
+    setGals(isFoam ? String(bblToGals(qty, itemId)) : "");
     setPcsVal(pcsItem ? String(pcsQty) : "");
     setEditing(true);
   };
 
   const save = () => {
-    const parsed = parseFloat(val);
-    if (!isNaN(parsed) && parsed >= 0) {
-      onUpdateInventory(itemId, Math.max(0, isFoam ? Math.round(parsed) : parsed));
+    if (isFoam) {
+      // Use whichever was last edited — gals takes priority if both filled
+      const g = parseFloat(gals);
+      const b = parseFloat(bbls);
+      let newBbl;
+      if (!isNaN(g) && g >= 0) newBbl = Math.round((g / galPerBbl) * 100) / 100;
+      else if (!isNaN(b) && b >= 0) newBbl = Math.round(b * 100) / 100;
+      if (newBbl !== undefined) onUpdateInventory(itemId, Math.max(0, newBbl));
+    } else {
+      const parsed = parseFloat(gals || bbls);
+      if (!isNaN(parsed) && parsed >= 0) onUpdateInventory(itemId, Math.max(0, parsed));
     }
     if (pcsItem && pcsVal !== "") {
       const p = parseFloat(pcsVal);
@@ -1973,27 +1985,44 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 150 }}>
-      <div>
-        <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3, fontWeight: 600 }}>{isFoam ? "BARRELS (bbls)" : "QTY"}</div>
-        <input
-          type="number" min="0" autoFocus
-          value={val} onChange={e => setVal(e.target.value)}
-          onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          placeholder={isFoam ? "barrels" : "qty"}
-          style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "2px solid " + t.accent, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }}
-        />
-      </div>
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 160 }}>
+      {isFoam ? (
+        <>
+          <div>
+            <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3, fontWeight: 600 }}>BARRELS (bbls)</div>
+            <input type="number" min="0" autoFocus
+              value={bbls} onChange={e => setBbls(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+              placeholder="barrels"
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+          <div>
+            <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3, fontWeight: 600 }}>GALLONS</div>
+            <input type="number" min="0"
+              value={gals} onChange={e => setGals(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+              placeholder="gallons"
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "2px solid " + t.accent, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
+        </>
+      ) : (
+        <div>
+          <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3, fontWeight: 600 }}>QTY</div>
+          <input type="number" min="0" autoFocus
+            value={gals} onChange={e => setGals(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
+            placeholder="qty"
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "2px solid " + t.accent, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+        </div>
+      )}
       {pcsItem && (
         <div>
           <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3, fontWeight: 600 }}>SET COUNT</div>
-          <input
-            type="number" min="0"
+          <input type="number" min="0"
             value={pcsVal} onChange={e => setPcsVal(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") save(); }}
             placeholder="sets"
-            style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }}
-          />
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
         </div>
       )}
       <div style={{ display: "flex", gap: 6 }}>
