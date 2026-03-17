@@ -1269,12 +1269,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                         <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
                           <div>
                             <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
-                            {pi && pq > 0 && <div style={{ fontSize: 11, color: t.textMuted, paddingLeft: 8 }}>↳ {pq} pcs</div>}
+                            {pi && pq > 0 && <div style={{ fontSize: 11, color: t.textMuted, paddingLeft: 8 }}>↳ {pq} loose pcs</div>}
                           </div>
                           <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} {item.unit}</span>
                         </div>
                       );
                     })}
+                    {/* Loose pieces with no full tubes remaining */}
+                    {nonFoamLoaded.filter(i => i.isPieces && !(truckInventory[i.parentId] > 0)).map(item => (
+                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
+                        <div>
+                          <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>loose pieces (partial tube)</div>
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} pcs</span>
+                      </div>
+                    ))}
                   </>
                 }
               </Card>
@@ -3291,11 +3301,7 @@ export default function App() {
   // Deduct job materials from truck. usedMap = { itemId: qty } (tubes and loose pcs as entered by crew).
   // Reads fresh from Firestore, computes remaining, writes back.
   const handleDeductFromTruck = async (truckId, usedMap) => {
-    if (!truckId || !usedMap || Object.keys(usedMap).length === 0) {
-      alert("DEDUCT SKIPPED: truckId=" + truckId + " usedMap=" + JSON.stringify(usedMap));
-      return;
-    }
-    alert("DEDUCT INPUT: truckId=" + truckId + "\nusedMap=" + JSON.stringify(usedMap));
+    if (!truckId || !usedMap || Object.keys(usedMap).length === 0) return;
     const truckRef = doc(db, "truckInventory", truckId);
     const snap = await getDoc(truckRef);
     const state = snap.exists() ? { ...snap.data() } : {};
@@ -3326,7 +3332,6 @@ export default function App() {
         if (remaining > 0) { state[item.id] = remaining; } else { delete state[item.id]; }
       }
     });
-    alert("WRITING TO TRUCK:\n" + JSON.stringify(state, null, 2));
     await setDoc(truckRef, state);
   };
   const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
