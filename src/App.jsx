@@ -74,8 +74,6 @@ const INVENTORY_ITEMS = [
   { id: "jm_r30_24_pcs",   name: "R30 x 24",       unit: "pcs",   category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_24_t" },
   // Blown
   { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown" },
-  { id: "jm_blown_fg",     name: "Johns Manville Blown Fiberglass", unit: "bags", category: "Blown" },
-  { id: "blown_cel",       name: "Blown Cellulose",  unit: "bags",  category: "Blown" },
   { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Lambswool" },
   // Rockwool
   { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool", hasPieces: true },
