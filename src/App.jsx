@@ -30,30 +30,52 @@ const INVENTORY_ITEMS = [
   { id: "oc_b",       name: "Open Cell B",       unit: "bbl",   category: "Foam" },
   { id: "cc_a",       name: "Closed Cell A",     unit: "bbl",   category: "Foam" },
   { id: "cc_b",       name: "Closed Cell B",     unit: "bbl",   category: "Foam" },
-  // R11
-  { id: "r11_15_8_t", name: "R11 x 15 x 8",     unit: "tubes", category: "R11", hasPieces: true },
-  { id: "r11_15_8_pcs", name: "R11 x 15 x 8",   unit: "pcs",   category: "R11", isPieces: true, parentId: "r11_15_8_t" },
-  // R13
-  { id: "r13_15_8_t", name: "R13 x 15 x 8",     unit: "tubes", category: "R13", hasPieces: true },
-  { id: "r13_15_8_pcs", name: "R13 x 15 x 8",   unit: "pcs",   category: "R13", isPieces: true, parentId: "r13_15_8_t" },
-  { id: "r13_15_9_t", name: "R13 x 15 x 9",     unit: "tubes", category: "R13" },
-  { id: "r13_24_8_t", name: "R13 x 24 x 8",     unit: "tubes", category: "R13", hasPieces: true },
-  { id: "r13_24_8_pcs", name: "R13 x 24 x 8",   unit: "pcs",   category: "R13", isPieces: true, parentId: "r13_24_8_t" },
-  // R19
-  { id: "r19_15_8_t", name: "R19 x 15 x 8",     unit: "tubes", category: "R19", hasPieces: true },
-  { id: "r19_15_8_pcs", name: "R19 x 15 x 8",   unit: "pcs",   category: "R19", isPieces: true, parentId: "r19_15_8_t" },
-  { id: "r19_19_8_t", name: "R19 x 19 x 8",     unit: "tubes", category: "R19", hasPieces: true },
-  { id: "r19_19_8_pcs", name: "R19 x 19 x 8",   unit: "pcs",   category: "R19", isPieces: true, parentId: "r19_19_8_t" },
-  { id: "r19_24_8_t", name: "R19 x 24 x 8",     unit: "tubes", category: "R19", hasPieces: true },
-  { id: "r19_24_8_pcs", name: "R19 x 24 x 8",   unit: "pcs",   category: "R19", isPieces: true, parentId: "r19_24_8_t" },
-  // R30
-  { id: "r30_15_t",   name: "R30 x 15",         unit: "tubes", category: "R30", hasPieces: true },
-  { id: "r30_15_pcs",   name: "R30 x 15",       unit: "pcs",   category: "R30", isPieces: true, parentId: "r30_15_t" },
-  { id: "r30_24_t",   name: "R30 x 24",         unit: "tubes", category: "R30", hasPieces: true },
-  { id: "r30_24_pcs",   name: "R30 x 24",       unit: "pcs",   category: "R30", isPieces: true, parentId: "r30_24_t" },
+  // Certainteed R11
+  { id: "r11_15_8_t",     name: "R11 x 15 x 8",   unit: "tubes", category: "Certainteed R11", hasPieces: true },
+  { id: "r11_15_8_pcs",   name: "R11 x 15 x 8",   unit: "pcs",   category: "Certainteed R11", isPieces: true, parentId: "r11_15_8_t" },
+  // Certainteed R13
+  { id: "r13_15_8_t",     name: "R13 x 15 x 8",   unit: "tubes", category: "Certainteed R13", hasPieces: true },
+  { id: "r13_15_8_pcs",   name: "R13 x 15 x 8",   unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_8_t" },
+  { id: "r13_15_9_t",     name: "R13 x 15 x 9",   unit: "tubes", category: "Certainteed R13" },
+  { id: "r13_24_8_t",     name: "R13 x 24 x 8",   unit: "tubes", category: "Certainteed R13", hasPieces: true },
+  { id: "r13_24_8_pcs",   name: "R13 x 24 x 8",   unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_24_8_t" },
+  // Certainteed R19
+  { id: "r19_15_8_t",     name: "R19 x 15 x 8",   unit: "tubes", category: "Certainteed R19", hasPieces: true },
+  { id: "r19_15_8_pcs",   name: "R19 x 15 x 8",   unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_15_8_t" },
+  { id: "r19_19_8_t",     name: "R19 x 19 x 8",   unit: "tubes", category: "Certainteed R19", hasPieces: true },
+  { id: "r19_19_8_pcs",   name: "R19 x 19 x 8",   unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_19_8_t" },
+  { id: "r19_24_8_t",     name: "R19 x 24 x 8",   unit: "tubes", category: "Certainteed R19", hasPieces: true },
+  { id: "r19_24_8_pcs",   name: "R19 x 24 x 8",   unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_24_8_t" },
+  // Certainteed R30
+  { id: "r30_15_t",       name: "R30 x 15",        unit: "tubes", category: "Certainteed R30", hasPieces: true },
+  { id: "r30_15_pcs",     name: "R30 x 15",        unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_15_t" },
+  { id: "r30_24_t",       name: "R30 x 24",        unit: "tubes", category: "Certainteed R30", hasPieces: true },
+  { id: "r30_24_pcs",     name: "R30 x 24",        unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_24_t" },
+  // Johns Manville R11
+  { id: "jm_r11_15_8_t",   name: "R11 x 15 x 8",  unit: "tubes", category: "Johns Manville R11", hasPieces: true },
+  { id: "jm_r11_15_8_pcs", name: "R11 x 15 x 8",  unit: "pcs",   category: "Johns Manville R11", isPieces: true, parentId: "jm_r11_15_8_t" },
+  // Johns Manville R13
+  { id: "jm_r13_15_8_t",   name: "R13 x 15 x 8",  unit: "tubes", category: "Johns Manville R13", hasPieces: true },
+  { id: "jm_r13_15_8_pcs", name: "R13 x 15 x 8",  unit: "pcs",   category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_15_8_t" },
+  { id: "jm_r13_15_9_t",   name: "R13 x 15 x 9",  unit: "tubes", category: "Johns Manville R13" },
+  { id: "jm_r13_24_8_t",   name: "R13 x 24 x 8",  unit: "tubes", category: "Johns Manville R13", hasPieces: true },
+  { id: "jm_r13_24_8_pcs", name: "R13 x 24 x 8",  unit: "pcs",   category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_24_8_t" },
+  // Johns Manville R19
+  { id: "jm_r19_15_8_t",   name: "R19 x 15 x 8",  unit: "tubes", category: "Johns Manville R19", hasPieces: true },
+  { id: "jm_r19_15_8_pcs", name: "R19 x 15 x 8",  unit: "pcs",   category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_15_8_t" },
+  { id: "jm_r19_19_8_t",   name: "R19 x 19 x 8",  unit: "tubes", category: "Johns Manville R19", hasPieces: true },
+  { id: "jm_r19_19_8_pcs", name: "R19 x 19 x 8",  unit: "pcs",   category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_19_8_t" },
+  { id: "jm_r19_24_8_t",   name: "R19 x 24 x 8",  unit: "tubes", category: "Johns Manville R19", hasPieces: true },
+  { id: "jm_r19_24_8_pcs", name: "R19 x 24 x 8",  unit: "pcs",   category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_24_8_t" },
+  // Johns Manville R30
+  { id: "jm_r30_15_t",     name: "R30 x 15",       unit: "tubes", category: "Johns Manville R30", hasPieces: true },
+  { id: "jm_r30_15_pcs",   name: "R30 x 15",       unit: "pcs",   category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_15_t" },
+  { id: "jm_r30_24_t",     name: "R30 x 24",       unit: "tubes", category: "Johns Manville R30", hasPieces: true },
+  { id: "jm_r30_24_pcs",   name: "R30 x 24",       unit: "pcs",   category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_24_t" },
   // Blown
-  { id: "blown_fg",   name: "Blown Fiberglass",  unit: "bags",  category: "Blown" },
-  { id: "blown_cel",  name: "Blown Cellulose",   unit: "bags",  category: "Blown" },
+  { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown" },
+  { id: "jm_blown_fg",     name: "Johns Manville Blown Fiberglass", unit: "bags", category: "Blown" },
+  { id: "blown_cel",       name: "Blown Cellulose",  unit: "bags",  category: "Blown" },
   { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Lambswool" },
   // Rockwool
   { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool", hasPieces: true },
