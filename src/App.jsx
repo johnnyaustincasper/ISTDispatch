@@ -3298,15 +3298,14 @@ export default function App() {
     // Process each tube item that was used
     INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
       const used = parseFloat(usedMap[item.id]) || 0;
-      if (used === 0) return;
       if (item.pcsPerTube) {
         // For tube items: convert everything to pieces, deduct, convert back
         const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+        const usedLoose = pcsItem ? (parseFloat(usedMap[pcsItem.id]) || 0) : 0;
+        if (used === 0 && usedLoose === 0) return; // nothing used for this item
         const curTubes = state[item.id] || 0;
         const curLoose = pcsItem ? (state[pcsItem.id] || 0) : 0;
         const totalPcsOnTruck = curTubes * item.pcsPerTube + curLoose;
-        // usedMap[item.id] = full tubes used; usedMap[pcsItem.id] = loose pieces used
-        const usedLoose = pcsItem ? (parseFloat(usedMap[pcsItem.id]) || 0) : 0;
         const totalPcsUsed = used * item.pcsPerTube + usedLoose;
         const remaining = Math.max(0, totalPcsOnTruck - totalPcsUsed);
         const newTubes = Math.floor(remaining / item.pcsPerTube);
@@ -3316,6 +3315,7 @@ export default function App() {
           if (newLoose > 0) { state[pcsItem.id] = newLoose; } else { delete state[pcsItem.id]; }
         }
       } else {
+        if (used === 0) return;
         // Simple item (bags, foam already converted to barrels)
         const cur = state[item.id] || 0;
         const remaining = Math.max(0, Math.round((cur - used) * 100) / 100);
