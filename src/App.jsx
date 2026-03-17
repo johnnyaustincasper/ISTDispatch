@@ -574,24 +574,30 @@ function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
   const map = {};
   const localStr = (d) => d.toLocaleDateString("en-CA");
   const monStr = localStr(mon); const satStr = localStr(sat);
-  (jobs || []).forEach(j => {
-    const workedDays = [...new Set(
-      (updates || [])
-        .filter(u => u.jobId === j.id && ["in_progress","on_site","started"].includes(u.status))
-        .map(u => tsToCST(u.timestamp))
-    )].filter(d => d >= monStr && d <= satStr);
-    workedDays.forEach(day => {
-      if (!map[day]) map[day] = [];
-      map[day].push(j);
+  (jobs || [])
+    // Only jobs this member is tagged on
+    .filter(j => Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(memberId))
+    .forEach(j => {
+      const workedDays = [...new Set(
+        (updates || [])
+          // Only in_progress updates submitted by this member
+          .filter(u => u.jobId === j.id &&
+            ["in_progress","on_site","started"].includes(u.status) &&
+            (u.submittedBy === memberName || u.crewMemberId === memberId))
+          .map(u => tsToCST(u.timestamp))
+      )].filter(d => d >= monStr && d <= satStr);
+      workedDays.forEach(day => {
+        if (!map[day]) map[day] = [];
+        map[day].push(j);
+      });
     });
-  });
   return map;
 }
 
-function buildTimesheetHtml(name, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay, dayNotes = {}) {
+function buildTimesheetHtml(name, mon, sat, DAYS, dayJobMap, _unused, fmtDate, fmtDay, dayNotes = {}) {
   const rows = DAYS.map(day => {
     const dayStr = day.toLocaleDateString("en-CA");
-    const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+    const dayJobs = dayJobMap[dayStr] || [];
     const note = dayNotes[dayStr];
     const noteHtml = note ? `<div style="font-size:9px;font-style:italic;color:#555;margin-top:3px;border-top:1px dashed #ccc;padding-top:2px">${note}</div>` : "";
     return `<tr><td style="padding:3px 8px;border:1px solid #ccc;font-weight:600;white-space:nowrap;vertical-align:top;font-size:10px;width:90px">${fmtDay(day)}</td><td style="padding:3px 8px;border:1px solid #ccc;font-size:10px">${dayJobs.length === 0 ? '<span style="color:#aaa">—</span>' : dayJobs.map(j => `<span style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px"><span><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " (" + j.type + ")" : ""}</span><span style="margin-left:12px;white-space:nowrap;font-size:9px">Pay: <span style="display:inline-block;width:80px;border-bottom:1px solid #000">&nbsp;</span></span></span>`).join("")}${noteHtml}</td></tr>`;
