@@ -1402,23 +1402,34 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     : ""
                   );
               return (
-                <div key={item.id} style={{ marginBottom: 14 }}>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
-                  {!looseOnly && (
-                    <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used today" : item.hasPieces ? "full tubes used" : item.unit + " used today"} value={dailyMaterialQtys[item.id] || ""}
-                      onChange={e => setDailyMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
-                      style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
-                  )}
-                  {pcsItem && item.pcsPerTube && (
-                    <div style={{ marginTop: looseOnly ? 0 : 6, paddingLeft: looseOnly ? 0 : 14, borderLeft: looseOnly ? "none" : "2px dashed " + t.border }}>
-                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 3 }}>
-                        {looseOnly ? "Pieces used" : "Loose pieces used"} <span style={{ fontWeight: 400 }}>({item.pcsPerTube} pcs/tube)</span>
-                      </label>
-                      <input type="number" min="0" placeholder={looseOnly ? "pieces used" : "loose pieces from open tube"} value={dailyMaterialQtys[pcsItem.id] || ""}
-                        onChange={e => setDailyMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
-                        style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center", padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
+                    <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
+                      {onTruck > 0 && <span>On truck: {onTruck} tubes{loosePcsOnTruck > 0 ? " + " + loosePcsOnTruck + " pcs" : ""}</span>}
+                      {onTruck === 0 && loosePcsOnTruck > 0 && <span>On truck: {loosePcsOnTruck} pcs</span>}
+                      {existingQty > 0 && <span style={{ marginLeft: onTruck > 0 || loosePcsOnTruck > 0 ? 8 : 0, color: "#2563eb" }}>Logged: {existingQty} tubes</span>}
+                      {existingPcsQty > 0 && <span style={{ marginLeft: 8, color: "#2563eb" }}>Logged: {existingPcsQty} pcs</span>}
                     </div>
-                  )}
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+                    {!looseOnly && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <input type="number" min="0" placeholder="0" value={dailyMaterialQtys[item.id] || ""}
+                          onChange={e => setDailyMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
+                          style={{ width: 64, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", textAlign: "right", boxSizing: "border-box" }} />
+                        <span style={{ fontSize: 11, color: t.textMuted, minWidth: 28 }}>tubes</span>
+                      </div>
+                    )}
+                    {pcsItem && item.pcsPerTube && (
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <input type="number" min="0" placeholder="0" value={dailyMaterialQtys[pcsItem.id] || ""}
+                          onChange={e => setDailyMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
+                          style={{ width: 64, padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", textAlign: "right", boxSizing: "border-box" }} />
+                        <span style={{ fontSize: 11, color: t.textMuted, minWidth: 28 }}>pcs</span>
+                      </div>
+                    )}
+                  </div>
                 </div>
               );
             })}
