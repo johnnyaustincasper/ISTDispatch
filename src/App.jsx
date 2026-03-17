@@ -56,6 +56,9 @@ const INVENTORY_ITEMS = [
   { id: "r30_15_pcs",     name: 'R30 x 16" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_15_t" },
   { id: "r30_24_t",       name: 'R30 x 24" x 48"',       pcsPerTube: 11, sqftPerTube: 88,     unit: "tubes", category: "Certainteed R30", hasPieces: true },
   { id: "r30_24_pcs",     name: 'R30 x 24" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_24_t" },
+  // Johns Manville R11
+  { id: "jm_r11_15_8_t",   name: 'JM R11 x 15" x 93"',    pcsPerTube: 16, sqftPerTube: 155.00, unit: "tubes", category: "Johns Manville R11", hasPieces: true },
+  { id: "jm_r11_15_8_pcs", name: 'JM R11 x 15" x 93"',    unit: "pcs", category: "Johns Manville R11", isPieces: true, parentId: "jm_r11_15_8_t" },
   // Johns Manville R13
   { id: "jm_r13_15_8_t",   name: 'JM R13 x 15" x 93"',    pcsPerTube: 11, sqftPerTube: 106.56, unit: "tubes", category: "Johns Manville R13", hasPieces: true },
   { id: "jm_r13_15_8_pcs", name: 'JM R13 x 15" x 93"',    unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_15_8_t" },
