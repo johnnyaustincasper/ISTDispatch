@@ -75,7 +75,9 @@ const TICKET_STATUSES = [
 ];
 const OFFICE_PROFILES = ["Skip", "Jordan", "Johnny", "Duck", "Carolyn"];
 
-const todayStr = () => new Date().toISOString().split("T")[0];
+const todayCST = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+const tsToCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+const todayStr = todayCST; // alias
 const naturalSort = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 const timeStr = () => new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 const dateStr = (iso) => { try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
@@ -577,7 +579,7 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
   const getJobWorkDate = (j) => {
     const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
     const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
-    return started ? started.timestamp.slice(0,10) : j.date;
+    return started ? tsToCST(started.timestamp) : j.date;
   };
   const weekJobs = jobs.filter(j => {
     const workDate = getJobWorkDate(j);
@@ -750,7 +752,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
     const days = new Set();
     jobUpds.forEach(u => {
       if (u.status === "in_progress" || u.status === "on_site" || u.status === "started") {
-        days.add(u.timestamp.slice(0, 10));
+        days.add(tsToCST(u.timestamp));
       }
     });
     return [...days].sort();
@@ -759,7 +761,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   const getMissingMaterialDays = (job) => {
     const worked = getWorkedDays(job);
     const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayCST();
     // Exclude today — that's handled by closeout modal
     return worked.filter(d => d !== today && !logged.has(d));
   };
@@ -768,7 +770,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
     if (status === "completed") {
       // Check all worked days have materials logged (including today)
       const missing = getMissingMaterialDays(activeJob);
-      const todayStr = new Date().toISOString().slice(0, 10);
+      const todayStr = todayCST();
       const todayLogged = (activeJob.dailyMaterialLogs || []).some(l => l.date === todayStr);
       const allMissing = todayLogged ? missing : [...missing, todayStr];
       if (allMissing.length > 0 && !todayLogged) {
@@ -822,13 +824,13 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
   };
 
   // Completed jobs for today (or recent) that belong to this crew member
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayCST();
   const myCompletedJobs = jobs.filter(j => {
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
     if (!assignedByMember) return false;
     const completedUpdate = updates.filter(u => u.jobId === j.id && u.status === "completed")[0];
     if (!completedUpdate) return false;
-    return completedUpdate.timestamp.slice(0, 10) === today;
+    return tsToCST(completedUpdate.timestamp) === today;
   });
   const handleTicketSubmit = () => {
     const desc = ticketType === "timeoff"
@@ -884,9 +886,9 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   {job.notes && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginBottom: "10px", borderLeft: "3px solid " + t.accent }}>Office: {job.notes}</div>}
                   {(() => {
                     const jobUpds = updates.filter(u => u.jobId === job.id);
-                    const workedDays = [...new Set(jobUpds.filter(u => ["in_progress","on_site","started"].includes(u.status)).map(u => u.timestamp.slice(0,10)))].sort();
+                    const workedDays = [...new Set(jobUpds.filter(u => ["in_progress","on_site","started"].includes(u.status)).map(u => tsToCST(u.timestamp)))].sort();
                     const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
-                    const todayStr = new Date().toISOString().slice(0,10);
+                    const todayStr = todayCST();
                     const missing = workedDays.filter(d => d !== todayStr && !logged.has(d));
                     if (missing.length === 0) return null;
                     const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
@@ -932,7 +934,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     </div>
                   )}
                   {(() => {
-                    const todayStr = new Date().toISOString().slice(0, 10);
+                    const todayStr = todayCST();
                     const existingToday = (job.dailyMaterialLogs || []).find(l => l.date === todayStr);
                     return (
                       <div style={{ display: "flex", gap: "8px" }}>
@@ -978,7 +980,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           allMyCompleted.forEach(j => {
             const cu = updates.filter(u => u.jobId === j.id && u.status === "completed").sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0];
             if (!cu) return;
-            const d = cu.timestamp.slice(0,10);
+            const d = tsToCST(cu.timestamp);
             if (!completedByDate[d]) completedByDate[d] = [];
             completedByDate[d].push(j);
           });
@@ -1004,7 +1006,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   const dateStr = ds(day);
                   const dayJobs = completedByDate[dateStr] || [];
                   const hasJobs = dayJobs.length > 0;
-                  const isToday = dateStr === new Date().toISOString().slice(0,10);
+                  const isToday = dateStr === todayCST();
                   return (
                     <div key={dateStr} onClick={() => hasJobs && setHistDayJobs({ date: dateStr, jobs: dayJobs })}
                       style={{ minHeight: 48, borderRadius: 8, border: "1px solid " + (isToday ? t.accent : t.border), background: hasJobs ? "#dcfce7" : t.surface, cursor: hasJobs ? "pointer" : "default", padding: "4px 5px", position: "relative" }}>
@@ -1317,7 +1319,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       {/* ── CLOSEOUT MATERIALS MODAL ── */}
       {dailyMaterialsJob && (() => {
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
-        const today = dailyMaterialsJob._editingDate || new Date().toISOString().slice(0, 10);
+        const today = dailyMaterialsJob._editingDate || todayCST();
         const isEditingPast = !!dailyMaterialsJob._editingDate;
         const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
         const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
@@ -1613,7 +1615,7 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
   const getJobWorkDate = (j) => {
     const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
     const started = jobUpdates.find(u => u.status === 'in_progress' || u.status === 'completed');
-    return started ? started.timestamp.slice(0,10) : j.date;
+    return started ? tsToCST(started.timestamp) : j.date;
   };
   const weekJobs = (jobs || []).filter(j => {
     const workDate = getJobWorkDate(j);
@@ -1685,7 +1687,7 @@ function RosterView({ trucks, jobs, updates }) {
     const getJobWorkDate = (j) => {
       const ju = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
       const started = ju.find(u => u.status === "in_progress" || u.status === "completed");
-      return started ? started.timestamp.slice(0,10) : j.date;
+      return started ? tsToCST(started.timestamp) : j.date;
     };
     const pages = await Promise.all(members.map(async member => {
       const tsDocId = `${member.id}_${weekKey}`;
@@ -1820,7 +1822,7 @@ function RosterView({ trucks, jobs, updates }) {
       const getJobWorkDate = (j) => {
         const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
         const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
-        return started ? started.timestamp.slice(0,10) : j.date;
+        return started ? tsToCST(started.timestamp) : j.date;
       };
       const weekJobs = (jobs || []).filter(j => {
         const workDate = getJobWorkDate(j);
@@ -2152,16 +2154,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
     const cellDate = new Date(calYear, calMonth, day);
     if (cellDate.getDay() === 0) return []; // No jobs on Sunday
     const ds = calYear + "-" + String(calMonth + 1).padStart(2, "0") + "-" + String(day).padStart(2, "0");
-    const todayStr = new Date().toISOString().slice(0, 10);
+    const todayStr = todayCST();
     return jobs.filter((j) => {
       if (j.onHold) return false;
       const jobUpdates = updates.filter(u => u.jobId === j.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
       // Must have at least one in_progress or completed update to appear on calendar
       const startedUpdate = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
       if (!startedUpdate) return false;
-      const startedDate = startedUpdate.timestamp.slice(0, 10);
+      const startedDate = tsToCST(startedUpdate.timestamp);
       const completedUpdate = jobUpdates.find(u => u.status === "completed");
-      const completedDate = completedUpdate ? completedUpdate.timestamp.slice(0, 10) : null;
+      const completedDate = completedUpdate ? tsToCST(completedUpdate.timestamp) : null;
       if (ds < startedDate) return false;
       if (completedDate) return ds <= completedDate;
       return ds <= todayStr;
@@ -2790,7 +2792,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
             usageByDate[log.date].push({ job, materials: log.materials });
           });
           if (job.closedOut && job.materialsUsed && job.closedAt) {
-            const d = job.closedAt.slice(0,10);
+            const d = tsToCST(job.closedAt);
             const alreadyLogged = (job.dailyMaterialLogs || []).some(l => l.date === d);
             if (!alreadyLogged) {
               if (!usageByDate[d]) usageByDate[d] = [];
@@ -2806,7 +2808,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
         for (let i = 0; i < firstDay; i++) cells.push(null);
         for (let d = 1; d <= daysInMonth; d++) cells.push(d);
         const ds = (d) => calYear + "-" + String(calMonth+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
-        const today = new Date().toISOString().slice(0,10);
+        const today = todayCST();
 
         return (
           <Modal title={(hTruck.members || hTruck.name) + " — Daily History"} onClose={() => setTruckHistoryView(null)}>
