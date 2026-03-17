@@ -83,6 +83,23 @@ const INVENTORY_ITEMS = [
   { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool", hasPieces: true },
   { id: "rw_6_pcs",  name: 'Rockwool 6"',        unit: "pcs",   category: "Rockwool", isPieces: true, parentId: "rw_6_t" },
 ];
+// Returns deduction array for tube items using full-tube + loose-piece logic
+const calcTubeDeductions = (tubeItem, fullTubesUsed, loosePiecesUsed, truckInv) => {
+  if (!tubeItem || !tubeItem.pcsPerTube) return [];
+  const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
+  const ppt = tubeItem.pcsPerTube;
+  const currentTubes = truckInv[tubeItem.id] || 0;
+  const currentLoose = pcsItem ? (truckInv[pcsItem.id] || 0) : 0;
+  const totalOnTruck = currentTubes * ppt + currentLoose;
+  const totalUsed = (fullTubesUsed || 0) * ppt + (loosePiecesUsed || 0);
+  const remaining = Math.max(0, totalOnTruck - totalUsed);
+  const newTubes = Math.floor(remaining / ppt);
+  const newLoose = remaining % ppt;
+  const result = [{ itemId: tubeItem.id, stillHave: newTubes }];
+  if (pcsItem) result.push({ itemId: pcsItem.id, stillHave: newLoose });
+  return result;
+};
+
 const TICKET_PRIORITIES = [
   { value: "low", label: "Low — Can Wait", color: "#1d4ed8", bg: "#dbeafe" },
   { value: "medium", label: "Medium — Needs Attention", color: "#b45309", bg: "#fef3c7" },
@@ -835,9 +852,23 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       });
       return Object.keys(used).length > 0 ? used : null;
     })();
-    // Deduct used materials from truck inventory
+    // Deduct used materials from truck inventory using tube/piece logic
     if (materialsUsed && truck?.id) {
-      const deductions = Object.entries(materialsUsed).map(([itemId, qty]) => ({ itemId, stillHave: Math.max(0, Math.round(((truckInventory[itemId] || 0) - qty) * 100) / 100) }));
+      const deductions = [];
+      INVENTORY_ITEMS.filter(i => !i.isPieces && !["oc_a","oc_b","cc_a","cc_b"].includes(i.id)).forEach(tubeItem => {
+        if (materialsUsed[tubeItem.id] === undefined) return;
+        if (tubeItem.pcsPerTube) {
+          const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
+          const loosePcs = pcsItem ? (materialsUsed[pcsItem.id] || 0) : 0;
+          calcTubeDeductions(tubeItem, materialsUsed[tubeItem.id] || 0, loosePcs, truckInventory)
+            .forEach(d => deductions.push(d));
+        } else {
+          deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, Math.round(((truckInventory[tubeItem.id] || 0) - (materialsUsed[tubeItem.id] || 0)) * 100) / 100) });
+        }
+      });
+      ["oc_a","oc_b","cc_a","cc_b"].forEach(id => {
+        if (materialsUsed[id] !== undefined) deductions.push({ itemId: id, stillHave: Math.max(0, Math.round(((truckInventory[id] || 0) - (materialsUsed[id] || 0)) * 100) / 100) });
+      });
       onReturnMaterial(deductions, truck.id, "keep");
     }
     onSubmitUpdate({ jobId: job.id, truckId: truck.id, crewName, status: s, eta: e, notes: n, timestamp: new Date().toISOString(), timeStr: timeStr() });
@@ -1361,13 +1392,15 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               return (
                 <div key={item.id} style={{ marginBottom: 14 }}>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
-                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used today" : item.unit + " used today"} value={dailyMaterialQtys[item.id] || ""}
+                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used today" : item.hasPieces ? "full tubes used" : item.unit + " used today"} value={dailyMaterialQtys[item.id] || ""}
                     onChange={e => setDailyMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
-                  {pcsItem && (
+                  {pcsItem && item.pcsPerTube && (
                     <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
-                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used</label>
-                      <input type="number" min="0" placeholder="pieces used" value={dailyMaterialQtys[pcsItem.id] || ""}
+                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 3 }}>
+                        Loose pieces used <span style={{ fontWeight: 400 }}>(from open tube — {item.pcsPerTube} pcs/tube)</span>
+                      </label>
+                      <input type="number" min="0" placeholder="loose pieces from open tube" value={dailyMaterialQtys[pcsItem.id] || ""}
                         onChange={e => setDailyMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
                         style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
                     </div>
@@ -1387,10 +1420,23 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 });
                 if (Object.keys(used).length > 0) {
                   // Deduct from truck inventory
-                  const deductions = Object.entries(used).map(([itemId, qty]) => ({
-                    itemId, stillHave: Math.max(0, Math.round(((truckInventory[itemId] || 0) - qty) * 100) / 100)
-                  }));
-                  onReturnMaterial(deductions, truck?.id, "keep");
+                  const deductions = [];
+                  INVENTORY_ITEMS.filter(i => !i.isPieces && !["oc_a","oc_b","cc_a","cc_b"].includes(i.id)).forEach(tubeItem => {
+                    if (!used[tubeItem.id] && !used[tubeItem.id + '_pcs']) return;
+                    if (tubeItem.pcsPerTube) {
+                      const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
+                      const loosePcs = pcsItem ? (parseFloat(used[pcsItem.id]) || 0) : 0;
+                      calcTubeDeductions(tubeItem, parseFloat(used[tubeItem.id]) || 0, loosePcs, truckInventory)
+                        .forEach(d => deductions.push(d));
+                    } else if (used[tubeItem.id]) {
+                      deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, Math.round(((truckInventory[tubeItem.id] || 0) - (used[tubeItem.id] || 0)) * 100) / 100) });
+                    }
+                  });
+                  // foam items
+                  ["oc_a","oc_b","cc_a","cc_b"].forEach(id => {
+                    if (used[id] !== undefined) deductions.push({ itemId: id, stillHave: Math.max(0, Math.round(((truckInventory[id] || 0) - (used[id] || 0)) * 100) / 100) });
+                  });
+                  onReturnMaterial(deductions.filter(d => d !== undefined), truck?.id, "keep");
                   // Save as a daily log entry (upsert by date)
                   onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
                 }
@@ -1468,10 +1514,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                       <input type="number" min="0" placeholder={placeholder} value={closeoutMaterialQtys[item.id] || ""}
                         onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
                         style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
-                      {pcsItem && (
+                      {pcsItem && item.pcsPerTube && (
                         <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
-                          <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used (on truck: {truckInventory[pcsItem.id] || 0} pcs)</label>
-                          <input type="number" min="0" placeholder="pieces used" value={closeoutMaterialQtys[pcsItem.id] || ""}
+                          <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 3 }}>
+                            Loose pieces used <span style={{ fontWeight: 400 }}>(from open tube — {item.pcsPerTube} pcs/tube)</span>
+                          </label>
+                          <input type="number" min="0" placeholder="loose pieces from open tube" value={closeoutMaterialQtys[pcsItem.id] || ""}
                             onChange={e => setCloseoutMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
                             style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
                         </div>
@@ -1515,7 +1563,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               return (
                 <div key={item.id} style={{ marginBottom: 14 }}>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
-                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used" : item.unit + " used"} value={getVal(item)}
+                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used" : item.hasPieces ? "full tubes used" : item.unit + " used"} value={getVal(item)}
                     onChange={e => setEditMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
                     style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
                   {(pcsItem && (showPcs || true)) && (
