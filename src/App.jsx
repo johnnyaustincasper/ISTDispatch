@@ -651,7 +651,7 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
       </div>
       {DAYS.map(day => {
         const dayStr = localDateStr(day);
-        const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+        const dayJobs = dayJobMap[dayStr] || [];
         const note = tsNotes[dayStr];
         return (
           <Card key={dayStr} style={{ marginBottom: 10, cursor: "pointer" }} onClick={() => { setNoteDay(dayStr); setNoteText(note || ""); }}>
@@ -1731,20 +1731,12 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
   const fmtDay = (d) => d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
   const localDateStr = (d) => d.toLocaleDateString('en-CA');
   const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
-  const getJobWorkDate = (j) => {
-    const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-    const started = jobUpdates.find(u => u.status === 'in_progress' || u.status === 'completed');
-    return started ? tsToCST(started.timestamp) : j.date;
-  };
-  const weekJobs = (jobs || []).filter(j => {
-    const workDate = getJobWorkDate(j);
-    if (!workDate) return false;
-    const jd = new Date(workDate + 'T12:00:00');
-    if (jd < mon || jd > sat) return false;
-    return (Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(member.id)) || (updates || []).some(u => u.jobId === j.id && u.submittedBy === member.name);
-  });
+  const startedJobsModal = (jobs || []).filter(j =>
+    (updates || []).some(u => u.jobId === j.id && ["in_progress","on_site","started"].includes(u.status))
+  );
+  const dayJobMap = buildDayJobMap(startedJobsModal, updates, member.id, member.name, mon, sat);
   const handlePrint = () => {
-    const html = buildTimesheetHtml(member.name, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay);
+    const html = buildTimesheetHtml(member.name, mon, sat, DAYS, dayJobMap, null, fmtDate, fmtDay);
     const w = window.open('', '_blank'); w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
   return (
@@ -1758,7 +1750,7 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
       </div>
       {DAYS.map(day => {
         const dayStr = localDateStr(day);
-        const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+        const dayJobs = dayJobMap[dayStr] || [];
         return (
           <div key={dayStr} style={{ marginBottom: 10, padding: '10px 12px', background: t.bg, borderRadius: 8, border: '1px solid ' + t.borderLight }}>
             <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 6 : 0 }}>{fmtDay(day)}</div>
@@ -1805,20 +1797,17 @@ function RosterView({ trucks, jobs, updates }) {
     const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
     const getJobWorkDate = (j) => {
       const ju = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-      const started = ju.find(u => u.status === "in_progress" || u.status === "completed");
       return started ? tsToCST(started.timestamp) : j.date;
     };
+    const allStartedJobs = (jobs || []).filter(j =>
+      (updates || []).some(u => u.jobId === j.id && ["in_progress","on_site","started"].includes(u.status))
+    );
     const pages = await Promise.all(members.map(async member => {
       const tsDocId = `${member.id}_${weekKey}`;
       const snap = await getDoc(doc(db, "timesheets", tsDocId));
       const dayNotes = snap.exists() ? (snap.data().dayNotes || {}) : {};
-      const weekJobs = (jobs || []).filter(j => {
-        const wd = getJobWorkDate(j); if (!wd) return false;
-        const jd = new Date(wd + "T12:00:00");
-        if (jd < mon || jd > sat) return false;
-        return (Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(member.id)) || (updates || []).some(u => u.jobId === j.id && u.submittedBy === member.name);
-      });
-      return buildTimesheetHtml(member.name, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay, dayNotes);
+      const memberDayMap = buildDayJobMap(allStartedJobs, updates, member.id, member.name, mon, sat);
+      return buildTimesheetHtml(member.name, mon, sat, DAYS, memberDayMap, null, fmtDate, fmtDay, dayNotes);
     }));
     const combined = `<!DOCTYPE html><html><head><title>All Timesheets</title><style>@page{size:letter;margin:0.5in}.page-break{page-break-after:always}</style></head><body>${pages.map((p,i) => `<div${i < pages.length - 1 ? ' class="page-break"' : ''}>${p.replace(/<!DOCTYPE html>.*?<body>/s,'').replace(/<\/body><\/html>/,'')}</div>`).join('')}</body></html>`;
     const w = window.open("", "_blank"); w.document.write(combined); w.document.close(); w.focus(); setTimeout(() => w.print(), 400);
@@ -1980,7 +1969,7 @@ function RosterView({ trucks, jobs, updates }) {
       const handlePrint = () => {
         const rows = DAYS.map(day => {
           const dayStr = localDateStr(day);
-          const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+          const dayJobs = dayJobMap[dayStr] || [];
           return `<tr><td style="padding:8px 12px;border:1px solid #e5e7eb;font-weight:600;white-space:nowrap;vertical-align:top">${fmtDay(day)}</td><td style="padding:8px 12px;border:1px solid #e5e7eb">${dayJobs.length === 0 ? '<span style="color:#9ca3af">No jobs</span>' : dayJobs.map(j => `<div style="margin-bottom:6px"><strong>${j.builder || "No Customer"}</strong> — ${j.address}${j.type ? " (" + j.type + ")" : ""}<br><span style="color:#6b7280;font-size:12px">Pay: $${parseFloat(tsData?.jobPay?.[j.id] || 0).toFixed(2)}</span></div>`).join("")}</td></tr>`;
         }).join("");
         const html = `<!DOCTYPE html><html><head><title>Timesheet</title><style>body{font-family:sans-serif;padding:32px;color:#111}h2{margin-bottom:4px}p{color:#6b7280;margin-bottom:24px}table{width:100%;border-collapse:collapse;font-size:14px}.summary{margin-top:24px;padding:16px;border:1px solid #e5e7eb;border-radius:8px;background:#f9fafb}.summary div{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid #e5e7eb}.summary div:last-child{border:none;font-weight:700}@media print{button{display:none}}</style></head><body><h2>Weekly Timesheet — ${timesheetMember.name}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)}</p><table><thead><tr><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Day</th><th style="padding:8px 12px;border:1px solid #e5e7eb;background:#f9fafb;text-align:left">Jobs &amp; Pay</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><div><span>Regular Hours</span><span>${regularHours}</span></div><div><span>Overtime Hours</span><span>${overtimeHours}</span></div><div><span>Total Job Pay</span><span>$${totalJobPay.toFixed(2)}</span></div><div><span>Overtime Pay</span><span>$${overtimePay.toFixed(2)}</span></div><div><span>Total Pay</span><span>$${(totalJobPay + overtimePay).toFixed(2)}</span></div></div><p style="margin-top:24px;font-size:12px;color:#9ca3af">Printed ${new Date().toLocaleString()}</p></body></html>`;
@@ -2005,7 +1994,7 @@ function RosterView({ trucks, jobs, updates }) {
 
           {DAYS.map(day => {
             const dayStr = localDateStr(day);
-            const dayJobs = weekJobs.filter(j => getJobWorkDate(j) === dayStr);
+            const dayJobs = dayJobMap[dayStr] || [];
             return (
               <div key={dayStr} style={{ marginBottom: 10, padding: "10px 12px", background: t.bg, borderRadius: 8, border: "1px solid " + t.borderLight }}>
                 <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 6 : 0 }}>{fmtDay(day)}</div>
