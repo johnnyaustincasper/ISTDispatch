@@ -570,6 +570,24 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 }
 
 // ─── Crew Dashboard ───
+function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
+  const map = {};
+  const localStr = (d) => d.toLocaleDateString("en-CA");
+  const monStr = localStr(mon); const satStr = localStr(sat);
+  (jobs || []).forEach(j => {
+    const workedDays = [...new Set(
+      (updates || [])
+        .filter(u => u.jobId === j.id && ["in_progress","on_site","started"].includes(u.status))
+        .map(u => tsToCST(u.timestamp))
+    )].filter(d => d >= monStr && d <= satStr);
+    workedDays.forEach(day => {
+      if (!map[day]) map[day] = [];
+      map[day].push(j);
+    });
+  });
+  return map;
+}
+
 function buildTimesheetHtml(name, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay, dayNotes = {}) {
   const rows = DAYS.map(day => {
     const dayStr = day.toLocaleDateString("en-CA");
