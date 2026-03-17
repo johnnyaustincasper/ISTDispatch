@@ -856,18 +856,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
     if (materialsUsed && truck?.id) {
       const deductions = [];
       INVENTORY_ITEMS.filter(i => !i.isPieces && !["oc_a","oc_b","cc_a","cc_b"].includes(i.id)).forEach(tubeItem => {
-        if (materialsUsed[tubeItem.id] === undefined) return;
+        const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
+        const fullTubesUsed = parseFloat(materialsUsed[tubeItem.id]) || 0;
+        const loosePcsUsed = pcsItem ? (parseFloat(materialsUsed[pcsItem.id]) || 0) : 0;
+        if (fullTubesUsed === 0 && loosePcsUsed === 0) return;
         if (tubeItem.pcsPerTube) {
-          const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
-          const loosePcs = pcsItem ? (materialsUsed[pcsItem.id] || 0) : 0;
-          calcTubeDeductions(tubeItem, materialsUsed[tubeItem.id] || 0, loosePcs, truckInventory)
+          calcTubeDeductions(tubeItem, fullTubesUsed, loosePcsUsed, truckInventory)
             .forEach(d => deductions.push(d));
         } else {
-          deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, Math.round(((truckInventory[tubeItem.id] || 0) - (materialsUsed[tubeItem.id] || 0)) * 100) / 100) });
+          deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, Math.round(((truckInventory[tubeItem.id] || 0) - fullTubesUsed) * 100) / 100) });
         }
       });
       ["oc_a","oc_b","cc_a","cc_b"].forEach(id => {
-        if (materialsUsed[id] !== undefined) deductions.push({ itemId: id, stillHave: Math.max(0, Math.round(((truckInventory[id] || 0) - (materialsUsed[id] || 0)) * 100) / 100) });
+        if (materialsUsed[id]) deductions.push({ itemId: id, stillHave: Math.max(0, Math.round(((truckInventory[id] || 0) - materialsUsed[id]) * 100) / 100) });
       });
       onReturnMaterial(deductions, truck.id, "keep");
     }
@@ -1422,21 +1423,21 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   // Deduct from truck inventory
                   const deductions = [];
                   INVENTORY_ITEMS.filter(i => !i.isPieces && !["oc_a","oc_b","cc_a","cc_b"].includes(i.id)).forEach(tubeItem => {
-                    if (!used[tubeItem.id] && !used[tubeItem.id + '_pcs']) return;
+                    const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
+                    const fullTubesUsed = parseFloat(used[tubeItem.id]) || 0;
+                    const loosePcsUsed = pcsItem ? (parseFloat(used[pcsItem.id]) || 0) : 0;
+                    if (fullTubesUsed === 0 && loosePcsUsed === 0) return; // nothing used, skip
                     if (tubeItem.pcsPerTube) {
-                      const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
-                      const loosePcs = pcsItem ? (parseFloat(used[pcsItem.id]) || 0) : 0;
-                      calcTubeDeductions(tubeItem, parseFloat(used[tubeItem.id]) || 0, loosePcs, truckInventory)
+                      calcTubeDeductions(tubeItem, fullTubesUsed, loosePcsUsed, truckInventory)
                         .forEach(d => deductions.push(d));
-                    } else if (used[tubeItem.id]) {
-                      deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, Math.round(((truckInventory[tubeItem.id] || 0) - (used[tubeItem.id] || 0)) * 100) / 100) });
+                    } else {
+                      deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, Math.round(((truckInventory[tubeItem.id] || 0) - fullTubesUsed) * 100) / 100) });
                     }
                   });
-                  // foam items
                   ["oc_a","oc_b","cc_a","cc_b"].forEach(id => {
-                    if (used[id] !== undefined) deductions.push({ itemId: id, stillHave: Math.max(0, Math.round(((truckInventory[id] || 0) - (used[id] || 0)) * 100) / 100) });
+                    if (used[id]) deductions.push({ itemId: id, stillHave: Math.max(0, Math.round(((truckInventory[id] || 0) - used[id]) * 100) / 100) });
                   });
-                  onReturnMaterial(deductions.filter(d => d !== undefined), truck?.id, "keep");
+                  onReturnMaterial(deductions, truck?.id, "keep");
                   // Save as a daily log entry (upsert by date)
                   onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
                 }
