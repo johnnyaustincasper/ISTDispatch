@@ -10,6 +10,7 @@ import {
   getDocs,
   getDoc,
   setDoc,
+  deleteField,
   query,
   where,
   serverTimestamp,
@@ -3341,20 +3342,12 @@ export default function App() {
       // Wipe the entire truck document — cleanest possible zero-out
       await setDoc(truckRef, {});
     } else {
-      // Keep on truck — read fresh from Firestore, then override with stillHave entries
-      const freshSnap = await getDoc(truckRef);
-      const freshTruck = freshSnap.exists() ? freshSnap.data() : {};
-      // Start from fresh truck data, then apply stillHave counts (overwrites used items with 0→removed)
-      const updatedTruck = { ...freshTruck };
+      // Keep on truck — update only the specific fields, never touch anything else
+      const fieldUpdates = {};
       for (const m of materials) {
-        const stillHave = m.stillHave || 0;
-        if (stillHave > 0) {
-          updatedTruck[m.itemId] = stillHave;
-        } else {
-          delete updatedTruck[m.itemId]; // used up — remove from truck
-        }
+        fieldUpdates[m.itemId] = (m.stillHave > 0) ? m.stillHave : deleteField();
       }
-      await setDoc(truckRef, updatedTruck);
+      await updateDoc(truckRef, fieldUpdates);
     }
   };
   const handleCloseOutJob = async (jobId, materialsUsed) => {
