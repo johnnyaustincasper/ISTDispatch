@@ -716,7 +716,7 @@ function DailyProcedureCard() {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onLogDailyMaterials, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onLogDailyMaterials, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -853,24 +853,9 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       });
       return Object.keys(used).length > 0 ? used : null;
     })();
-    // Deduct used materials from truck inventory using tube/piece logic
+    // Deduct used materials from truck
     if (materialsUsed && truck?.id) {
-      const deductions = [];
-      INVENTORY_ITEMS.filter(i => !i.isPieces && !["oc_a","oc_b","cc_a","cc_b"].includes(i.id)).forEach(tubeItem => {
-        const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
-        const fullTubesUsed = parseFloat(materialsUsed[tubeItem.id]) || 0;
-        const loosePcsUsed = pcsItem ? (parseFloat(materialsUsed[pcsItem.id]) || 0) : 0;
-        if (fullTubesUsed === 0 && loosePcsUsed === 0) return;
-        if (tubeItem.pcsPerTube) {
-          deductions.push({ itemId: tubeItem.id, pcsPerTube: tubeItem.pcsPerTube, pcsItemId: pcsItem?.id || null, usedTubes: fullTubesUsed, usedLoose: loosePcsUsed });
-        } else {
-          deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, (truckInventory[tubeItem.id] || 0) - fullTubesUsed) });
-        }
-      });
-      ["oc_a","oc_b","cc_a","cc_b"].forEach(id => {
-        if (materialsUsed[id]) deductions.push({ itemId: id, stillHave: Math.max(0, Math.round(((truckInventory[id] || 0) - materialsUsed[id]) * 100) / 100) });
-      });
-      onReturnMaterial(deductions, truck.id, "keep");
+      onDeductFromTruck(truck.id, materialsUsed);
     }
     onSubmitUpdate({ jobId: job.id, truckId: truck.id, crewName, status: s, eta: e, notes: n, timestamp: new Date().toISOString(), timeStr: timeStr() });
     onCloseOutJob(job.id, materialsUsed);
@@ -1421,22 +1406,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 });
                 if (Object.keys(used).length > 0) {
                   // Deduct from truck inventory
-                  const deductions = [];
-                  INVENTORY_ITEMS.filter(i => !i.isPieces && !["oc_a","oc_b","cc_a","cc_b"].includes(i.id)).forEach(tubeItem => {
-                    const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
-                    const fullTubesUsed = parseFloat(used[tubeItem.id]) || 0;
-                    const loosePcsUsed = pcsItem ? (parseFloat(used[pcsItem.id]) || 0) : 0;
-                    if (fullTubesUsed === 0 && loosePcsUsed === 0) return;
-                    if (tubeItem.pcsPerTube) {
-                      deductions.push({ itemId: tubeItem.id, pcsPerTube: tubeItem.pcsPerTube, pcsItemId: pcsItem?.id || null, usedTubes: fullTubesUsed, usedLoose: loosePcsUsed });
-                    } else {
-                      deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, (truckInventory[tubeItem.id] || 0) - fullTubesUsed) });
-                    }
-                  });
-                  ["oc_a","oc_b","cc_a","cc_b"].forEach(id => {
-                    if (used[id]) deductions.push({ itemId: id, stillHave: Math.max(0, Math.round(((truckInventory[id] || 0) - used[id]) * 100) / 100) });
-                  });
-                  onReturnMaterial(deductions, truck?.id, "keep");
+                  onDeductFromTruck(truck?.id, used);
                   // Save as a daily log entry (upsert by date)
                   onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
                 }
@@ -3318,54 +3288,60 @@ export default function App() {
     if (existing) { await updateDoc(doc(db, "inventory", existing.id), { qty }); }
     else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
+  // Deduct job materials from truck. usedMap = { itemId: qty } (tubes and loose pcs as entered by crew).
+  // Reads fresh from Firestore, computes remaining, writes back.
+  const handleDeductFromTruck = async (truckId, usedMap) => {
+    if (!truckId || !usedMap || Object.keys(usedMap).length === 0) return;
+    const truckRef = doc(db, "truckInventory", truckId);
+    const snap = await getDoc(truckRef);
+    const state = snap.exists() ? { ...snap.data() } : {};
+    // Process each tube item that was used
+    INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
+      const used = parseFloat(usedMap[item.id]) || 0;
+      if (used === 0) return;
+      if (item.pcsPerTube) {
+        // For tube items: convert everything to pieces, deduct, convert back
+        const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+        const curTubes = state[item.id] || 0;
+        const curLoose = pcsItem ? (state[pcsItem.id] || 0) : 0;
+        const totalPcsOnTruck = curTubes * item.pcsPerTube + curLoose;
+        // usedMap[item.id] = full tubes used; usedMap[pcsItem.id] = loose pieces used
+        const usedLoose = pcsItem ? (parseFloat(usedMap[pcsItem.id]) || 0) : 0;
+        const totalPcsUsed = used * item.pcsPerTube + usedLoose;
+        const remaining = Math.max(0, totalPcsOnTruck - totalPcsUsed);
+        const newTubes = Math.floor(remaining / item.pcsPerTube);
+        const newLoose = remaining % item.pcsPerTube;
+        if (newTubes > 0) { state[item.id] = newTubes; } else { delete state[item.id]; }
+        if (pcsItem) {
+          if (newLoose > 0) { state[pcsItem.id] = newLoose; } else { delete state[pcsItem.id]; }
+        }
+      } else {
+        // Simple item (bags, foam already converted to barrels)
+        const cur = state[item.id] || 0;
+        const remaining = Math.max(0, Math.round((cur - used) * 100) / 100);
+        if (remaining > 0) { state[item.id] = remaining; } else { delete state[item.id]; }
+      }
+    });
+    await setDoc(truckRef, state);
+  };
   const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
     if (!truckId) return;
     const truckRef = doc(db, "truckInventory", truckId);
-    if (returnMode === "unload") {
-      // Add stillHave quantities back to warehouse
-      const logItems = {};
-      for (const m of materials) {
-        const stillHave = m.stillHave || 0;
-        if (stillHave > 0) {
-          const rec = inventory.find(r => r.itemId === m.itemId);
-          const current = rec?.qty || 0;
-          await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100);
-          logItems[m.itemId] = stillHave;
-        }
+    // Add stillHave quantities back to warehouse
+    const logItems = {};
+    for (const m of materials) {
+      const stillHave = m.stillHave || 0;
+      if (stillHave > 0) {
+        const rec = inventory.find(r => r.itemId === m.itemId);
+        const current = rec?.qty || 0;
+        await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100);
+        logItems[m.itemId] = stillHave;
       }
-      // Log the return event
-      if (Object.keys(logItems).length > 0) {
-        await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: new Date().toISOString() });
-      }
-      // Wipe the entire truck document — cleanest possible zero-out
-      await setDoc(truckRef, {});
-    } else {
-      // Keep on truck — read fresh Firestore data, calculate remaining, write back
-      const freshSnap = await getDoc(truckRef);
-      const current = freshSnap.exists() ? { ...freshSnap.data() } : {};
-      console.log("[deduct] truckId:", truckId, "docExists:", freshSnap.exists(), "current:", JSON.stringify(current), "materials:", JSON.stringify(materials));
-      for (const m of materials) {
-        if (m.usedTubes !== undefined && m.pcsPerTube) {
-          const curTubes = current[m.itemId] || 0;
-          const curLoose = m.pcsItemId ? (current[m.pcsItemId] || 0) : 0;
-          const totalOnTruck = curTubes * m.pcsPerTube + curLoose;
-          const totalUsed = (m.usedTubes * m.pcsPerTube) + (m.usedLoose || 0);
-          const remaining = Math.max(0, totalOnTruck - totalUsed);
-          const newTubes = Math.floor(remaining / m.pcsPerTube);
-          const newLoose = remaining % m.pcsPerTube;
-          console.log("[deduct]", m.itemId, "curTubes:", curTubes, "curLoose:", curLoose, "totalOnTruck:", totalOnTruck, "totalUsed:", totalUsed, "remaining:", remaining, "newTubes:", newTubes, "newLoose:", newLoose);
-          if (newTubes > 0) { current[m.itemId] = newTubes; } else { delete current[m.itemId]; }
-          if (m.pcsItemId) {
-            if (newLoose > 0) { current[m.pcsItemId] = newLoose; } else { delete current[m.pcsItemId]; }
-          }
-        } else if (m.stillHave !== undefined) {
-          if (m.stillHave > 0) { current[m.itemId] = m.stillHave; } else { delete current[m.itemId]; }
-        }
-      }
-      console.log("[deduct] writing to Firestore:", JSON.stringify(current));
-      await setDoc(truckRef, current);
-      console.log("[deduct] write complete");
     }
+    if (Object.keys(logItems).length > 0) {
+      await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: new Date().toISOString() });
+    }
+    await setDoc(truckRef, {});
   };
   const handleCloseOutJob = async (jobId, materialsUsed) => {
     if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsUsed: materialsUsed || null, closedAt: new Date().toISOString() });
@@ -3437,7 +3413,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onLogDailyMaterials={handleLogDailyMaterials} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onLogDailyMaterials={handleLogDailyMaterials} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
