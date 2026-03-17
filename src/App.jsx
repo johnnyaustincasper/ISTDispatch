@@ -583,7 +583,7 @@ function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
           // Only in_progress updates submitted by this member
           .filter(u => u.jobId === j.id &&
             ["in_progress","on_site","started"].includes(u.status) &&
-            (u.submittedBy === memberName || u.crewMemberId === memberId))
+            u.crewName === memberName)
           .map(u => tsToCST(u.timestamp))
       )].filter(d => d >= monStr && d <= satStr);
       workedDays.forEach(day => {
