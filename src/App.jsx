@@ -1372,7 +1372,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         const existingDailyEntry = dailyMaterialsJob._existingMaterials || {};
         const isEditing = Object.keys(existingDailyEntry).length > 0;
         const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
-        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && ((truckInventory[i.id] || 0) > 0 || (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)));
+        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (
+          (truckInventory[i.id] || 0) > 0 ||
+          (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0) ||
+          existingDailyEntry[i.id] ||
+          (i.hasPieces && existingDailyEntry[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id])
+        ));
         return (
           <Modal title={isEditingPast ? "Edit Materials — " + fmtDateLabel(today) : "Log Today's Materials"} onClose={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }}>
             <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
@@ -1385,11 +1390,17 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
               const loosePcsOnTruck = pcsItem ? (truckInventory[pcsItem.id] || 0) : 0;
               const looseOnly = onTruck === 0 && loosePcsOnTruck > 0;
+              const existingQty = existingDailyEntry[item.id];
+              const existingPcsQty = pcsItem ? existingDailyEntry[pcsItem.id] : null;
               const label = isFoam(item.id)
                 ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
-                : item.name + (onTruck > 0
-                    ? " (on truck: " + onTruck + " tubes" + (loosePcsOnTruck > 0 ? " + " + loosePcsOnTruck + " pcs)" : ")")
-                    : (loosePcsOnTruck > 0 ? " (on truck: " + loosePcsOnTruck + " pcs)" : ""));
+                : item.name + (
+                    onTruck > 0 ? " (on truck: " + onTruck + " tubes" + (loosePcsOnTruck > 0 ? " + " + loosePcsOnTruck + " pcs)" : ")")
+                    : loosePcsOnTruck > 0 ? " (on truck: " + loosePcsOnTruck + " pcs)"
+                    : existingQty ? " (logged: " + existingQty + " tubes)"
+                    : existingPcsQty ? " (logged: " + existingPcsQty + " pcs)"
+                    : ""
+                  );
               return (
                 <div key={item.id} style={{ marginBottom: 14 }}>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
