@@ -1140,12 +1140,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                         const onTruck = truckInventory[item.id] || 0;
                         const pi = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
 
-                        const label = item.isPieces ? "Pieces" : item.name;
-                        const subLabel = item.isPieces
-                          ? null
-                          : isFoam(item.id)
-                            ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse`
-                            : `${warehouseQty} in warehouse`;
+                        const label = item.isPieces ? "↳ Loose pieces" : item.name;
+                        const subLabel = isFoam(item.id)
+                          ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse`
+                          : warehouseQty > 0 ? `${warehouseQty} in warehouse` : "0 in warehouse";
 
                         if (mode === "return") {
                           const stillHaveUnits = isFoam(item.id) ? (loadQtys[item.id] || 0) : (loadQtys[item.id] || 0);
