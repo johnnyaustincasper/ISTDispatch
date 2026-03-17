@@ -1368,6 +1368,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
         const today = dailyMaterialsJob._editingDate || todayCST();
         const isEditingPast = !!dailyMaterialsJob._editingDate;
+        const existingDailyEntry = (dailyMaterialsJob.dailyMaterialLogs || []).find(l => l.date === today)?.materials || {};
+        const isEditing = Object.keys(existingDailyEntry).length > 0;
         const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
         const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && ((truckInventory[i.id] || 0) > 0 || (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)));
         return (
@@ -1419,8 +1421,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   }
                 });
                 if (Object.keys(used).length > 0) {
-                  // Deduct from truck inventory
-                  onDeductFromTruck(truck?.id, used);
+                  // Delta adjust if editing existing entry, full deduct if new
+                  if (isEditing) {
+                    onDeltaAdjustTruck(truck?.id, existingDailyEntry, used);
+                  } else {
+                    onDeductFromTruck(truck?.id, used);
+                  }
                   // Save as a daily log entry (upsert by date)
                   onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
                 }
