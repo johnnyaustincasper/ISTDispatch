@@ -2653,14 +2653,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                           <tr key={item.id} style={{ background: qty === 0 ? "#fff5f5" : qty <= 2 ? "#fffbeb" : "#fff" }}>
                             <td style={S.td}>
                               <div>{item.name} <span style={{ fontSize: 10, color: t.textMuted }}>({item.unit})</span></div>
+                              {item.sqftPerTube && <div style={{ fontSize: 10, color: t.textMuted }}>{item.sqftPerTube} sqft/tube</div>}
                             </td>
                             <td style={{ ...S.tdR, fontSize: 15 }}>
                               <div style={{ color: low, fontWeight: 700 }}>{isFoam(item.id) ? qty.toFixed(2) : qty}{isFoam(item.id) && <span style={{ fontSize: 9, color: t.textMuted, fontWeight: 500, marginLeft: 3 }}>{bblToGals(qty, item.id)} gal</span>}</div>
+                              {item.sqftPerTube && qty > 0 && <div style={{ fontSize: 9, color: t.textMuted }}>{(item.sqftPerTube * qty).toFixed(0)} sqft</div>}
                               {qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444" }}>OUT</div>}
                               {!isFoam(item.id) && qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706" }}>LOW</div>}
                               {pcsItem && <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed #e5e7eb" }}>
                                 <div style={{ fontSize: 10, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4 }}>Pieces</div>
                                 <div style={{ fontSize: 16, fontWeight: 800, color: pcsQty > 0 ? "#1e40af" : "#9ca3af" }}>{pcsQty}</div>
+                                {item.sqftPerTube && item.pcsPerTube && pcsQty > 0 && <div style={{ fontSize: 9, color: t.textMuted }}>{((item.sqftPerTube / item.pcsPerTube) * pcsQty).toFixed(1)} sqft</div>}
                               </div>}
                             </td>
                             <td style={{ ...S.tdR, verticalAlign: "top", paddingTop: 8 }}>
