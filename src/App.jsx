@@ -1404,20 +1404,23 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                 : item.name + (onTruck > 0
                     ? " (on truck: " + onTruck + " tubes" + (loosePcsOnTruck > 0 ? " + " + loosePcsOnTruck + " loose pcs)" : ")")
                     : (loosePcsOnTruck > 0 ? " (on truck: " + loosePcsOnTruck + " loose pcs)" : ""));
+              const looseOnly = onTruck === 0 && loosePcsOnTruck > 0;
               return (
                 <div key={item.id} style={{ marginBottom: 14 }}>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
-                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used today" : item.hasPieces ? "full tubes used" : item.unit + " used today"} value={dailyMaterialQtys[item.id] || ""}
-                    onChange={e => setDailyMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                  {!looseOnly && (
+                    <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used today" : item.hasPieces ? "full tubes used" : item.unit + " used today"} value={dailyMaterialQtys[item.id] || ""}
+                      onChange={e => setDailyMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
+                      style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+                  )}
                   {pcsItem && item.pcsPerTube && (
-                    <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
+                    <div style={{ marginTop: looseOnly ? 0 : 6, paddingLeft: looseOnly ? 0 : 14, borderLeft: looseOnly ? "none" : "2px dashed " + t.border }}>
                       <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 3 }}>
-                        Loose pieces used <span style={{ fontWeight: 400 }}>(from open tube — {item.pcsPerTube} pcs/tube)</span>
+                        {looseOnly ? "Pieces used" : "Loose pieces used"} <span style={{ fontWeight: 400 }}>({item.pcsPerTube} pcs/tube)</span>
                       </label>
-                      <input type="number" min="0" placeholder="loose pieces from open tube" value={dailyMaterialQtys[pcsItem.id] || ""}
+                      <input type="number" min="0" placeholder={looseOnly ? "pieces used" : "loose pieces from open tube"} value={dailyMaterialQtys[pcsItem.id] || ""}
                         onChange={e => setDailyMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                        style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
                     </div>
                   )}
                 </div>
