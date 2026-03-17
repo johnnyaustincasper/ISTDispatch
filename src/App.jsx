@@ -30,6 +30,9 @@ const INVENTORY_ITEMS = [
   { id: "oc_b",       name: "Open Cell B",       unit: "bbl",   category: "Foam" },
   { id: "cc_a",       name: "Closed Cell A",     unit: "bbl",   category: "Foam" },
   { id: "cc_b",       name: "Closed Cell B",     unit: "bbl",   category: "Foam" },
+  // Blown
+  { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown" },
+  { id: "blown_cel",       name: "Blown Cellulose",  unit: "bags",  category: "Blown" },
   // Certainteed R11
   { id: "r11_15_8_t",     name: "R11 x 15 x 8",   unit: "tubes", category: "Certainteed R11", hasPieces: true },
   { id: "r11_15_8_pcs",   name: "R11 x 15 x 8",   unit: "pcs",   category: "Certainteed R11", isPieces: true, parentId: "r11_15_8_t" },
@@ -72,8 +75,6 @@ const INVENTORY_ITEMS = [
   { id: "jm_r30_15_pcs",   name: "R30 x 15",       unit: "pcs",   category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_15_t" },
   { id: "jm_r30_24_t",     name: "R30 x 24",       unit: "tubes", category: "Johns Manville R30", hasPieces: true },
   { id: "jm_r30_24_pcs",   name: "R30 x 24",       unit: "pcs",   category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_24_t" },
-  // Blown
-  { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown" },
   { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Lambswool" },
   // Rockwool
   { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool", hasPieces: true },
