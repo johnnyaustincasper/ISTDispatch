@@ -1444,6 +1444,28 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   }
                 });
                 if (Object.keys(used).length > 0) {
+                  // Validate: can't log more than what's on the truck (accounting for already-logged)
+                  let valid = true;
+                  INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
+                    const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+                    const newUsedPcs = item.pcsPerTube
+                      ? (used[item.id] || 0) * item.pcsPerTube + (pcsItem ? (used[pcsItem.id] || 0) : 0)
+                      : (used[item.id] || 0);
+                    const oldUsedPcs = item.pcsPerTube
+                      ? (existingDailyEntry[item.id] || 0) * item.pcsPerTube + (pcsItem ? (existingDailyEntry[pcsItem.id] || 0) : 0)
+                      : (existingDailyEntry[item.id] || 0);
+                    const delta = newUsedPcs - oldUsedPcs;
+                    if (delta > 0) {
+                      const onTruckPcs = item.pcsPerTube
+                        ? (truckInventory[item.id] || 0) * item.pcsPerTube + (pcsItem ? (truckInventory[pcsItem.id] || 0) : 0)
+                        : (truckInventory[item.id] || 0);
+                      if (delta > onTruckPcs) {
+                        alert("Not enough " + item.name + " on your truck.\nYou have " + onTruckPcs + " pcs available.");
+                        valid = false;
+                      }
+                    }
+                  });
+                  if (!valid) return;
                   // Delta adjust if editing existing entry, full deduct if new
                   if (isEditing) {
                     onDeltaAdjustTruck(truck?.id, existingDailyEntry, used);
