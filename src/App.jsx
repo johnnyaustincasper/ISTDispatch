@@ -3291,7 +3291,11 @@ export default function App() {
   // Deduct job materials from truck. usedMap = { itemId: qty } (tubes and loose pcs as entered by crew).
   // Reads fresh from Firestore, computes remaining, writes back.
   const handleDeductFromTruck = async (truckId, usedMap) => {
-    if (!truckId || !usedMap || Object.keys(usedMap).length === 0) return;
+    if (!truckId || !usedMap || Object.keys(usedMap).length === 0) {
+      alert("DEDUCT SKIPPED: truckId=" + truckId + " usedMap=" + JSON.stringify(usedMap));
+      return;
+    }
+    alert("DEDUCT INPUT: truckId=" + truckId + "\nusedMap=" + JSON.stringify(usedMap));
     const truckRef = doc(db, "truckInventory", truckId);
     const snap = await getDoc(truckRef);
     const state = snap.exists() ? { ...snap.data() } : {};
@@ -3322,6 +3326,7 @@ export default function App() {
         if (remaining > 0) { state[item.id] = remaining; } else { delete state[item.id]; }
       }
     });
+    alert("WRITING TO TRUCK:\n" + JSON.stringify(state, null, 2));
     await setDoc(truckRef, state);
   };
   const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
