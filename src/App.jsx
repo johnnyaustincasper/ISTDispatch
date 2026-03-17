@@ -862,10 +862,9 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         const loosePcsUsed = pcsItem ? (parseFloat(materialsUsed[pcsItem.id]) || 0) : 0;
         if (fullTubesUsed === 0 && loosePcsUsed === 0) return;
         if (tubeItem.pcsPerTube) {
-          calcTubeDeductions(tubeItem, fullTubesUsed, loosePcsUsed, truckInventory)
-            .forEach(d => deductions.push(d));
+          deductions.push({ itemId: tubeItem.id, pcsPerTube: tubeItem.pcsPerTube, pcsItemId: pcsItem?.id || null, usedTubes: fullTubesUsed, usedLoose: loosePcsUsed });
         } else {
-          deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, Math.round(((truckInventory[tubeItem.id] || 0) - fullTubesUsed) * 100) / 100) });
+          deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, (truckInventory[tubeItem.id] || 0) - fullTubesUsed) });
         }
       });
       ["oc_a","oc_b","cc_a","cc_b"].forEach(id => {
@@ -1427,12 +1426,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     const pcsItem = INVENTORY_ITEMS.find(i => i.parentId === tubeItem.id);
                     const fullTubesUsed = parseFloat(used[tubeItem.id]) || 0;
                     const loosePcsUsed = pcsItem ? (parseFloat(used[pcsItem.id]) || 0) : 0;
-                    if (fullTubesUsed === 0 && loosePcsUsed === 0) return; // nothing used, skip
+                    if (fullTubesUsed === 0 && loosePcsUsed === 0) return;
                     if (tubeItem.pcsPerTube) {
-                      calcTubeDeductions(tubeItem, fullTubesUsed, loosePcsUsed, truckInventory)
-                        .forEach(d => deductions.push(d));
+                      deductions.push({ itemId: tubeItem.id, pcsPerTube: tubeItem.pcsPerTube, pcsItemId: pcsItem?.id || null, usedTubes: fullTubesUsed, usedLoose: loosePcsUsed });
                     } else {
-                      deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, Math.round(((truckInventory[tubeItem.id] || 0) - fullTubesUsed) * 100) / 100) });
+                      deductions.push({ itemId: tubeItem.id, stillHave: Math.max(0, (truckInventory[tubeItem.id] || 0) - fullTubesUsed) });
                     }
                   });
                   ["oc_a","oc_b","cc_a","cc_b"].forEach(id => {
@@ -3342,12 +3340,29 @@ export default function App() {
       // Wipe the entire truck document — cleanest possible zero-out
       await setDoc(truckRef, {});
     } else {
-      // Keep on truck — update only the specific fields, never touch anything else
-      const fieldUpdates = {};
+      // Keep on truck — read fresh Firestore data, calculate remaining, write back
+      const freshSnap = await getDoc(truckRef);
+      const current = freshSnap.exists() ? { ...freshSnap.data() } : {};
       for (const m of materials) {
-        fieldUpdates[m.itemId] = (m.stillHave > 0) ? m.stillHave : deleteField();
+        if (m.usedTubes !== undefined && m.pcsPerTube) {
+          // Tube item with partial tube support
+          const curTubes = current[m.itemId] || 0;
+          const curLoose = m.pcsItemId ? (current[m.pcsItemId] || 0) : 0;
+          const totalOnTruck = curTubes * m.pcsPerTube + curLoose;
+          const totalUsed = (m.usedTubes * m.pcsPerTube) + (m.usedLoose || 0);
+          const remaining = Math.max(0, totalOnTruck - totalUsed);
+          const newTubes = Math.floor(remaining / m.pcsPerTube);
+          const newLoose = remaining % m.pcsPerTube;
+          if (newTubes > 0) { current[m.itemId] = newTubes; } else { delete current[m.itemId]; }
+          if (m.pcsItemId) {
+            if (newLoose > 0) { current[m.pcsItemId] = newLoose; } else { delete current[m.pcsItemId]; }
+          }
+        } else if (m.stillHave !== undefined) {
+          // Simple item or foam
+          if (m.stillHave > 0) { current[m.itemId] = m.stillHave; } else { delete current[m.itemId]; }
+        }
       }
-      await updateDoc(truckRef, fieldUpdates);
+      await setDoc(truckRef, current);
     }
   };
   const handleCloseOutJob = async (jobId, materialsUsed) => {
