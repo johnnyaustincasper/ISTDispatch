@@ -1535,8 +1535,18 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       {/* ── EDIT MATERIALS MODAL ── */}
       {editMaterialsJob && (() => {
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
-        const existing = editMaterialsJob.materialsUsed || {};
-        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && ((truckInventory[i.id] || 0) > 0 || existing[i.id]));
+        // Aggregate all installed: daily logs + materialsUsed
+        const existing = (() => {
+          const totals = { ...(editMaterialsJob.materialsUsed || {}) };
+          (editMaterialsJob.dailyMaterialLogs || []).forEach(log => {
+            Object.entries(log.materials || {}).forEach(([id, qty]) => {
+              totals[id] = (totals[id] || 0) + qty;
+            });
+          });
+          return totals;
+        })();
+        // Show items already installed OR on truck
+        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (existing[i.id] || (truckInventory[i.id] || 0) > 0 || (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)));
         const getVal = (item) => { const e = existing[item.id]; const r = editMaterialQtys[item.id]; if (r !== undefined) return r; if (e) return isFoam(item.id) ? String(Math.round(e * (["cc_a","cc_b"].includes(item.id) ? 50 : 48))) : String(e); return ""; };
         return (
           <Modal title="Edit Materials" onClose={() => setEditMaterialsJob(null)}>
@@ -1577,6 +1587,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
                   }
                 });
+                // Validate: can only ADD if truck has enough
+                let canSave = true;
+                INVENTORY_ITEMS.filter(i => !i.isPieces && i.pcsPerTube).forEach(item => {
+                  const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+                  const oldPcs = (existing[item.id] || 0) * item.pcsPerTube + (pcsItem ? (existing[pcsItem.id] || 0) : 0);
+                  const newPcs = (used[item.id] || 0) * item.pcsPerTube + (pcsItem ? (used[pcsItem.id] || 0) : 0);
+                  const delta = newPcs - oldPcs;
+                  if (delta > 0) {
+                    const onTruckPcs = (truckInventory[item.id] || 0) * item.pcsPerTube + (pcsItem ? (truckInventory[pcsItem.id] || 0) : 0);
+                    if (delta > onTruckPcs) { alert("Not enough " + item.name + " on your truck to add that many."); canSave = false; }
+                  }
+                });
+                if (!canSave) return;
                 // Delta adjust truck: only apply difference between old and new
                 onDeltaAdjustTruck(truck?.id, existing, used);
                 onSaveJobMaterials(editMaterialsJob.id, Object.keys(used).length > 0 ? used : null);
