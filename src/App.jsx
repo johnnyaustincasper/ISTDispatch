@@ -3343,9 +3343,9 @@ export default function App() {
       // Keep on truck — read fresh Firestore data, calculate remaining, write back
       const freshSnap = await getDoc(truckRef);
       const current = freshSnap.exists() ? { ...freshSnap.data() } : {};
+      console.log("[deduct] truckId:", truckId, "docExists:", freshSnap.exists(), "current:", JSON.stringify(current), "materials:", JSON.stringify(materials));
       for (const m of materials) {
         if (m.usedTubes !== undefined && m.pcsPerTube) {
-          // Tube item with partial tube support
           const curTubes = current[m.itemId] || 0;
           const curLoose = m.pcsItemId ? (current[m.pcsItemId] || 0) : 0;
           const totalOnTruck = curTubes * m.pcsPerTube + curLoose;
@@ -3353,16 +3353,18 @@ export default function App() {
           const remaining = Math.max(0, totalOnTruck - totalUsed);
           const newTubes = Math.floor(remaining / m.pcsPerTube);
           const newLoose = remaining % m.pcsPerTube;
+          console.log("[deduct]", m.itemId, "curTubes:", curTubes, "curLoose:", curLoose, "totalOnTruck:", totalOnTruck, "totalUsed:", totalUsed, "remaining:", remaining, "newTubes:", newTubes, "newLoose:", newLoose);
           if (newTubes > 0) { current[m.itemId] = newTubes; } else { delete current[m.itemId]; }
           if (m.pcsItemId) {
             if (newLoose > 0) { current[m.pcsItemId] = newLoose; } else { delete current[m.pcsItemId]; }
           }
         } else if (m.stillHave !== undefined) {
-          // Simple item or foam
           if (m.stillHave > 0) { current[m.itemId] = m.stillHave; } else { delete current[m.itemId]; }
         }
       }
+      console.log("[deduct] writing to Firestore:", JSON.stringify(current));
       await setDoc(truckRef, current);
+      console.log("[deduct] write complete");
     }
   };
   const handleCloseOutJob = async (jobId, materialsUsed) => {
