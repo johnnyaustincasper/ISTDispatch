@@ -2767,6 +2767,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
         const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
         const fmtQty = (itemId, qty) => isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + (INVENTORY_ITEMS.find(i => i.id === itemId)?.unit || "");
+        const toCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }); // returns YYYY-MM-DD in CST
 
         // Group loads, unloads, and job usage by date for this truck
         const truckLoads = (loadLog || []).filter(r => r.truckId === hTruck.id);
@@ -2778,9 +2779,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
         }) || j.truckId === hTruck.id);
 
         const loadsByDate = {};
-        truckLoads.forEach(r => { const d = r.timestamp.slice(0,10); if (!loadsByDate[d]) loadsByDate[d] = []; loadsByDate[d].push(r); });
+        truckLoads.forEach(r => { const d = toCST(r.timestamp); if (!loadsByDate[d]) loadsByDate[d] = []; loadsByDate[d].push(r); });
         const returnsByDate = {};
-        truckReturns.forEach(r => { const d = r.timestamp.slice(0,10); if (!returnsByDate[d]) returnsByDate[d] = []; returnsByDate[d].push(r); });
+        truckReturns.forEach(r => { const d = toCST(r.timestamp); if (!returnsByDate[d]) returnsByDate[d] = []; returnsByDate[d].push(r); });
         // Daily job usage: from dailyMaterialLogs on jobs + materialsUsed on closed jobs
         const usageByDate = {};
         truckJobs.forEach(job => {
