@@ -1944,34 +1944,18 @@ function RosterView({ trucks, jobs, updates }) {
 function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem, pcsQty, onUpdateInventory }) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState("");
-  const [setsVal, setSetsVal] = useState("");
   const [pcsVal, setPcsVal] = useState("");
 
-  const foamPair = { oc_a: "oc_b", cc_a: "cc_b" };
-  const isADrum = isFoam && !!foamPair[itemId];
-  const galPerBbl = ["cc_a","cc_b"].includes(itemId) ? 50 : 48;
-
   const open = () => {
-    setVal(isFoam ? String(bblToGals(qty, itemId)) : String(qty));
-    setSetsVal(isADrum ? String(Math.round(qty * galPerBbl)) : "");
+    setVal(String(isFoam ? Math.round(qty) : qty));
     setPcsVal(pcsItem ? String(pcsQty) : "");
     setEditing(true);
   };
 
   const save = () => {
-    if (isFoam && isADrum && setsVal !== "") {
-      const gals = parseFloat(setsVal);
-      if (!isNaN(gals) && gals >= 0) {
-        const bbl = Math.round((gals / galPerBbl) * 100) / 100;
-        onUpdateInventory(itemId, bbl);
-        onUpdateInventory(foamPair[itemId], bbl);
-      }
-    } else if (val !== "") {
-      const parsed = parseFloat(val);
-      if (!isNaN(parsed) && parsed >= 0) {
-        const newQty = isFoam ? Math.round(galsToBbl(parsed, itemId) * 100) / 100 : parsed;
-        onUpdateInventory(itemId, Math.max(0, newQty));
-      }
+    const parsed = parseFloat(val);
+    if (!isNaN(parsed) && parsed >= 0) {
+      onUpdateInventory(itemId, Math.max(0, isFoam ? Math.round(parsed) : parsed));
     }
     if (pcsItem && pcsVal !== "") {
       const p = parseFloat(pcsVal);
@@ -1989,27 +1973,15 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 160 }}>
-      {isADrum && (
-        <div>
-          <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3, fontWeight: 600 }}>SET BOTH A + B (gal each)</div>
-          <input
-            type="number" min="0" autoFocus
-            value={setsVal} onChange={e => { setSetsVal(e.target.value); setVal(""); }}
-            onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-            placeholder="gal per drum"
-            style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: "2px solid " + t.accent, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }}
-          />
-        </div>
-      )}
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, minWidth: 150 }}>
       <div>
-        <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3, fontWeight: 600 }}>{isFoam ? "THIS DRUM ONLY (gal)" : "QTY"}</div>
+        <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 3, fontWeight: 600 }}>{isFoam ? "BARRELS (bbls)" : "QTY"}</div>
         <input
-          type="number" min="0" autoFocus={!isADrum}
-          value={val} onChange={e => { setVal(e.target.value); if (isADrum) setSetsVal(""); }}
+          type="number" min="0" autoFocus
+          value={val} onChange={e => setVal(e.target.value)}
           onKeyDown={e => { if (e.key === "Enter") save(); if (e.key === "Escape") setEditing(false); }}
-          placeholder={isFoam ? "gal" : "qty"}
-          style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }}
+          placeholder={isFoam ? "barrels" : "qty"}
+          style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "2px solid " + t.accent, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }}
         />
       </div>
       {pcsItem && (
@@ -2019,14 +1991,14 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
             type="number" min="0"
             value={pcsVal} onChange={e => setPcsVal(e.target.value)}
             onKeyDown={e => { if (e.key === "Enter") save(); }}
-            placeholder="pieces"
-            style={{ width: "100%", padding: "7px 8px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }}
+            placeholder="sets"
+            style={{ width: "100%", padding: "8px 10px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }}
           />
         </div>
       )}
       <div style={{ display: "flex", gap: 6 }}>
-        <button onClick={save} style={{ flex: 1, padding: "7px 10px", borderRadius: 6, background: t.accent, color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
-        <button onClick={() => setEditing(false)} style={{ padding: "7px 10px", borderRadius: 6, background: "none", color: t.textMuted, border: "1px solid " + t.border, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+        <button onClick={save} style={{ flex: 1, padding: "8px", borderRadius: 6, background: t.accent, color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Save</button>
+        <button onClick={() => setEditing(false)} style={{ padding: "8px 12px", borderRadius: 6, background: "none", color: t.textMuted, border: "1px solid " + t.border, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
       </div>
     </div>
   );
