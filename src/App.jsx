@@ -716,7 +716,7 @@ function DailyProcedureCard() {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onLogDailyMaterials, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -1571,18 +1571,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
                   }
                 });
-                // Deduct diff from truck inventory: newQty - oldQty
-                const deductions = [];
-                INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(i => {
-                  const newQty = used[i.id] || 0;
-                  const oldQty = existing[i.id] || 0;
-                  const diff = newQty - oldQty;
-                  if (diff !== 0) {
-                    const onTruck = truckInventory[i.id] || 0;
-                    deductions.push({ itemId: i.id, stillHave: Math.max(0, Math.round((onTruck - diff) * 100) / 100) });
-                  }
-                });
-                if (deductions.length > 0) onReturnMaterial(deductions, truck?.id, "keep");
+                // Delta adjust truck: only apply difference between old and new
+                onDeltaAdjustTruck(truck?.id, existing, used);
                 onSaveJobMaterials(editMaterialsJob.id, Object.keys(used).length > 0 ? used : null);
                 setEditMaterialsJob(null); setEditMaterialQtys({});
               }} style={{ flex: 1 }}>Save</Button>
@@ -3338,6 +3328,39 @@ export default function App() {
     });
     await setDoc(truckRef, state);
   };
+  // Adjust truck inventory by delta between old and new used quantities.
+  // Positive delta (used more) deducts from truck; negative (used less) adds back.
+  const handleDeltaAdjustTruck = async (truckId, oldUsed, newUsed) => {
+    if (!truckId) return;
+    const truckRef = doc(db, "truckInventory", truckId);
+    const snap = await getDoc(truckRef);
+    const state = snap.exists() ? { ...snap.data() } : {};
+    INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
+      const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+      const oldTubes = parseFloat(oldUsed[item.id]) || 0;
+      const newTubes = parseFloat(newUsed[item.id]) || 0;
+      const oldLoose = pcsItem ? (parseFloat(oldUsed[pcsItem.id]) || 0) : 0;
+      const newLoose = pcsItem ? (parseFloat(newUsed[pcsItem.id]) || 0) : 0;
+      if (item.pcsPerTube) {
+        const delta = (newTubes * item.pcsPerTube + newLoose) - (oldTubes * item.pcsPerTube + oldLoose);
+        if (delta === 0) return;
+        const curTubes = state[item.id] || 0;
+        const curLoose = pcsItem ? (state[pcsItem.id] || 0) : 0;
+        const remaining = Math.max(0, curTubes * item.pcsPerTube + curLoose - delta);
+        const newT = Math.floor(remaining / item.pcsPerTube);
+        const newL = remaining % item.pcsPerTube;
+        if (newT > 0) { state[item.id] = newT; } else { delete state[item.id]; }
+        if (pcsItem) { if (newL > 0) { state[pcsItem.id] = newL; } else { delete state[pcsItem.id]; } }
+      } else {
+        const delta = newTubes - oldTubes;
+        if (delta === 0) return;
+        const cur = state[item.id] || 0;
+        const remaining = Math.max(0, Math.round((cur - delta) * 100) / 100);
+        if (remaining > 0) { state[item.id] = remaining; } else { delete state[item.id]; }
+      }
+    });
+    await setDoc(truckRef, state);
+  };
   const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
     if (!truckId) return;
     const truckRef = doc(db, "truckInventory", truckId);
@@ -3427,7 +3450,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onLogDailyMaterials={handleLogDailyMaterials} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
