@@ -2033,7 +2033,7 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
   const [view, setView] = useState("schedule");
   const [showAddJob, setShowAddJob] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
@@ -2766,14 +2766,39 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
         const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
         const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
-        // Returns for this truck grouped by date
+        const fmtQty = (itemId, qty) => isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + (INVENTORY_ITEMS.find(i => i.id === itemId)?.unit || "");
+
+        // Group loads, unloads, and job usage by date for this truck
+        const truckLoads = (loadLog || []).filter(r => r.truckId === hTruck.id);
         const truckReturns = returnLog.filter(r => r.truckId === hTruck.id);
+        // Job usage: closed-out jobs assigned to this truck with dailyMaterialLogs
+        const truckJobs = jobs.filter(j => (j.crewMemberIds || []).some(mid => {
+          const m = members.find(mb => mb.id === mid);
+          return m && m.truckId === hTruck.id;
+        }) || j.truckId === hTruck.id);
+
+        const loadsByDate = {};
+        truckLoads.forEach(r => { const d = r.timestamp.slice(0,10); if (!loadsByDate[d]) loadsByDate[d] = []; loadsByDate[d].push(r); });
         const returnsByDate = {};
-        truckReturns.forEach(r => {
-          const d = r.timestamp.slice(0,10);
-          if (!returnsByDate[d]) returnsByDate[d] = [];
-          returnsByDate[d].push(r);
+        truckReturns.forEach(r => { const d = r.timestamp.slice(0,10); if (!returnsByDate[d]) returnsByDate[d] = []; returnsByDate[d].push(r); });
+        // Daily job usage: from dailyMaterialLogs on jobs + materialsUsed on closed jobs
+        const usageByDate = {};
+        truckJobs.forEach(job => {
+          (job.dailyMaterialLogs || []).forEach(log => {
+            if (!usageByDate[log.date]) usageByDate[log.date] = [];
+            usageByDate[log.date].push({ job, materials: log.materials });
+          });
+          if (job.closedOut && job.materialsUsed && job.closedAt) {
+            const d = job.closedAt.slice(0,10);
+            const alreadyLogged = (job.dailyMaterialLogs || []).some(l => l.date === d);
+            if (!alreadyLogged) {
+              if (!usageByDate[d]) usageByDate[d] = [];
+              usageByDate[d].push({ job, materials: job.materialsUsed });
+            }
+          }
         });
+
+        const allActiveDates = new Set([...Object.keys(loadsByDate), ...Object.keys(returnsByDate), ...Object.keys(usageByDate)]);
         const firstDay = new Date(calYear, calMonth, 1).getDay();
         const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
         const cells = [];
@@ -2781,9 +2806,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
         for (let d = 1; d <= daysInMonth; d++) cells.push(d);
         const ds = (d) => calYear + "-" + String(calMonth+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
         const today = new Date().toISOString().slice(0,10);
-        const dayReturns = selectedDate ? (returnsByDate[selectedDate] || []) : [];
+
         return (
-          <Modal title={(hTruck.members || hTruck.name) + " — Unload History"} onClose={() => setTruckHistoryView(null)}>
+          <Modal title={(hTruck.members || hTruck.name) + " — Daily History"} onClose={() => setTruckHistoryView(null)}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <button onClick={() => setTruckHistoryView(v => { const m = v.calMonth === 0 ? 11 : v.calMonth - 1; const y = v.calMonth === 0 ? v.calYear - 1 : v.calYear; return {...v, calMonth: m, calYear: y, selectedDate: null}; })} style={{ background: "none", border: "1px solid "+t.border, borderRadius: 6, padding: "5px 11px", cursor: "pointer", color: t.text, fontSize: 15 }}>{"<"}</button>
               <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{monthNames[calMonth]} {calYear}</div>
@@ -2796,42 +2821,69 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
               {cells.map((day, idx) => {
                 if (!day) return <div key={"e"+idx} />;
                 const dateStr = ds(day);
-                const hasReturns = !!(returnsByDate[dateStr]?.length);
+                const hasActivity = allActiveDates.has(dateStr);
                 const isSelected = dateStr === selectedDate;
                 const isToday = dateStr === today;
+                const dots = [loadsByDate[dateStr] ? "🔵" : null, usageByDate[dateStr] ? "🟠" : null, returnsByDate[dateStr] ? "🟢" : null].filter(Boolean);
                 return (
-                  <div key={dateStr} onClick={() => hasReturns && setTruckHistoryView(v => ({...v, selectedDate: isSelected ? null : dateStr}))}
-                    style={{ minHeight: 44, borderRadius: 7, border: "1px solid " + (isSelected ? t.accent : isToday ? t.accent : t.border), background: isSelected ? t.accent : hasReturns ? "#dbeafe" : t.surface, cursor: hasReturns ? "pointer" : "default", padding: "4px 4px" }}>
+                  <div key={dateStr} onClick={() => hasActivity && setTruckHistoryView(v => ({...v, selectedDate: isSelected ? null : dateStr}))}
+                    style={{ minHeight: 46, borderRadius: 7, border: "1px solid " + (isSelected ? t.accent : isToday ? t.accent : t.border), background: isSelected ? t.accent : hasActivity ? "#eff6ff" : t.surface, cursor: hasActivity ? "pointer" : "default", padding: "4px 5px" }}>
                     <div style={{ fontSize: 12, fontWeight: isToday ? 700 : 500, color: isSelected ? "#fff" : isToday ? t.accent : t.text }}>{day}</div>
-                    {hasReturns && <div style={{ fontSize: 9, fontWeight: 700, color: isSelected ? "#fff" : "#1d4ed8", marginTop: 1 }}>{returnsByDate[dateStr].length} return{returnsByDate[dateStr].length > 1 ? "s" : ""}</div>}
+                    {dots.length > 0 && <div style={{ fontSize: 9, marginTop: 2 }}>{dots.join("")}</div>}
                   </div>
                 );
               })}
             </div>
+            <div style={{ fontSize: 10, color: t.textMuted, marginBottom: 12, display: "flex", gap: 10 }}>
+              <span>🔵 Load out</span><span>🟠 Job usage</span><span>🟢 Unload</span>
+            </div>
             {selectedDate && (
               <div>
-                <div style={{ fontWeight: 700, fontSize: 13, color: t.text, marginBottom: 10 }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: t.text, marginBottom: 12 }}>
                   {new Date(selectedDate+"T12:00:00").toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric",year:"numeric"})}
                 </div>
-                {dayReturns.map((ret, i) => {
-                  const time = new Date(ret.timestamp).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true,timeZone:"America/Chicago"});
-                  const itemEntries = Object.entries(ret.items || {});
-                  return (
-                    <div key={ret.id} style={{ background: t.bg, borderRadius: 8, padding: "10px 12px", marginBottom: 8, border: "1px solid " + t.border }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: t.textMuted, marginBottom: 8 }}>Returned at {time}</div>
-                      {itemEntries.map(([itemId, qty]) => {
-                        const item = INVENTORY_ITEMS.find(i => i.id === itemId);
-                        if (!item) return null;
-                        let display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
-                        return <div key={itemId} style={{ fontSize: 13, color: t.text, marginBottom: 3 }}>{item.name} — <strong>{display}</strong></div>;
-                      })}
-                    </div>
-                  );
-                })}
+
+                {/* LOADS */}
+                {(loadsByDate[selectedDate] || []).map((load, i) => (
+                  <div key={i} style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#1d4ed8", marginBottom: 6 }}>🔵 LOADED OUT — {new Date(load.timestamp).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true,timeZone:"America/Chicago"})}</div>
+                    {Object.entries(load.items || {}).map(([itemId, qty]) => {
+                      const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                      return item ? <div key={itemId} style={{ fontSize: 12, color: "#1e40af", marginBottom: 2 }}>{item.name} — <strong>{fmtQty(itemId, qty)}</strong></div> : null;
+                    })}
+                  </div>
+                ))}
+
+                {/* JOB USAGE */}
+                {(usageByDate[selectedDate] || []).map((entry, i) => (
+                  <div key={i} style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#c2410c", marginBottom: 4 }}>🟠 USED ON JOB</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: t.text, marginBottom: 6 }}>{entry.job.builder || "No Customer"} — {entry.job.address}</div>
+                    {Object.entries(entry.materials).map(([itemId, qty]) => {
+                      const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                      return item ? <div key={itemId} style={{ fontSize: 12, color: "#9a3412", marginBottom: 2 }}>{item.name} — <strong>{fmtQty(itemId, qty)}</strong></div> : null;
+                    })}
+                  </div>
+                ))}
+
+                {/* UNLOADS */}
+                {(returnsByDate[selectedDate] || []).map((ret, i) => (
+                  <div key={i} style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8, padding: "10px 12px", marginBottom: 8 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#15803d", marginBottom: 6 }}>🟢 UNLOADED TO WAREHOUSE — {new Date(ret.timestamp).toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit",hour12:true,timeZone:"America/Chicago"})}</div>
+                    {Object.entries(ret.items || {}).map(([itemId, qty]) => {
+                      const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                      return item ? <div key={itemId} style={{ fontSize: 12, color: "#166534", marginBottom: 2 }}>{item.name} — <strong>{fmtQty(itemId, qty)}</strong></div> : null;
+                    })}
+                  </div>
+                ))}
+
+                {!loadsByDate[selectedDate] && !usageByDate[selectedDate] && !returnsByDate[selectedDate] && (
+                  <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic" }}>No activity recorded for this day.</div>
+                )}
               </div>
             )}
-            {!selectedDate && Object.keys(returnsByDate).length === 0 && (
-              <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", paddingBottom: 8 }}>No unloads recorded yet for this truck.</div>
+            {!selectedDate && allActiveDates.size === 0 && (
+              <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", paddingBottom: 8 }}>No activity recorded yet for this truck.</div>
             )}
           </Modal>
         );
@@ -3147,6 +3199,7 @@ export default function App() {
   const [tickets, setTickets] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [returnLog, setReturnLog] = useState([]);
+  const [loadLog, setLoadLog] = useState([]);
   const [pmUpdates, setPmUpdates] = useState([]);
   const [members, setMembers] = useState([]);
   const [inventory, setInventory] = useState([]);
@@ -3163,6 +3216,7 @@ export default function App() {
     const unsubInv = onSnapshot(collection(db, "inventory"), (snap) => { setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubTruckInv = onSnapshot(collection(db, "truckInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckInventory(m); });
     const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    const unsubLoadLog = onSnapshot(collection(db, "loadLog"), (snap) => { setLoadLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); };
   }, []);
 
@@ -3243,19 +3297,22 @@ export default function App() {
     await updateDoc(jobRef, { dailyMaterialLogs: updated });
   };
   const handleLoadTruck = async (itemsLoaded, truckId) => {
-    // Everything entered = total on truck today. All of it deducts from warehouse.
-    // Truck is zeroed first, then set to exactly what was entered.
     const truckRef = doc(db, "truckInventory", truckId);
     const updatedTruck = {};
+    const logItems = {};
     for (const m of itemsLoaded) {
       if (m.qty > 0) {
         const rec = inventory.find(r => r.itemId === m.itemId);
         const current = rec?.qty || 0;
         await handleUpdateInventory(m.itemId, Math.max(0, current - m.qty));
         updatedTruck[m.itemId] = m.qty;
+        logItems[m.itemId] = m.qty;
       }
     }
     await setDoc(truckRef, updatedTruck);
+    if (Object.keys(logItems).length > 0) {
+      await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: new Date().toISOString() });
+    }
   };
   const handleCrewLogin = (member, truck) => {
     setCrewSession({ memberId: member.id, crewName: member.name, truckId: truck?.id || null });
@@ -3324,6 +3381,6 @@ export default function App() {
     </AuthShell>
     </div>
   );
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
   return null;
 }
