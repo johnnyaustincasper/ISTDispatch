@@ -979,9 +979,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                       <div style={{ display: "flex", gap: "8px" }}>
                         <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
                         <Button variant="secondary" onClick={() => {
-                          setDailyMaterialsJob(job);
                           if (existingToday) {
-                            // Pre-populate with existing values
                             const preQtys = {};
                             INVENTORY_ITEMS.forEach(i => {
                               const isFoam = ["oc_a","oc_b","cc_a","cc_b"].includes(i.id);
@@ -989,8 +987,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                               if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                             });
                             setDailyMaterialQtys(preQtys);
+                            // Pass existing materials explicitly so delta calc is always accurate
+                            setDailyMaterialsJob({ ...job, _existingMaterials: existingToday.materials });
                           } else {
                             setDailyMaterialQtys({});
+                            setDailyMaterialsJob(job);
                           }
                         }} style={{ flex: 1 }}>{existingToday ? "Edit Today" : "Log Materials"}</Button>
                       </div>
@@ -1368,7 +1369,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b"].includes(id);
         const today = dailyMaterialsJob._editingDate || todayCST();
         const isEditingPast = !!dailyMaterialsJob._editingDate;
-        const existingDailyEntry = (dailyMaterialsJob.dailyMaterialLogs || []).find(l => l.date === today)?.materials || {};
+        const existingDailyEntry = dailyMaterialsJob._existingMaterials || {};
         const isEditing = Object.keys(existingDailyEntry).length > 0;
         const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
         const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && ((truckInventory[i.id] || 0) > 0 || (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)));
