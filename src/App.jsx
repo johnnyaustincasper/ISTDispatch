@@ -33,6 +33,7 @@ const INVENTORY_ITEMS = [
   { id: "cc_b",       name: "Closed Cell B",     unit: "bbl",   category: "Foam" },
   // Blown
   { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown" },
+  { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown" },
   { id: "blown_cel",       name: "Blown Cellulose",  unit: "bags",  category: "Blown" },
   // Certainteed R11
   { id: "r11_15_8_t",     name: 'R11 x 15" x 93" (8ft)', pcsPerTube: 16, sqftPerTube: 155,    unit: "tubes", category: "Certainteed R11", hasPieces: true },
