@@ -573,23 +573,38 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
   const map = {};
   const localStr = (d) => d.toLocaleDateString("en-CA");
-  const monStr = localStr(mon); const satStr = localStr(sat);
+  const monStr = localStr(mon);
+  const satStr = localStr(sat);
+  const todayStr = todayCST();
+
   (jobs || [])
-    // Only jobs this member is tagged on
     .filter(j => Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(memberId))
     .forEach(j => {
-      const workedDays = [...new Set(
-        (updates || [])
-          // Only in_progress updates submitted by this member
-          .filter(u => u.jobId === j.id &&
-            ["in_progress","on_site","started"].includes(u.status) &&
-            u.crewName === memberName)
-          .map(u => tsToCST(u.timestamp))
-      )].filter(d => d >= monStr && d <= satStr);
-      workedDays.forEach(day => {
-        if (!map[day]) map[day] = [];
-        map[day].push(j);
-      });
+      const jobUpds = (updates || [])
+        .filter(u => u.jobId === j.id)
+        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+      // Job must have at least one in_progress update to appear on timesheet
+      const firstStarted = jobUpds.find(u => ["in_progress","on_site","started"].includes(u.status));
+      if (!firstStarted) return;
+
+      const startDate = tsToCST(firstStarted.timestamp);
+
+      // End date: when completed, or today if still open
+      const completedUpd = [...jobUpds].reverse().find(u => u.status === "completed");
+      const endDate = completedUpd ? tsToCST(completedUpd.timestamp) : todayStr;
+
+      // Show job on every day within the week range between start and end
+      const cur = new Date(Math.max(new Date(startDate + "T12:00:00"), mon));
+      const end = new Date(Math.min(new Date(endDate + "T12:00:00"), sat));
+
+      while (cur <= end) {
+        const dayStr = localStr(cur);
+        if (!map[dayStr]) map[dayStr] = [];
+        // Avoid duplicates
+        if (!map[dayStr].find(x => x.id === j.id)) map[dayStr].push(j);
+        cur.setDate(cur.getDate() + 1);
+      }
     });
   return map;
 }
