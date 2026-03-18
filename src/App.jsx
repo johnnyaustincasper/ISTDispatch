@@ -1756,7 +1756,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
 // ─── Admin Dashboard ───
 // ─── Roster View ─────────────────────────────────────────────────────────────
-function TimesheetModal({ member, jobs, weekOffset, setWeekOffset, onClose }) {
+function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onClose }) {
   const getWeekRange = (offsetWeeks = 0) => {
     const now = new Date(); const day = now.getDay(); const mon = new Date(now);
     mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7); mon.setHours(0,0,0,0);
@@ -1780,8 +1780,21 @@ function TimesheetModal({ member, jobs, weekOffset, setWeekOffset, onClose }) {
   useEffect(() => {
     setLoading(true);
     const unsub = onSnapshot(doc(db, "timesheets", tsDocId), snap => {
-      setJobEntries(snap.exists() ? (snap.data().jobEntries || {}) : {});
-      setLoading(false);
+      if (snap.exists() && snap.data().jobEntries) {
+        setJobEntries(snap.data().jobEntries);
+        setLoading(false);
+      } else {
+        // Seed from dynamic job assignments so existing work isn't lost
+        const seeded = {};
+        const dayMap = buildDayJobMap(jobs || [], updates || [], member.id, member.name, mon, sat);
+        DAYS.forEach(d => {
+          const ds = localDateStr(d);
+          const seededJobs = dayMap[ds] || [];
+          if (seededJobs.length > 0) seeded[ds] = seededJobs.map(j => j.id);
+        });
+        setJobEntries(seeded);
+        setLoading(false);
+      }
     });
     return unsub;
   }, [tsDocId]);
@@ -2027,7 +2040,7 @@ function RosterView({ trucks, jobs, updates }) {
         ));
       })()}
 
-      {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
+      {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} updates={updates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
 
     </div>
   );
