@@ -1756,7 +1756,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
 // ─── Admin Dashboard ───
 // ─── Roster View ─────────────────────────────────────────────────────────────
-function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onClose }) {
+function TimesheetModal({ member, jobs, weekOffset, setWeekOffset, onClose }) {
   const getWeekRange = (offsetWeeks = 0) => {
     const now = new Date(); const day = now.getDay(); const mon = new Date(now);
     mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7); mon.setHours(0,0,0,0);
@@ -1768,47 +1768,130 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
   const fmtDay = (d) => d.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
   const localDateStr = (d) => d.toLocaleDateString('en-CA');
   const DAYS = Array.from({ length: 6 }, (_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
-  const startedJobsModal = (jobs || []).filter(j =>
-    (updates || []).some(u => u.jobId === j.id && ["in_progress","on_site","started"].includes(u.status))
-  );
-  const dayJobMap = buildDayJobMap(startedJobsModal, updates, member.id, member.name, mon, sat);
+  const weekKey = localDateStr(mon);
+  const tsDocId = `${member.id}_${weekKey}`;
+
+  // Persisted job entries: { "2026-03-17": ["jobId1","jobId2"], ... }
+  const [jobEntries, setJobEntries] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [addingDay, setAddingDay] = useState(null); // dayStr when picker is open
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    const unsub = onSnapshot(doc(db, "timesheets", tsDocId), snap => {
+      setJobEntries(snap.exists() ? (snap.data().jobEntries || {}) : {});
+      setLoading(false);
+    });
+    return unsub;
+  }, [tsDocId]);
+
+  const saveEntries = async (next) => {
+    setSaving(true);
+    await setDoc(doc(db, "timesheets", tsDocId), { jobEntries: next, memberId: member.id, memberName: member.name, weekStart: weekKey }, { merge: true });
+    setSaving(false);
+  };
+
+  const addJob = async (dayStr, jobId) => {
+    const cur = jobEntries[dayStr] || [];
+    if (cur.includes(jobId)) { setAddingDay(null); return; }
+    const next = { ...jobEntries, [dayStr]: [...cur, jobId] };
+    setJobEntries(next);
+    await saveEntries(next);
+    setAddingDay(null);
+  };
+
+  const removeJob = async (dayStr, jobId) => {
+    const next = { ...jobEntries, [dayStr]: (jobEntries[dayStr] || []).filter(id => id !== jobId) };
+    setJobEntries(next);
+    await saveEntries(next);
+  };
+
+  // Jobs available to add: last 14 days
+  const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+  const recentJobs = (jobs || []).filter(j => {
+    const d = new Date((j.date || "") + "T12:00:00");
+    return d >= twoWeeksAgo;
+  });
+
+  // Category colors
+  const catColor = { Foam: "#f59e0b", Fiberglass: "#3b82f6", Removal: "#ef4444" };
+  const catBg   = { Foam: "#fef3c7", Fiberglass: "#dbeafe", Removal: "#fee2e2" };
+
   const handlePrint = () => {
+    const dayJobMap = {};
+    DAYS.forEach(d => {
+      const ds = localDateStr(d);
+      dayJobMap[ds] = (jobEntries[ds] || []).map(id => (jobs||[]).find(j=>j.id===id)).filter(Boolean);
+    });
     const html = buildTimesheetHtml(member.name, mon, sat, DAYS, dayJobMap, null, fmtDate, fmtDay);
     const w = window.open('', '_blank'); w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
+
   return (
     <Modal title={`Timesheet — ${member.name}`} onClose={onClose}>
       <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 12 }}>{fmtDate(mon)} – {fmtDate(sat)}</div>
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        <Button variant='secondary' onClick={() => setWeekOffset(w => w - 1)} style={{ fontSize: 12 }}>Prev Week</Button>
-        {weekOffset !== 0 && <Button variant='secondary' onClick={() => setWeekOffset(0)} style={{ fontSize: 12 }}>This Week</Button>}
-        {weekOffset < 0 && <Button variant='secondary' onClick={() => setWeekOffset(w => w + 1)} style={{ fontSize: 12 }}>Next Week</Button>}
+        <Button variant='secondary' onClick={() => { setWeekOffset(w => w - 1); setAddingDay(null); }} style={{ fontSize: 12 }}>← Prev</Button>
+        {weekOffset !== 0 && <Button variant='secondary' onClick={() => { setWeekOffset(0); setAddingDay(null); }} style={{ fontSize: 12 }}>This Week</Button>}
+        {weekOffset < 0 && <Button variant='secondary' onClick={() => { setWeekOffset(w => w + 1); setAddingDay(null); }} style={{ fontSize: 12 }}>Next →</Button>}
         <Button onClick={handlePrint} variant='secondary' style={{ fontSize: 12, marginLeft: 'auto' }}>Print</Button>
       </div>
-      {DAYS.map(day => {
+
+      {loading ? <div style={{ fontSize: 13, color: t.textMuted }}>Loading…</div> : DAYS.map(day => {
         const dayStr = localDateStr(day);
-        const dayJobs = dayJobMap[dayStr] || [];
+        const dayJobIds = jobEntries[dayStr] || [];
+        const dayJobs = dayJobIds.map(id => (jobs||[]).find(j=>j.id===id)).filter(Boolean);
+        // Group by type
+        const grouped = { Foam: [], Fiberglass: [], Removal: [], Other: [] };
+        dayJobs.forEach(j => { const cat = JOB_TYPES.includes(j.type) ? j.type : 'Other'; grouped[cat].push(j); });
+        const isAdding = addingDay === dayStr;
+        const alreadyIds = dayJobIds;
+        const available = recentJobs.filter(j => !alreadyIds.includes(j.id));
         return (
           <div key={dayStr} style={{ marginBottom: 10, padding: '10px 12px', background: t.bg, borderRadius: 8, border: '1px solid ' + t.borderLight }}>
-            <div style={{ fontWeight: 600, fontSize: 13, color: t.text, marginBottom: dayJobs.length > 0 ? 6 : 0 }}>{fmtDay(day)}</div>
-            {dayJobs.length === 0 ? <div style={{ fontSize: 12, color: t.textMuted }}>No jobs</div> : dayJobs.map(j => (
-              <div key={j.id} style={{ paddingTop: 6, borderTop: '1px solid ' + t.borderLight }}>
-                <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{j.builder || 'No Customer'}</div>
-                <div style={{ color: t.textMuted, fontSize: 12 }}>{j.address}{j.type ? ' — ' + j.type : ''}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: dayJobs.length > 0 ? 8 : 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{fmtDay(day)}</div>
+              <button onClick={() => setAddingDay(isAdding ? null : dayStr)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid '+t.accent, background: isAdding ? t.accent : 'transparent', color: isAdding ? '#fff' : t.accent, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                {isAdding ? '✕ Cancel' : '+ Add Job'}
+              </button>
+            </div>
+
+            {isAdding && (
+              <div style={{ marginBottom: 8, maxHeight: 180, overflowY: 'auto', border: '1px solid '+t.border, borderRadius: 8, background: t.card }}>
+                {available.length === 0
+                  ? <div style={{ fontSize: 12, color: t.textMuted, padding: '10px 12px' }}>No recent jobs to add</div>
+                  : available.map(j => (
+                    <button key={j.id} onClick={() => addJob(dayStr, j.id)}
+                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', background: 'none', border: 'none', borderBottom: '1px solid '+t.borderLight, cursor: 'pointer', fontFamily: 'inherit' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{j.builder || 'No Customer'} — {j.address}</span>
+                      {j.type && <span style={{ marginLeft: 8, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: catBg[j.type]||'#f3f4f6', color: catColor[j.type]||t.textMuted, fontWeight: 600 }}>{j.type}</span>}
+                    </button>
+                  ))
+                }
+              </div>
+            )}
+
+            {dayJobs.length === 0 && !isAdding && <div style={{ fontSize: 12, color: t.textMuted }}>No jobs</div>}
+            {['Foam','Fiberglass','Removal','Other'].filter(cat => grouped[cat].length > 0).map(cat => (
+              <div key={cat} style={{ marginBottom: 4 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', color: catColor[cat]||t.textMuted, marginBottom: 3 }}>{cat}</div>
+                {grouped[cat].map(j => (
+                  <div key={j.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', paddingTop: 4, paddingBottom: 4, borderTop: '1px solid '+t.borderLight }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{j.builder || 'No Customer'}</div>
+                      <div style={{ color: t.textMuted, fontSize: 12 }}>{j.address}</div>
+                    </div>
+                    <button onClick={() => removeJob(dayStr, j.id)} style={{ fontSize: 11, padding: '3px 8px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, marginLeft: 8 }}>✕</button>
+                  </div>
+                ))}
               </div>
             ))}
           </div>
         );
       })}
-      <div style={{ marginTop: 16, padding: '14px', background: t.card, border: '1px solid ' + t.border, borderRadius: 8 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 10 }}>Weekly Summary</div>
-        {['Regular Hours', 'Overtime Hours', 'Total Job Pay', 'Overtime Pay', 'Total Pay'].map(label => (
-          <div key={label} style={{ display: 'flex', justifyContent: 'space-between', paddingBottom: 7, marginBottom: 7, borderBottom: '1px solid ' + t.borderLight }}>
-            <span style={{ fontSize: 13, color: t.text }}>{label}</span>
-            <span style={{ fontSize: 13, color: t.textMuted }}>___________</span>
-          </div>
-        ))}
-      </div>
+
+      {saving && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 4 }}>Saving…</div>}
     </Modal>
   );
 }
@@ -1944,7 +2027,7 @@ function RosterView({ trucks, jobs, updates }) {
         ));
       })()}
 
-      {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} updates={updates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
+      {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
 
     </div>
   );
