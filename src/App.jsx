@@ -27,10 +27,14 @@ const STATUS_OPTIONS = [
 
 const INVENTORY_ITEMS = [
   // Foam
-  { id: "oc_a",       name: "Open Cell A",       unit: "bbl",   category: "Foam" },
-  { id: "oc_b",       name: "Open Cell B",       unit: "bbl",   category: "Foam" },
-  { id: "cc_a",       name: "Closed Cell A",     unit: "bbl",   category: "Foam" },
-  { id: "cc_b",       name: "Closed Cell B",     unit: "bbl",   category: "Foam" },
+  { id: "oc_a",       name: "Ambit Open Cell A",       unit: "bbl",   category: "Foam" },
+  { id: "oc_b",       name: "Ambit Open Cell B",       unit: "bbl",   category: "Foam" },
+  { id: "cc_a",       name: "Ambit Closed Cell A",     unit: "bbl",   category: "Foam" },
+  { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam" },
+  { id: "env_oc_a",   name: "Enverge Open Cell A",     unit: "bbl",   category: "Foam" },
+  { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam" },
+  { id: "env_cc_a",   name: "Enverge Closed Cell A",   unit: "bbl",   category: "Foam" },
+  { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam" },
   // Blown
   { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown" },
   { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown" },
@@ -2726,7 +2730,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                 <div style={{ fontSize: 16, fontWeight: 800, color: t.text }}>Warehouse Inventory</div>
                 <span style={{ fontSize: 10, color: t.textMuted }}>Live</span>
               </div>
-              <table style={S.tbl}>
+              {categories.map(cat => {
+                const catItems = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
+                return (
+                <details key={cat} open style={{ marginBottom: 8, borderRadius: 8, overflow: "hidden", border: "1px solid " + t.border }}>
+                  <summary style={{ background: "#1e293b", color: "#fff", padding: "8px 14px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, cursor: "pointer", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                    <span>{cat}</span><span style={{ fontSize: 10, opacity: 0.6 }}>▾</span>
+                  </summary>
+                <table style={S.tbl}>
                 <thead>
                   <tr>
                     <th style={S.th}>Material</th>
@@ -2735,9 +2746,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                   </tr>
                 </thead>
                 <tbody>
-                  {categories.map(cat => (
+                  {[cat].map(() => (
                     <>
-                      <tr key={cat + "_h"} style={S.catRow}><td colSpan={3} style={S.catTd}>{cat}</td></tr>
                       {INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); }).map(item => {
                         const qty = getQty(item.id);
                         const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
@@ -2779,6 +2789,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                   ))}
                 </tbody>
               </table>
+              </details>
+                );
+              })}
             </div>
           );
         })()}
