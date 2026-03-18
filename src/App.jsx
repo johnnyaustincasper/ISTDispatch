@@ -1821,7 +1821,7 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
   };
 
   // Jobs available to add: last 14 days
-  const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+  const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 7);
   const recentJobs = (jobs || []).filter(j => {
     const d = new Date((j.date || "") + "T12:00:00");
     return d >= twoWeeksAgo;
