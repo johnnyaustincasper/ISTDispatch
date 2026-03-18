@@ -524,7 +524,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
           loadingMembers ? <EmptyState text="Loading..." /> :
           members.length === 0 ? <EmptyState text="No crew members yet." sub="Ask the office to add you to the roster." /> :
           <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "55vh", overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "8px" }}>
-            {members.sort((a,b) => a.name.localeCompare(b.name)).map(m => (
+            {members.sort((a,b) => { const ap = a.pin ? 0 : 1; const bp = b.pin ? 0 : 1; return ap !== bp ? ap - bp : a.name.localeCompare(b.name); }).map(m => (
               <Card key={m.id} onClick={() => handleSelectMember(m)} style={{ padding: "14px 16px", cursor: "pointer", flexShrink: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 15, color: t.text }}>{m.name}</div>
                 {m.truckId && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
