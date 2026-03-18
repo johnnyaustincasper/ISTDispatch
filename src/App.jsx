@@ -1957,64 +1957,7 @@ function RosterView({ trucks, jobs, updates }) {
 
       {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} updates={updates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
 
-      {editCrewByDayJob && (() => {
-        const job = editCrewByDayJob;
-        // Build list of days job was active (from first in_progress to today or completed)
-        const jobUpds = updates.filter(u => u.jobId === job.id).sort((a,b) => new Date(a.timestamp)-new Date(b.timestamp));
-        const firstActive = jobUpds.find(u => ["in_progress","on_site","started"].includes(u.status));
-        const lastCompleted = [...jobUpds].reverse().find(u => u.status === "completed");
-        const startStr = firstActive ? tsToCST(firstActive.timestamp) : job.date;
-        const endStr = lastCompleted ? tsToCST(lastCompleted.timestamp) : todayCST();
-        const days = [];
-        const cur = new Date(startStr + "T12:00:00");
-        const end = new Date(endStr + "T12:00:00");
-        while (cur <= end && days.length < 30) { days.push(cur.toLocaleDateString("en-CA")); cur.setDate(cur.getDate()+1); }
-        const overrides = job.dailyCrewOverrides || {};
-        const defaultCrew = (job.crewMemberIds || []).filter(Boolean);
-        const fmtDay = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
-        const [localOverrides, setLocalOverrides] = useState(() => {
-          const init = {};
-          days.forEach(d => { init[d] = overrides[d] ? [...overrides[d]] : [...defaultCrew]; });
-          return init;
-        });
-        const toggleMember = (day, memberId) => {
-          setLocalOverrides(prev => {
-            const cur = prev[day] || [];
-            return { ...prev, [day]: cur.includes(memberId) ? cur.filter(id => id !== memberId) : [...cur, memberId] };
-          });
-        };
-        const handleSave = async () => {
-          await onEditJob(job.id, { dailyCrewOverrides: localOverrides });
-          setEditCrewByDayJob(null);
-        };
-        return (
-          <Modal title={"Crew by Day — " + (job.builder || job.address)} onClose={() => setEditCrewByDayJob(null)}>
-            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 14 }}>{job.address}</div>
-            <div style={{ maxHeight: 420, overflowY: "auto", marginBottom: 14 }}>
-              {days.map(day => (
-                <div key={day} style={{ marginBottom: 14 }}>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: t.textSecondary, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>{fmtDay(day)}</div>
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                    {members.filter(m => m.name).map(m => {
-                      const checked = (localOverrides[day] || []).includes(m.id);
-                      return (
-                        <button key={m.id} onClick={() => toggleMember(day, m.id)}
-                          style={{ padding: "7px 12px", borderRadius: 8, border: checked ? "2px solid "+t.accent : "1px solid "+t.border, background: checked ? t.accentBg : t.bg, color: checked ? t.accent : t.textMuted, fontSize: 13, fontWeight: checked ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}>
-                          {m.name}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <Button variant="secondary" onClick={() => setEditCrewByDayJob(null)} style={{ flex: 1 }}>Cancel</Button>
-              <Button onClick={handleSave} style={{ flex: 1 }}>Save</Button>
-            </div>
-          </Modal>
-        );
-      })()}
+      {editCrewByDayJob && <CrewByDayModal job={editCrewByDayJob} updates={updates} members={members} onEditJob={onEditJob} onClose={() => setEditCrewByDayJob(null)} />}
       {false && (() => {
       const getWeekRange = (offsetWeeks = 0) => {
         const now = new Date();
@@ -2247,6 +2190,58 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
         <button onClick={() => setEditing(false)} style={{ padding: "8px 12px", borderRadius: 6, background: "none", color: t.textMuted, border: "1px solid " + t.border, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
       </div>
     </div>
+  );
+}
+
+function CrewByDayModal({ job, updates, members, onEditJob, onClose }) {
+  const t = THEME;
+  const fmtDay = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
+  const jobUpds = (updates || []).filter(u => u.jobId === job.id).sort((a,b) => new Date(a.timestamp)-new Date(b.timestamp));
+  const firstActive = jobUpds.find(u => ["in_progress","on_site","started"].includes(u.status));
+  const lastCompleted = [...jobUpds].reverse().find(u => u.status === "completed");
+  const startStr = firstActive ? tsToCST(firstActive.timestamp) : job.date;
+  const endStr = lastCompleted ? tsToCST(lastCompleted.timestamp) : todayCST();
+  const days = [];
+  const cur = new Date(startStr + "T12:00:00");
+  const end = new Date(endStr + "T12:00:00");
+  while (cur <= end && days.length < 30) { days.push(cur.toLocaleDateString("en-CA")); cur.setDate(cur.getDate()+1); }
+  const defaultCrew = (job.crewMemberIds || []).filter(Boolean);
+  const [localOverrides, setLocalOverrides] = useState(() => {
+    const init = {};
+    days.forEach(d => { init[d] = (job.dailyCrewOverrides || {})[d] ? [...(job.dailyCrewOverrides)[d]] : [...defaultCrew]; });
+    return init;
+  });
+  const toggle = (day, id) => setLocalOverrides(prev => {
+    const cur = prev[day] || [];
+    return { ...prev, [day]: cur.includes(id) ? cur.filter(x => x !== id) : [...cur, id] };
+  });
+  const handleSave = async () => { await onEditJob(job.id, { dailyCrewOverrides: localOverrides }); onClose(); };
+  return (
+    <Modal title={"Crew by Day — " + (job.builder || job.address)} onClose={onClose}>
+      <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 14 }}>{job.address}</div>
+      <div style={{ maxHeight: 440, overflowY: "auto", marginBottom: 14 }}>
+        {days.map(day => (
+          <div key={day} style={{ marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid " + t.borderLight }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: t.textSecondary, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>{fmtDay(day)}</div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {(members || []).filter(m => m.name).map(m => {
+                const checked = (localOverrides[day] || []).includes(m.id);
+                return (
+                  <button key={m.id} onClick={() => toggle(day, m.id)}
+                    style={{ padding: "8px 14px", borderRadius: 8, border: checked ? "2px solid "+t.accent : "1px solid "+t.border, background: checked ? t.accentBg : t.bg, color: checked ? t.accent : t.textMuted, fontSize: 13, fontWeight: checked ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}>
+                    {m.name}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <Button variant="secondary" onClick={onClose} style={{ flex: 1 }}>Cancel</Button>
+        <Button onClick={handleSave} style={{ flex: 1 }}>Save</Button>
+      </div>
+    </Modal>
   );
 }
 
