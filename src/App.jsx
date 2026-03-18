@@ -665,21 +665,10 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
     setNoteDay(null);
   };
 
-  const getJobWorkDate = (j) => {
-    const jobUpdates = (updates || []).filter(u => u.jobId === j.id).sort((a,b) => new Date(a.timestamp) - new Date(b.timestamp));
-    const started = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
-    return started ? tsToCST(started.timestamp) : j.date;
-  };
-  const weekJobs = jobs.filter(j => {
-    const workDate = getJobWorkDate(j);
-    if (!workDate) return false;
-    const jd = new Date(workDate + "T12:00:00");
-    if (jd < mon || jd > sat) return false;
-    return (Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(crewMemberId)) || updates.some(u => u.jobId === j.id && u.submittedBy === crewName);
-  });
+  const dayJobMap = buildDayJobMap(jobs, updates, crewMemberId, crewName, mon, sat);
 
   const handlePrint = () => {
-    const html = buildTimesheetHtml(crewName, mon, sat, DAYS, weekJobs, getJobWorkDate, fmtDate, fmtDay, tsNotes);
+    const html = buildTimesheetHtml(crewName, mon, sat, DAYS, dayJobMap, null, fmtDate, fmtDay, tsNotes);
     const w = window.open("", "_blank"); w.document.write(html); w.document.close(); w.focus(); setTimeout(() => w.print(), 300);
   };
 
