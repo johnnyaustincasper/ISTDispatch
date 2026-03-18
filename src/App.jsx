@@ -1871,16 +1871,27 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
             </div>
 
             {isAdding && (
-              <div style={{ marginBottom: 8, maxHeight: 180, overflowY: 'auto', border: '1px solid '+t.border, borderRadius: 8, background: t.card }}>
+              <div style={{ marginBottom: 8, border: '1px solid '+t.border, borderRadius: 8, background: t.card, overflow: 'hidden' }}>
                 {available.length === 0
                   ? <div style={{ fontSize: 12, color: t.textMuted, padding: '10px 12px' }}>No recent jobs to add</div>
-                  : available.map(j => (
-                    <button key={j.id} onClick={() => addJob(dayStr, j.id)}
-                      style={{ display: 'block', width: '100%', textAlign: 'left', padding: '9px 12px', background: 'none', border: 'none', borderBottom: '1px solid '+t.borderLight, cursor: 'pointer', fontFamily: 'inherit' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{j.builder || 'No Customer'} — {j.address}</span>
-                      {j.type && <span style={{ marginLeft: 8, fontSize: 11, padding: '1px 6px', borderRadius: 4, background: catBg[j.type]||'#f3f4f6', color: catColor[j.type]||t.textMuted, fontWeight: 600 }}>{j.type}</span>}
-                    </button>
-                  ))
+                  : ['Foam','Fiberglass','Removal'].map(cat => {
+                      const catJobs = available.filter(j => j.type === cat);
+                      if (catJobs.length === 0) return null;
+                      return (
+                        <details key={cat} open style={{ borderBottom: '1px solid '+t.borderLight }}>
+                          <summary style={{ padding: '8px 12px', fontWeight: 700, fontSize: 12, color: catColor[cat], background: catBg[cat], cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 10 }}>▾</span>{cat} ({catJobs.length})
+                          </summary>
+                          {catJobs.map(j => (
+                            <button key={j.id} onClick={() => addJob(dayStr, j.id)}
+                              style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 12px 8px 20px', background: 'none', border: 'none', borderTop: '1px solid '+t.borderLight, cursor: 'pointer', fontFamily: 'inherit' }}>
+                              <div style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{j.builder || 'No Customer'}</div>
+                              <div style={{ fontSize: 11, color: t.textMuted }}>{j.address}</div>
+                            </button>
+                          ))}
+                        </details>
+                      );
+                    })
                 }
               </div>
             )}
