@@ -578,7 +578,12 @@ function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
   const todayStr = todayCST();
 
   (jobs || [])
-    .filter(j => Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(memberId))
+    .filter(j => {
+      // Include if member is in default crew OR any daily override
+      const inDefault = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(memberId);
+      const inAnyOverride = Object.values(j.dailyCrewOverrides || {}).some(ids => ids.includes(memberId));
+      return inDefault || inAnyOverride;
+    })
     .forEach(j => {
       const jobUpds = (updates || [])
         .filter(u => u.jobId === j.id)
@@ -600,9 +605,13 @@ function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
 
       while (cur <= end) {
         const dayStr = localStr(cur);
-        if (!map[dayStr]) map[dayStr] = [];
-        // Avoid duplicates
-        if (!map[dayStr].find(x => x.id === j.id)) map[dayStr].push(j);
+        // Check dailyCrewOverrides for this day; fall back to default crewMemberIds
+        const overrides = j.dailyCrewOverrides || {};
+        const crewForDay = overrides[dayStr] ? overrides[dayStr] : (j.crewMemberIds || []);
+        if (crewForDay.includes(memberId)) {
+          if (!map[dayStr]) map[dayStr] = [];
+          if (!map[dayStr].find(x => x.id === j.id)) map[dayStr].push(j);
+        }
         cur.setDate(cur.getDate() + 1);
       }
     });
@@ -1947,6 +1956,65 @@ function RosterView({ trucks, jobs, updates }) {
       })()}
 
       {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} updates={updates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
+
+      {editCrewByDayJob && (() => {
+        const job = editCrewByDayJob;
+        // Build list of days job was active (from first in_progress to today or completed)
+        const jobUpds = updates.filter(u => u.jobId === job.id).sort((a,b) => new Date(a.timestamp)-new Date(b.timestamp));
+        const firstActive = jobUpds.find(u => ["in_progress","on_site","started"].includes(u.status));
+        const lastCompleted = [...jobUpds].reverse().find(u => u.status === "completed");
+        const startStr = firstActive ? tsToCST(firstActive.timestamp) : job.date;
+        const endStr = lastCompleted ? tsToCST(lastCompleted.timestamp) : todayCST();
+        const days = [];
+        const cur = new Date(startStr + "T12:00:00");
+        const end = new Date(endStr + "T12:00:00");
+        while (cur <= end && days.length < 30) { days.push(cur.toLocaleDateString("en-CA")); cur.setDate(cur.getDate()+1); }
+        const overrides = job.dailyCrewOverrides || {};
+        const defaultCrew = (job.crewMemberIds || []).filter(Boolean);
+        const fmtDay = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
+        const [localOverrides, setLocalOverrides] = useState(() => {
+          const init = {};
+          days.forEach(d => { init[d] = overrides[d] ? [...overrides[d]] : [...defaultCrew]; });
+          return init;
+        });
+        const toggleMember = (day, memberId) => {
+          setLocalOverrides(prev => {
+            const cur = prev[day] || [];
+            return { ...prev, [day]: cur.includes(memberId) ? cur.filter(id => id !== memberId) : [...cur, memberId] };
+          });
+        };
+        const handleSave = async () => {
+          await onEditJob(job.id, { dailyCrewOverrides: localOverrides });
+          setEditCrewByDayJob(null);
+        };
+        return (
+          <Modal title={"Crew by Day — " + (job.builder || job.address)} onClose={() => setEditCrewByDayJob(null)}>
+            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 14 }}>{job.address}</div>
+            <div style={{ maxHeight: 420, overflowY: "auto", marginBottom: 14 }}>
+              {days.map(day => (
+                <div key={day} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.textSecondary, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>{fmtDay(day)}</div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                    {members.filter(m => m.name).map(m => {
+                      const checked = (localOverrides[day] || []).includes(m.id);
+                      return (
+                        <button key={m.id} onClick={() => toggleMember(day, m.id)}
+                          style={{ padding: "7px 12px", borderRadius: 8, border: checked ? "2px solid "+t.accent : "1px solid "+t.border, background: checked ? t.accentBg : t.bg, color: checked ? t.accent : t.textMuted, fontSize: 13, fontWeight: checked ? 700 : 400, cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}>
+                          {m.name}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Button variant="secondary" onClick={() => setEditCrewByDayJob(null)} style={{ flex: 1 }}>Cancel</Button>
+              <Button onClick={handleSave} style={{ flex: 1 }}>Save</Button>
+            </div>
+          </Modal>
+        );
+      })()}
       {false && (() => {
       const getWeekRange = (offsetWeeks = 0) => {
         const now = new Date();
@@ -2210,6 +2278,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
   const [pmCheckedAM, setPmCheckedAM] = useState("No");
   const [pmCheckedPM, setPmCheckedPM] = useState("No");
   const [calViewJob, setCalViewJob] = useState(null);
+  const [editCrewByDayJob, setEditCrewByDayJob] = useState(null);
   const [calDayView, setCalDayView] = useState(null); // { dateStr, jobs }
 
   const activeJobs = jobs.filter((j) => {
@@ -3330,6 +3399,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
               <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1 }}>Close</Button>
               <Button onClick={() => { setPmJob(calViewJob); setPmCheckedAM(calViewJob.jobCheckedAM || "No"); setPmCheckedPM(calViewJob.jobCheckedPM || "No"); setCalViewJob(null); }} style={{ flex: 1 }}>PM Note</Button>
               <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Edit</Button>
+              <Button variant="secondary" onClick={() => { setEditCrewByDayJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Crew by Day</Button>
               <Button variant="secondary" onClick={async () => { await onEditJob(calViewJob.id, { ...calViewJob, onHold: true }); setCalViewJob(null); }} style={{ flex: 1 }}>Hold</Button>
               <Button variant="danger" onClick={async () => { if (confirm("Delete this job?")) { await onDeleteJob(calViewJob.id); setCalViewJob(null); }}} style={{ flex: 1 }}>Delete</Button>
             </div>
