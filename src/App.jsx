@@ -33,6 +33,8 @@ const INVENTORY_ITEMS = [
   { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam" },
   { id: "env_oc_a",   name: "Enverge Open Cell A",     unit: "bbl",   category: "Foam" },
   { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam" },
+  { id: "free_env_oc_a", name: "FREE Enverge Open Cell A", unit: "bbl", category: "Foam" },
+  { id: "free_env_oc_b", name: "FREE Enverge Open Cell B", unit: "bbl", category: "Foam" },
   { id: "env_cc_a",   name: "Enverge Closed Cell A",   unit: "bbl",   category: "Foam" },
   { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam" },
   // Blown
@@ -885,7 +887,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
   const handleCloseoutConfirm = (bypass) => {
     const { job, status: s, eta: e, notes: n } = closeoutJob;
-    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
     const materialsUsed = bypass ? null : (() => {
       const used = {};
       INVENTORY_ITEMS.forEach(i => {
@@ -989,7 +991,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                           {Object.entries(log.materials).map(([itemId, qty]) => {
                             const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                             if (!item) return null;
-                            const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(itemId);
+                            const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(itemId);
                             const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                             return <span key={itemId} style={{ marginRight: "8px" }}>{item.name}: <strong>{display}</strong></span>;
                           })}
@@ -1025,7 +1027,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                           if (existingToday) {
                             const preQtys = {};
                             INVENTORY_ITEMS.forEach(i => {
-                              const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(i.id);
+                              const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(i.id);
                               const val = existingToday.materials[i.id];
                               if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                             });
@@ -1050,7 +1052,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
         {/* ── LOAD TRUCK MODAL ── */}
         {crewView === "history" && (() => {
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
           const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
           const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
           // All completed jobs for this crew member
@@ -1145,7 +1147,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         })()}
 
         {crewView === "truck" && (() => {
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48));
           const loadedItems = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0);
@@ -1153,6 +1155,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           const ccSets = Math.min(truckInventory["cc_a"] || 0, truckInventory["cc_b"] || 0);
           const envOcSets = Math.min(truckInventory["env_oc_a"] || 0, truckInventory["env_oc_b"] || 0);
           const envCcSets = Math.min(truckInventory["env_cc_a"] || 0, truckInventory["env_cc_b"] || 0);
+          const freeEnvOcSets = Math.min(truckInventory["free_env_oc_a"] || 0, truckInventory["free_env_oc_b"] || 0);
           const nonFoamLoaded = loadedItems.filter(i => !isFoam(i.id));
           const renderTruckForm = (mode) => {
             const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
@@ -1307,6 +1310,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     {ocSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Ambit Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ocSets.toFixed(2)} sets ({bblToGals(ocSets, "oc_a")*2} gal total)</span></div>}
                     {ccSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Ambit Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ccSets.toFixed(2)} sets ({bblToGals(ccSets, "cc_a")*2} gal total)</span></div>}
                     {envOcSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Enverge Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{envOcSets.toFixed(2)} sets ({bblToGals(envOcSets, "env_oc_a")*2} gal total)</span></div>}
+                    {freeEnvOcSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>FREE Enverge Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: "#16a34a" }}>{freeEnvOcSets.toFixed(2)} sets ({bblToGals(freeEnvOcSets, "free_env_oc_a")*2} gal total)</span></div>}
                     {envCcSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Enverge Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{envCcSets.toFixed(2)} sets ({bblToGals(envCcSets, "env_cc_a")*2} gal total)</span></div>}
                     {nonFoamLoaded.filter(i => !i.isPieces).map(item => {
                       const pi = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
@@ -1413,7 +1417,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
       {/* ── CLOSEOUT MATERIALS MODAL ── */}
       {dailyMaterialsJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
         const today = dailyMaterialsJob._editingDate || todayCST();
         const isEditingPast = !!dailyMaterialsJob._editingDate;
         const existingDailyEntry = dailyMaterialsJob._existingMaterials || {};
@@ -1530,7 +1534,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
       })()}
 
       {closeoutJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
         const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
         return (
           <Modal title="Close Out Job" onClose={() => setCloseoutJob(null)}>
@@ -1542,7 +1546,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
               const logs = closeoutJob.job.dailyMaterialLogs || [];
               if (logs.length === 0) return null;
               const fmtDate = (ds) => { const [y,m,d] = ds.split("-"); const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return months[parseInt(m)-1] + " " + parseInt(d); };
-              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
               return (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, fontWeight: 600, marginBottom: 8 }}>Materials Logged — Previous Days</div>
@@ -1562,7 +1566,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                       <button onClick={() => {
                         const preQtys = {};
                         INVENTORY_ITEMS.forEach(i => {
-                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(i.id);
+                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(i.id);
                           const val = log.materials[i.id];
                           if (val) preQtys[i.id] = isFoamItem ? String(Math.round(val * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                         });
@@ -1626,7 +1630,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
       {/* ── EDIT MATERIALS MODAL ── */}
       {editMaterialsJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
         // Aggregate all installed: daily logs + materialsUsed
         const existing = (() => {
           const totals = { ...(editMaterialsJob.materialsUsed || {}) };
@@ -2210,7 +2214,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
   });
   const orderSort = (a, b) => (a.order ?? 999) - (b.order ?? 999) || naturalSort(a, b);
   const sortedTrucks = [...trucks].sort(orderSort);
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
   const handleAddJob = () => { onAddJob({ ...jobForm }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ")"); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [null, null, null, null], date: todayStr(), notes: "", jobCategory: "" }); setCrewPickerSlot(null); setShowAddJob(false); };
@@ -2903,7 +2907,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
         const { truck: hTruck, calMonth, calYear, selectedDate } = truckHistoryView;
         const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
         const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
         const fmtQty = (itemId, qty) => isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + (INVENTORY_ITEMS.find(i => i.id === itemId)?.unit || "");
         const toCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }); // returns YYYY-MM-DD in CST
 
