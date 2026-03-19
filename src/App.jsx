@@ -2727,7 +2727,20 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                         {loaded.length === 0
                           ? <div style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded.</div>
                           : <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                              {(() => { const ocS = Math.min(ti["oc_a"]||0, ti["oc_b"]||0); const ccS = Math.min(ti["cc_a"]||0, ti["cc_b"]||0); return <>{ocS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Open Cell — {ocS.toFixed(2)} sets</span>}{ccS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Closed Cell — {ccS.toFixed(2)} sets</span>}</>; })()}
+                              {(() => {
+                                const ocS       = Math.min(ti["oc_a"]||0, ti["oc_b"]||0);
+                                const ccS       = Math.min(ti["cc_a"]||0, ti["cc_b"]||0);
+                                const envOcS    = Math.min(ti["env_oc_a"]||0, ti["env_oc_b"]||0);
+                                const envCcS    = Math.min(ti["env_cc_a"]||0, ti["env_cc_b"]||0);
+                                const freeEnvOcS= Math.min(ti["free_env_oc_a"]||0, ti["free_env_oc_b"]||0);
+                                return <>
+                                  {ocS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit Open Cell — {ocS.toFixed(2)} sets</span>}
+                                  {ccS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit Closed Cell — {ccS.toFixed(2)} sets</span>}
+                                  {envOcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge Open Cell — {envOcS.toFixed(2)} sets</span>}
+                                  {envCcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge Closed Cell — {envCcS.toFixed(2)} sets</span>}
+                                  {freeEnvOcS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: "#f0fdf4", color: "#16a34a", padding: "3px 9px", borderRadius: 6 }}>FREE Enverge OC — {freeEnvOcS.toFixed(2)} sets</span>}
+                                </>;
+                              })()}
                               {loaded.filter(item => !isFoam(item.id)).map(item => (
                                 <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>
                               ))}
