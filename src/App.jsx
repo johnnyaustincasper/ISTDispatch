@@ -2230,6 +2230,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
   const [pmCheckedPM, setPmCheckedPM] = useState("No");
   const [calViewJob, setCalViewJob] = useState(null);
   const [calDayView, setCalDayView] = useState(null); // { dateStr, jobs }
+  const [editMatLogIdx, setEditMatLogIdx] = useState(null); // index into dailyMaterialLogs
+  const [editMatLogQtys, setEditMatLogQtys] = useState({});
 
   const activeJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -3366,26 +3368,52 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
             {(calViewJob.dailyMaterialLogs || []).length > 0 && (
               <div style={{ marginBottom: "16px" }}>
                 <div style={{ fontSize: "12px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Materials Logged</div>
-                {(calViewJob.dailyMaterialLogs || []).map((log, idx) => (
-                  <div key={idx} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < calViewJob.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
-                    <div style={{ fontSize: 12, fontWeight: 700, color: t.text, marginBottom: 4 }}>{log.date} — <span style={{ fontWeight: 400, color: t.textMuted }}>{log.loggedBy}</span></div>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                      {Object.entries(log.materials || {}).map(([itemId, qty]) => {
-                        const item = INVENTORY_ITEMS.find(i => i.id === itemId);
-                        if (!item) return null;
-                        const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(itemId);
-                        const display = isFoamItem
-                          ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
-                          : qty + " " + item.unit;
-                        return (
-                          <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6, fontWeight: 600 }}>
-                            {item.name}: {display}
-                          </span>
-                        );
-                      })}
+                {(calViewJob.dailyMaterialLogs || []).map((log, idx) => {
+                  const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+                  const bblToGal = (qty, id) => Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48));
+                  const isEditing = editMatLogIdx === idx;
+                  return (
+                    <div key={idx} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: idx < calViewJob.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{log.date} — <span style={{ fontWeight: 400, color: t.textMuted }}>{log.loggedBy}</span></div>
+                        <button onClick={() => { if (isEditing) { setEditMatLogIdx(null); setEditMatLogQtys({}); } else { const init = {}; Object.entries(log.materials||{}).forEach(([id,qty]) => { init[id] = isFoamId(id) ? String(bblToGal(qty,id)) : String(qty); }); setEditMatLogQtys(init); setEditMatLogIdx(idx); } }} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: "1px solid " + t.border, background: isEditing ? "#fef2f2" : t.surface, color: isEditing ? "#dc2626" : t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>{isEditing ? "Cancel" : "Edit"}</button>
+                      </div>
+                      {isEditing ? (
+                        <div>
+                          {INVENTORY_ITEMS.filter(i => !i.isPieces && (editMatLogQtys[i.id] !== undefined || (log.materials||{})[i.id])).map(item => (
+                            <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                              <label style={{ fontSize: 12, flex: 1, color: t.text }}>{item.name}</label>
+                              <input type="number" min="0" value={editMatLogQtys[item.id] || ""} onChange={e => setEditMatLogQtys(q => ({...q, [item.id]: e.target.value}))} placeholder={isFoamId(item.id) ? "gal" : item.unit} style={{ width: 80, padding: "5px 8px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 12, fontFamily: "inherit" }} />
+                              <span style={{ fontSize: 11, color: t.textMuted, width: 30 }}>{isFoamId(item.id) ? "gal" : item.unit}</span>
+                            </div>
+                          ))}
+                          <Button onClick={async () => {
+                            const newMats = {};
+                            Object.entries(editMatLogQtys).forEach(([id, raw]) => {
+                              const qty = parseFloat(raw);
+                              if (!isNaN(qty) && qty > 0) {
+                                newMats[id] = isFoamId(id) ? Math.round(qty / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48) * 10000) / 10000 : qty;
+                              }
+                            });
+                            const newLogs = (calViewJob.dailyMaterialLogs || []).map((l, i) => i === idx ? {...l, materials: newMats} : l);
+                            await onEditJob(calViewJob.id, { ...calViewJob, dailyMaterialLogs: newLogs });
+                            setCalViewJob(j => ({...j, dailyMaterialLogs: newLogs}));
+                            setEditMatLogIdx(null); setEditMatLogQtys({});
+                          }} style={{ marginTop: 6, width: "100%" }}>Save Changes</Button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                          {Object.entries(log.materials || {}).map(([itemId, qty]) => {
+                            const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                            if (!item) return null;
+                            const display = isFoamId(itemId) ? bblToGal(qty, itemId) + " gal" : qty + " " + item.unit;
+                            return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6, fontWeight: 600 }}>{item.name}: {display}</span>;
+                          })}
+                        </div>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
 
