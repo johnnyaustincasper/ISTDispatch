@@ -1493,7 +1493,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
             })}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <Button variant="secondary" onClick={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }} style={{ flex: 1 }}>Cancel</Button>
-              <Button onClick={() => {
+              <Button onClick={async () => {
                 const used = {};
                 INVENTORY_ITEMS.forEach(i => {
                   const raw = dailyMaterialQtys[i.id];
@@ -1501,38 +1501,40 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                     used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
                   }
                 });
-                if (Object.keys(used).length > 0) {
-                  // Validate: can't log more than what's on the truck (accounting for already-logged)
-                  let valid = true;
-                  INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
-                    const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
-                    const newUsedPcs = item.pcsPerTube
-                      ? (used[item.id] || 0) * item.pcsPerTube + (pcsItem ? (used[pcsItem.id] || 0) : 0)
-                      : (used[item.id] || 0);
-                    const oldUsedPcs = item.pcsPerTube
-                      ? (existingDailyEntry[item.id] || 0) * item.pcsPerTube + (pcsItem ? (existingDailyEntry[pcsItem.id] || 0) : 0)
-                      : (existingDailyEntry[item.id] || 0);
-                    const delta = newUsedPcs - oldUsedPcs;
-                    if (delta > 0) {
-                      const onTruckPcs = item.pcsPerTube
-                        ? (truckInventory[item.id] || 0) * item.pcsPerTube + (pcsItem ? (truckInventory[pcsItem.id] || 0) : 0)
-                        : (truckInventory[item.id] || 0);
-                      if (delta > onTruckPcs) {
-                        alert("Not enough " + item.name + " on your truck.\nYou have " + onTruckPcs + " pcs available.");
-                        valid = false;
-                      }
-                    }
-                  });
-                  if (!valid) return;
-                  // Delta adjust if editing existing entry, full deduct if new
-                  if (isEditing) {
-                    onDeltaAdjustTruck(truck?.id, existingDailyEntry, used);
-                  } else {
-                    onDeductFromTruck(truck?.id, used);
-                  }
-                  // Save as a daily log entry (upsert by date)
-                  onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
+                if (Object.keys(used).length === 0) {
+                  alert("No materials entered. Please enter at least one quantity before saving.");
+                  return;
                 }
+                // Validate: can't log more than what's on the truck
+                let valid = true;
+                INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
+                  const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+                  const newUsedPcs = item.pcsPerTube
+                    ? (used[item.id] || 0) * item.pcsPerTube + (pcsItem ? (used[pcsItem.id] || 0) : 0)
+                    : (used[item.id] || 0);
+                  const oldUsedPcs = item.pcsPerTube
+                    ? (existingDailyEntry[item.id] || 0) * item.pcsPerTube + (pcsItem ? (existingDailyEntry[pcsItem.id] || 0) : 0)
+                    : (existingDailyEntry[item.id] || 0);
+                  const delta = newUsedPcs - oldUsedPcs;
+                  if (delta > 0) {
+                    const onTruckPcs = item.pcsPerTube
+                      ? (truckInventory[item.id] || 0) * item.pcsPerTube + (pcsItem ? (truckInventory[pcsItem.id] || 0) : 0)
+                      : (truckInventory[item.id] || 0);
+                    if (delta > onTruckPcs) {
+                      alert("Not enough " + item.name + " on your truck.\nYou have " + onTruckPcs + " pcs available.");
+                      valid = false;
+                    }
+                  }
+                });
+                if (!valid) return;
+                // Delta adjust if editing existing entry, full deduct if new
+                if (isEditing) {
+                  await onDeltaAdjustTruck(truck?.id, existingDailyEntry, used);
+                } else {
+                  await onDeductFromTruck(truck?.id, used);
+                }
+                // Save log entry — await so we know it worked before closing
+                await onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
                 setDailyMaterialsJob(null); setDailyMaterialQtys({});
               }} style={{ flex: 1 }}>Save</Button>
             </div>
