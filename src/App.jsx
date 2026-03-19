@@ -2230,7 +2230,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
   const [pmNote, setPmNote] = useState("");
   const [pmCheckedAM, setPmCheckedAM] = useState("No");
   const [pmCheckedPM, setPmCheckedPM] = useState("No");
-  const [calViewJob, setCalViewJob] = useState(null);
+  const [calViewJobId, setCalViewJobId] = useState(null);
+  const calViewJob = calViewJobId ? (jobs.find(j => j.id === calViewJobId) || null) : null;
+  const setCalViewJob = (job) => setCalViewJobId(job ? job.id : null);
   const [calDayView, setCalDayView] = useState(null); // { dateStr, jobs }
   const [editMatLogIdx, setEditMatLogIdx] = useState(null); // index into dailyMaterialLogs
   const [editMatLogQtys, setEditMatLogQtys] = useState({});
@@ -3399,7 +3401,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                             });
                             const newLogs = (calViewJob.dailyMaterialLogs || []).map((l, i) => i === idx ? {...l, materials: newMats} : l);
                             await onEditJob(calViewJob.id, { ...calViewJob, dailyMaterialLogs: newLogs });
-                            setCalViewJob(j => ({...j, dailyMaterialLogs: newLogs}));
                             setEditMatLogIdx(null); setEditMatLogQtys({});
                           }} style={{ marginTop: 6, width: "100%" }}>Save Changes</Button>
                         </div>
