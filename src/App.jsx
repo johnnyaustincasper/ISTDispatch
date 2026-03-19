@@ -3376,9 +3376,23 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
               })}
             </div>
 
-            {(calViewJob.dailyMaterialLogs || []).length > 0 && (
+            {((calViewJob.dailyMaterialLogs || []).length > 0 || Object.keys(calViewJob.materialsUsed || {}).length > 0) && (
               <div style={{ marginBottom: "16px" }}>
                 <div style={{ fontSize: "12px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Materials Logged</div>
+                {Object.keys(calViewJob.materialsUsed || {}).length > 0 && (calViewJob.dailyMaterialLogs || []).length === 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.text, marginBottom: 6 }}>Logged at closeout</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {Object.entries(calViewJob.materialsUsed || {}).map(([itemId, qty]) => {
+                        const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                        if (!item) return null;
+                        const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(itemId);
+                        const display = isFoamId ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                        return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6, fontWeight: 600 }}>{item.name}: {display}</span>;
+                      })}
+                    </div>
+                  </div>
+                )}
                 {(calViewJob.dailyMaterialLogs || []).map((log, idx) => {
                   const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
                   const bblToGal = (qty, id) => Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48));
