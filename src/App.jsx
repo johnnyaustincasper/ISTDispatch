@@ -1430,11 +1430,15 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
         const existingDailyEntry = dailyMaterialsJob._existingMaterials || {};
         const isEditing = Object.keys(existingDailyEntry).length > 0;
         const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
+        const jobType = (dailyMaterialsJob.type || "").toLowerCase();
         const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (
           (truckInventory[i.id] || 0) > 0 ||
           (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0) ||
           existingDailyEntry[i.id] ||
-          (i.hasPieces && existingDailyEntry[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id])
+          (i.hasPieces && existingDailyEntry[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id]) ||
+          (jobType === "fiberglass" && (i.category === "Certainteed" || i.category === "JM" || i.category === "Rockwool" || i.category === "Blown")) ||
+          (jobType === "foam" && i.category === "Foam") ||
+          (jobType === "removal" && i.category === "Removal")
         ));
         return (
           <Modal title={isEditingPast ? "Edit Materials — " + fmtDateLabel(today) : "Log Today's Materials"} onClose={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }}>
@@ -1505,27 +1509,29 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   alert("No materials entered. Please enter at least one quantity before saving.");
                   return;
                 }
-                // Validate: can't log more than what's on the truck
+                // Validate truck qty only for foam — fiberglass doesn't use truck loading flow
                 let valid = true;
-                INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
-                  const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
-                  const newUsedPcs = item.pcsPerTube
-                    ? (used[item.id] || 0) * item.pcsPerTube + (pcsItem ? (used[pcsItem.id] || 0) : 0)
-                    : (used[item.id] || 0);
-                  const oldUsedPcs = item.pcsPerTube
-                    ? (existingDailyEntry[item.id] || 0) * item.pcsPerTube + (pcsItem ? (existingDailyEntry[pcsItem.id] || 0) : 0)
-                    : (existingDailyEntry[item.id] || 0);
-                  const delta = newUsedPcs - oldUsedPcs;
-                  if (delta > 0) {
-                    const onTruckPcs = item.pcsPerTube
-                      ? (truckInventory[item.id] || 0) * item.pcsPerTube + (pcsItem ? (truckInventory[pcsItem.id] || 0) : 0)
-                      : (truckInventory[item.id] || 0);
-                    if (delta > onTruckPcs) {
-                      alert("Not enough " + item.name + " on your truck.\nYou have " + onTruckPcs + " pcs available.");
-                      valid = false;
+                if (jobType === "foam") {
+                  INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
+                    const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+                    const newUsedPcs = item.pcsPerTube
+                      ? (used[item.id] || 0) * item.pcsPerTube + (pcsItem ? (used[pcsItem.id] || 0) : 0)
+                      : (used[item.id] || 0);
+                    const oldUsedPcs = item.pcsPerTube
+                      ? (existingDailyEntry[item.id] || 0) * item.pcsPerTube + (pcsItem ? (existingDailyEntry[pcsItem.id] || 0) : 0)
+                      : (existingDailyEntry[item.id] || 0);
+                    const delta = newUsedPcs - oldUsedPcs;
+                    if (delta > 0) {
+                      const onTruckPcs = item.pcsPerTube
+                        ? (truckInventory[item.id] || 0) * item.pcsPerTube + (pcsItem ? (truckInventory[pcsItem.id] || 0) : 0)
+                        : (truckInventory[item.id] || 0);
+                      if (delta > onTruckPcs) {
+                        alert("Not enough " + item.name + " on your truck.\nYou have " + onTruckPcs + " pcs available.");
+                        valid = false;
+                      }
                     }
-                  }
-                });
+                  });
+                }
                 if (!valid) return;
                 // Delta adjust if editing existing entry, full deduct if new
                 if (isEditing) {
