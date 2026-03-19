@@ -1120,14 +1120,21 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                           </div>
                           <Badge color="#15803d" bg="#dcfce7">Done</Badge>
                         </div>
-                        {hasMaterials ? (
-                          <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 6 }}>
-                            {Object.entries(mu).map(([itemId, qty]) => {
-                              const item = INVENTORY_ITEMS.find(i => i.id === itemId);
-                              if (!item) return null;
-                              let display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
-                              return <div key={itemId}>{item.name} — <strong>{display}</strong></div>;
-                            })}
+                        {(job.dailyMaterialLogs || []).length > 0 ? (
+                          <div style={{ marginTop: 6 }}>
+                            {(job.dailyMaterialLogs || []).map((log, li) => (
+                              <div key={li} style={{ marginBottom: 6 }}>
+                                <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 3 }}>{log.date} — {log.loggedBy}</div>
+                                <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                  {Object.entries(log.materials || {}).map(([itemId, qty]) => {
+                                    const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                                    if (!item) return null;
+                                    const display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                                    return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "2px 8px", borderRadius: 5, fontWeight: 600 }}>{item.name}: {display}</span>;
+                                  })}
+                                </div>
+                              </div>
+                            ))}
                           </div>
                         ) : (
                           <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic", marginTop: 6 }}>No materials logged</div>
@@ -3355,6 +3362,32 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                 );
               })}
             </div>
+
+            {(calViewJob.dailyMaterialLogs || []).length > 0 && (
+              <div style={{ marginBottom: "16px" }}>
+                <div style={{ fontSize: "12px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Materials Logged</div>
+                {(calViewJob.dailyMaterialLogs || []).map((log, idx) => (
+                  <div key={idx} style={{ marginBottom: 8, paddingBottom: 8, borderBottom: idx < calViewJob.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: t.text, marginBottom: 4 }}>{log.date} — <span style={{ fontWeight: 400, color: t.textMuted }}>{log.loggedBy}</span></div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                      {Object.entries(log.materials || {}).map(([itemId, qty]) => {
+                        const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                        if (!item) return null;
+                        const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(itemId);
+                        const display = isFoamItem
+                          ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+                          : qty + " " + item.unit;
+                        return (
+                          <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6, fontWeight: 600 }}>
+                            {item.name}: {display}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div style={{ marginBottom: 10 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, display: "block", marginBottom: 4 }}>Move Job Date</label>
