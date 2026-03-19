@@ -1837,7 +1837,8 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
   const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 7);
   const recentJobs = (jobs || []).filter(j => {
     const d = new Date((j.date || "") + "T12:00:00");
-    return d >= twoWeeksAgo;
+    const isCompleted = (updates || []).some(u => u.jobId === j.id && u.status === "completed");
+    return d >= twoWeeksAgo && isCompleted;
   });
 
   // Category colors
@@ -1867,7 +1868,8 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
       {loading ? <div style={{ fontSize: 13, color: t.textMuted }}>Loading…</div> : DAYS.map(day => {
         const dayStr = localDateStr(day);
         const dayJobIds = jobEntries[dayStr] || [];
-        const dayJobs = dayJobIds.map(id => (jobs||[]).find(j=>j.id===id)).filter(Boolean);
+        const completedJobIds = new Set((updates||[]).filter(u => u.status === "completed").map(u => u.jobId));
+        const dayJobs = dayJobIds.map(id => (jobs||[]).find(j=>j.id===id)).filter(j => j && completedJobIds.has(j.id));
         // Group by type
         const grouped = { Foam: [], Fiberglass: [], Removal: [], Other: [] };
         dayJobs.forEach(j => { const cat = JOB_TYPES.includes(j.type) ? j.type : 'Other'; grouped[cat].push(j); });
