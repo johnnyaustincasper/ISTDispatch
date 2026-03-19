@@ -1799,10 +1799,11 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
       } else {
         // Seed from dynamic job assignments so existing work isn't lost
         const seeded = {};
+        const completedJobIds = new Set((updates||[]).filter(u => u.status === "completed").map(u => u.jobId));
         const dayMap = buildDayJobMap(jobs || [], updates || [], member.id, member.name, mon, sat);
         DAYS.forEach(d => {
           const ds = localDateStr(d);
-          const seededJobs = dayMap[ds] || [];
+          const seededJobs = (dayMap[ds] || []).filter(j => completedJobIds.has(j.id));
           if (seededJobs.length > 0) seeded[ds] = seededJobs.map(j => j.id);
         });
         setJobEntries(seeded);
@@ -1837,8 +1838,8 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
   const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 7);
   const recentJobs = (jobs || []).filter(j => {
     const d = new Date((j.date || "") + "T12:00:00");
-    const isCompleted = (updates || []).some(u => u.jobId === j.id && u.status === "completed");
-    return d >= twoWeeksAgo && isCompleted;
+    const hasStarted = (updates || []).some(u => u.jobId === j.id && ["in_progress","completed"].includes(u.status));
+    return d >= twoWeeksAgo && hasStarted;
   });
 
   // Category colors
@@ -1868,8 +1869,7 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
       {loading ? <div style={{ fontSize: 13, color: t.textMuted }}>Loading…</div> : DAYS.map(day => {
         const dayStr = localDateStr(day);
         const dayJobIds = jobEntries[dayStr] || [];
-        const completedJobIds = new Set((updates||[]).filter(u => u.status === "completed").map(u => u.jobId));
-        const dayJobs = dayJobIds.map(id => (jobs||[]).find(j=>j.id===id)).filter(j => j && completedJobIds.has(j.id));
+        const dayJobs = dayJobIds.map(id => (jobs||[]).find(j=>j.id===id)).filter(Boolean);
         // Group by type
         const grouped = { Foam: [], Fiberglass: [], Removal: [], Other: [] };
         dayJobs.forEach(j => { const cat = JOB_TYPES.includes(j.type) ? j.type : 'Other'; grouped[cat].push(j); });
