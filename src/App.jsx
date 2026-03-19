@@ -1838,8 +1838,7 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
   const twoWeeksAgo = new Date(); twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 7);
   const recentJobs = (jobs || []).filter(j => {
     const d = new Date((j.date || "") + "T12:00:00");
-    const hasStarted = (updates || []).some(u => u.jobId === j.id && ["in_progress","completed"].includes(u.status));
-    return d >= twoWeeksAgo && hasStarted;
+    return d >= twoWeeksAgo;
   });
 
   // Category colors
