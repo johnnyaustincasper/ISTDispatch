@@ -1684,7 +1684,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
             })}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <Button variant="secondary" onClick={() => setEditMaterialsJob(null)} style={{ flex: 1 }}>Cancel</Button>
-              <Button onClick={() => {
+              <Button onClick={async () => {
                 const used = {};
                 INVENTORY_ITEMS.forEach(i => {
                   const raw = editMaterialQtys[i.id] !== undefined ? editMaterialQtys[i.id] : (existing[i.id] ? (isFoam(i.id) ? String(Math.round(existing[i.id] * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48))) : String(existing[i.id])) : "");
@@ -1705,9 +1705,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   }
                 });
                 if (!canSave) return;
-                // Delta adjust truck: only apply difference between old and new
-                onDeltaAdjustTruck(truck?.id, existing, used);
-                onSaveJobMaterials(editMaterialsJob.id, Object.keys(used).length > 0 ? used : null);
+                if (Object.keys(used).length === 0) { alert("No materials entered."); return; }
+                // Delta adjust truck and save log — await both
+                await onDeltaAdjustTruck(truck?.id, existing, used);
+                await onLogDailyMaterials(editMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
                 setEditMaterialsJob(null); setEditMaterialQtys({});
               }} style={{ flex: 1 }}>Save</Button>
             </div>
