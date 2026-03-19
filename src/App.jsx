@@ -2330,13 +2330,15 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
     return jobs.filter((j) => {
       if (j.onHold) return false;
       const jobUpdates = updates.filter(u => u.jobId === j.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
-      // Must have at least one in_progress or completed update to appear on calendar
+      // Show if there's a started/completed update, OR if job is closed out (closedAt date matches)
       const startedUpdate = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
-      if (!startedUpdate) return false;
-      const startedDate = tsToCST(startedUpdate.timestamp);
+      const closedDate = j.closedAt ? tsToCST(j.closedAt) : null;
+      if (!startedUpdate && !closedDate) return false;
+      // Determine date range for this job on the calendar
+      const startedDate = startedUpdate ? tsToCST(startedUpdate.timestamp) : (j.date || ds);
       const completedUpdate = jobUpdates.find(u => u.status === "completed");
-      const completedDate = completedUpdate ? tsToCST(completedUpdate.timestamp) : null;
-      if (ds < startedDate) return false;
+      const completedDate = completedUpdate ? tsToCST(completedUpdate.timestamp) : closedDate;
+      if (ds < startedDate && ds < (j.date || ds)) return false;
       if (completedDate) return ds <= completedDate;
       return ds <= todayStr;
     });
