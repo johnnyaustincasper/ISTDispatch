@@ -1786,6 +1786,8 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
 
   // Persisted job entries: { "2026-03-17": ["jobId1","jobId2"], ... }
   const [jobEntries, setJobEntries] = useState({});
+  const [dayNotes, setDayNotes] = useState({});
+  const [editingNoteDay, setEditingNoteDay] = useState(null);
   const [loading, setLoading] = useState(true);
   const [addingDay, setAddingDay] = useState(null); // dayStr when picker is open
   const [saving, setSaving] = useState(false);
@@ -1795,6 +1797,7 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
     const unsub = onSnapshot(doc(db, "timesheets", tsDocId), snap => {
       if (snap.exists() && snap.data().jobEntries) {
         setJobEntries(snap.data().jobEntries);
+        setDayNotes(snap.data().dayNotes || {});
         setLoading(false);
       } else {
         // Seed from dynamic job assignments so existing work isn't lost
@@ -1832,6 +1835,13 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
     const next = { ...jobEntries, [dayStr]: (jobEntries[dayStr] || []).filter(id => id !== jobId) };
     setJobEntries(next);
     await saveEntries(next);
+  };
+
+  const saveNote = async (dayStr, text) => {
+    const next = { ...dayNotes, [dayStr]: text };
+    setDayNotes(next);
+    await setDoc(doc(db, "timesheets", tsDocId), { dayNotes: next, memberId: member.id, memberName: member.name, weekStart: weekKey }, { merge: true });
+    setEditingNoteDay(null);
   };
 
   // Jobs available to add: last 14 days
@@ -1877,12 +1887,32 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
         const available = recentJobs.filter(j => !alreadyIds.includes(j.id));
         return (
           <div key={dayStr} style={{ marginBottom: 10, padding: '10px 12px', background: t.bg, borderRadius: 8, border: '1px solid ' + t.borderLight }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: dayJobs.length > 0 ? 8 : 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: (dayJobs.length > 0 || dayNotes[dayStr]) ? 8 : 0 }}>
               <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{fmtDay(day)}</div>
-              <button onClick={() => setAddingDay(isAdding ? null : dayStr)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid '+t.accent, background: isAdding ? t.accent : 'transparent', color: isAdding ? '#fff' : t.accent, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                {isAdding ? '✕ Cancel' : '+ Add Job'}
-              </button>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <button onClick={() => { setEditingNoteDay(dayStr); }} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid #7c3aed', background: editingNoteDay === dayStr ? '#7c3aed' : 'transparent', color: editingNoteDay === dayStr ? '#fff' : '#7c3aed', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                  📝 Note
+                </button>
+                <button onClick={() => setAddingDay(isAdding ? null : dayStr)} style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1px solid '+t.accent, background: isAdding ? t.accent : 'transparent', color: isAdding ? '#fff' : t.accent, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
+                  {isAdding ? '✕ Cancel' : '+ Add Job'}
+                </button>
+              </div>
             </div>
+            {editingNoteDay === dayStr && (
+              <div style={{ marginBottom: 8 }}>
+                <textarea defaultValue={dayNotes[dayStr] || ''} id={'note-'+dayStr} rows={2} placeholder="e.g. Stayed at shop, helped load trucks, inventory work..." style={{ width: '100%', padding: '8px', fontSize: 12, borderRadius: 6, border: '1px solid #7c3aed', fontFamily: 'inherit', resize: 'vertical', boxSizing: 'border-box' }} />
+                <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+                  <button onClick={() => { const el = document.getElementById('note-'+dayStr); saveNote(dayStr, el ? el.value : ''); }} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: 'none', background: '#7c3aed', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontWeight: 700 }}>Save</button>
+                  <button onClick={() => setEditingNoteDay(null)} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: '1px solid '+t.border, background: 'transparent', color: t.textMuted, cursor: 'pointer', fontFamily: 'inherit' }}>Cancel</button>
+                  {dayNotes[dayStr] && <button onClick={() => saveNote(dayStr, '')} style={{ fontSize: 11, padding: '4px 12px', borderRadius: 6, border: '1px solid #fca5a5', background: '#fef2f2', color: '#dc2626', cursor: 'pointer', fontFamily: 'inherit' }}>Clear</button>}
+                </div>
+              </div>
+            )}
+            {dayNotes[dayStr] && editingNoteDay !== dayStr && (
+              <div onClick={() => setEditingNoteDay(dayStr)} style={{ marginBottom: 8, padding: '6px 10px', background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: 6, fontSize: 12, color: '#5b21b6', cursor: 'pointer' }}>
+                📝 {dayNotes[dayStr]}
+              </div>
+            )}
 
             {isAdding && (
               <div style={{ marginBottom: 8, border: '1px solid '+t.border, borderRadius: 8, background: t.card, overflow: 'hidden' }}>
