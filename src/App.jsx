@@ -1265,33 +1265,33 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                   );
                 })}
                 {mode === "load"
-                  ? <button onClick={() => {
+                  ? <button onClick={async () => {
                       // Everything they entered = total leaving on truck today, all deducted from warehouse
                       const allItems = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
-                      onLoadTruck(allItems, truck?.id);
+                      await onLoadTruck(allItems, truck?.id);
                       setLoadTruckMode(false); setLoadQtys({}); setCarriedQtys({});
                     }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 12 }}>
                       Confirm Load Out
                     </button>
                   : <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, textAlign: "center", marginBottom: 2 }}>What are you doing with the remaining material?</div>
-                      <button onClick={() => {
+                      <button onClick={async () => {
                         const returning = [
                           ...INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 })),
                           ...INVENTORY_ITEMS.filter(i => i.isPieces && (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 })),
                         ];
-                        onReturnMaterial(returning, truck?.id, "unload");
+                        await onReturnMaterial(returning, truck?.id, "unload");
                         setLoadTruckMode(false); setLoadQtys({});
                       }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                         Unload to Warehouse
                         <div style={{ fontSize: 12, fontWeight: 400, marginTop: 3, opacity: 0.85 }}>Return remaining material — truck inventory zeroes out</div>
                       </button>
-                      <button onClick={() => {
+                      <button onClick={async () => {
                         const keeping = [
                           ...INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 })),
                           ...INVENTORY_ITEMS.filter(i => i.isPieces).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: loadQtys[i.id] || 0 })),
                         ];
-                        onReturnMaterial(keeping, truck?.id, "keep");
+                        await onReturnMaterial(keeping, truck?.id, "keep");
                         setLoadTruckMode(false); setLoadQtys({});
                       }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 15, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                         Keep on Truck
