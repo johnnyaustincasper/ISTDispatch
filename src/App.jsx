@@ -17,7 +17,8 @@ import {
 } from "firebase/firestore";
 
 // ─── Constants ───
-const JOB_TYPES = ["Foam","Fiberglass","Removal"];
+const JOB_TYPES = ["Foam","Fiberglass","Removal","Energy Seal"];
+const ES_JOB_TYPES = ["Energy Seal","Air Seal","Weatherization","Other"];
 const STATUS_OPTIONS = [
   { value: "not_started", label: "Not Started", color: "#6b7280", bg: "#f3f4f6" },
   { value: "in_progress", label: "In Progress", color: "#b45309", bg: "#fef3c7" },
@@ -2225,6 +2226,7 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 
 function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
   const [view, setView] = useState("schedule");
+  const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [showAddJob, setShowAddJob] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
   const toggleJobExpand = (id) => setExpandedJobs(prev => ({ ...prev, [id]: !prev[id] }));
@@ -2257,11 +2259,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
   const [editMatLogIdx, setEditMatLogIdx] = useState(null); // index into dailyMaterialLogs
   const [editMatLogQtys, setEditMatLogQtys] = useState({});
 
+  const deptTruckIds = new Set(
+    trucks.filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : (tr.department !== "energySeal"))
+          .map(tr => tr.id)
+  );
   const activeJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
     const isCompleted = latest && latest.status === "completed";
-    return !isCompleted && (!truckFilter || j.truckId === truckFilter);
+    const truckMatch = !truckFilter || j.truckId === truckFilter;
+    const deptMatch = j.truckId ? deptTruckIds.has(j.truckId) : (scheduleView === "insulation");
+    return !isCompleted && truckMatch && deptMatch;
   });
   const onHoldJobs = jobs.filter((j) => j.onHold);
   const openTicketCount = tickets.filter((tk) => tk.status === "open").length;
@@ -2277,7 +2285,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
     return new Date(b.timestamp) - new Date(a.timestamp);
   });
   const orderSort = (a, b) => (a.order ?? 999) - (b.order ?? 999) || naturalSort(a, b);
-  const sortedTrucks = [...trucks].sort(orderSort);
+  const sortedTrucks = [...trucks].filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : tr.department !== "energySeal").sort(orderSort);
   const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
@@ -2426,11 +2434,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
 
         {view === "schedule" && (
           <>
+            {/* Department toggle */}
+            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderRadius: 8, overflow: "hidden", border: "1px solid " + t.border, width: "fit-content" }}>
+              {[{key:"insulation",label:"🏠 Insulation"},{key:"energySeal",label:"⚡ Energy Seal"}].map(({key,label}) => (
+                <button key={key} onClick={() => { setScheduleView(key); setTruckFilter(null); }} style={{ padding: "9px 20px", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: scheduleView === key ? 700 : 500, background: scheduleView === key ? t.accent : t.surface, color: scheduleView === key ? "#fff" : t.textMuted, transition: "all 0.15s" }}>{label}</button>
+              ))}
+            </div>
             {(() => { const uncheckedCount = activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes").length; return (
-            <SectionHeader title="Schedule" right={<>
+            <SectionHeader title={scheduleView === "energySeal" ? "Energy Seal Schedule" : "Schedule"} right={<>
               {uncheckedCount > 0 && <button onClick={() => setShowUncheckedOnly(!showUncheckedOnly)} style={{ padding: "6px 12px", border: "1px solid " + (showUncheckedOnly ? t.danger : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showUncheckedOnly ? t.dangerBg : "#fff", color: showUncheckedOnly ? t.danger : t.textMuted }}>{showUncheckedOnly ? "Show All" : uncheckedCount + " Unchecked"}</button>}
               <button onClick={() => setShowOngoing(o => !o)} style={{ padding: "6px 12px", border: "1px solid " + (showOngoing ? t.accent : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showOngoing ? t.accentBg : "#fff", color: showOngoing ? t.accent : t.textMuted, position: "relative" }}>On-going Jobs{onHoldJobs.length > 0 && <span style={{ position: "absolute", top: -5, right: -5, background: t.accent, color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: "50%", width: 15, height: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>{onHoldJobs.length}</span>}</button>
-              <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr() }); setShowAddJob(true); }}>+ Add Job</Button>
+              <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }}>+ Add Job</Button>
             </>} />
             ); })()}
             {showOngoing && (
@@ -2720,7 +2734,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
 
         {view === "trucks" && (
           <>
-            <SectionHeader title="Trucks" right={<Button onClick={() => setShowAddTruck(true)}>+ Add Truck</Button>} />
+            <SectionHeader title="Trucks" right={<Button onClick={() => setShowAddTruck(true)}>+ Add {scheduleView === "energySeal" ? "Technician" : "Truck"}</Button>} />
             {trucks.length === 0 ? <EmptyState text="No crews yet. Add one to get started." /> : sortedTrucks.map((tr, idx) => {
               const truckJobs = jobs.filter((j) => { if (j.truckId !== tr.id) return false; const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]; return !lat || lat.status !== "completed"; });
               const truckTickets = tickets.filter((tk) => tk.truckId === tr.id && tk.status !== "resolved");
@@ -2740,7 +2754,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                         <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
                       </div>
                       <div>
-                        <div style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckHistoryView({ truck: tr, calMonth: new Date().getMonth(), calYear: new Date().getFullYear(), selectedDate: null })}>{tr.members || tr.name}</div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckHistoryView({ truck: tr, calMonth: new Date().getMonth(), calYear: new Date().getFullYear(), selectedDate: null })}>{tr.members || tr.name}</span>
+                          {tr.department === "energySeal" && <span style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#d97706", borderRadius: 4, padding: "1px 6px", border: "1px solid #fde68a" }}>⚡ ES</span>}
+                        </div>
                         <div style={{ fontSize: 11, color: t.textMuted }}>View unload history</div>
                       </div>
                     </div>
@@ -2906,8 +2923,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
         <Modal title="Add Job" onClose={() => setShowAddJob(false)}>
           <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} />
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
-          <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign Truck" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
+          <Select label="Assign Technician" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
           {/* Assign Crew Members — 4 slots */}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "10px" }}>Assign Crew Members</label>
@@ -3139,10 +3156,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
       )}
 
       {showAddTruck && (
-        <Modal title="Add Crew" onClose={() => setShowAddTruck(false)}>
-          <Input label="Crew Name" placeholder="e.g. Alex & Juan, Harold Sr. & Jr." value={truckForm.name} onChange={(e) => setTruckForm({ ...truckForm, name: e.target.value })} />
-          <Input label="Notes (optional)" placeholder="e.g. Fiberglass crew, Foam rig, etc." value={truckForm.members} onChange={(e) => setTruckForm({ ...truckForm, members: e.target.value })} />
-          <Button onClick={handleAddTruck} disabled={!truckForm.name.trim()} style={{ width: "100%" }}>Add Crew</Button>
+        <Modal title={scheduleView === "energySeal" ? "Add Energy Seal Technician" : "Add Crew"} onClose={() => setShowAddTruck(false)}>
+          <Input label={scheduleView === "energySeal" ? "Technician Name" : "Crew Name"} placeholder={scheduleView === "energySeal" ? "e.g. Mike Rodriguez" : "e.g. Alex & Juan, Harold Sr. & Jr."} value={truckForm.name} onChange={(e) => setTruckForm({ ...truckForm, name: e.target.value })} />
+          <Input label="Notes (optional)" placeholder={scheduleView === "energySeal" ? "e.g. Lead tech, specializes in blower door" : "e.g. Fiberglass crew, Foam rig, etc."} value={truckForm.members} onChange={(e) => setTruckForm({ ...truckForm, members: e.target.value })} />
+          <Button onClick={() => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, order: maxOrder + 1, department: scheduleView === "energySeal" ? "energySeal" : "insulation" }); onLogAction("Added " + (scheduleView === "energySeal" ? "ES tech" : "crew") + ": " + truckForm.name); setTruckForm({ name: "", members: "" }); setShowAddTruck(false); }} disabled={!truckForm.name.trim()} style={{ width: "100%" }}>{scheduleView === "energySeal" ? "Add Technician" : "Add Crew"}</Button>
         </Modal>
       )}
 
