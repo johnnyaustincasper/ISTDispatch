@@ -581,28 +581,33 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
   const map = {};
 
-  (jobs || [])
-    .filter(j => {
-      // Include if member is in default crew OR any daily override
-      const inDefault = Array.isArray(j.crewMemberIds) && j.crewMemberIds.includes(memberId);
-      const inAnyOverride = Object.values(j.dailyCrewOverrides || {}).some(ids => ids.includes(memberId));
-      return inDefault || inAnyOverride;
-    })
-    .forEach(j => {
-      // A job appears on its scheduled date only — no bleeding via update timestamps
-      if (!j.date) return;
-      const jobDateObj = new Date(j.date + "T12:00:00");
-      if (jobDateObj < mon || jobDateObj > sat) return;
+  // Build set of jobIds that have ever been in_progress or completed
+  const startedJobIds = new Set(
+    (updates || [])
+      .filter(u => u.status === "in_progress" || u.status === "completed")
+      .map(u => u.jobId)
+  );
 
-      const dayStr = j.date;
-      // Check dailyCrewOverrides for this day; fall back to default crewMemberIds
-      const overrides = j.dailyCrewOverrides || {};
-      const crewForDay = overrides[dayStr] ? overrides[dayStr] : (j.crewMemberIds || []);
-      if (crewForDay.includes(memberId)) {
-        if (!map[dayStr]) map[dayStr] = [];
-        if (!map[dayStr].find(x => x.id === j.id)) map[dayStr].push(j);
-      }
-    });
+  (jobs || []).forEach(j => {
+    // Rule: job must have in_progress or completed status (via updates)
+    if (!startedJobIds.has(j.id)) return;
+
+    // Must have a scheduled date
+    if (!j.date) return;
+
+    // Must fall within the selected week
+    const jobDateObj = new Date(j.date + "T12:00:00");
+    if (jobDateObj < mon || jobDateObj > sat) return;
+
+    // Crew member must be in crewMemberIds (source of truth)
+    const crewIds = Array.isArray(j.crewMemberIds) ? j.crewMemberIds.filter(Boolean) : [];
+    if (!crewIds.includes(memberId)) return;
+
+    const dayStr = j.date;
+    if (!map[dayStr]) map[dayStr] = [];
+    if (!map[dayStr].find(x => x.id === j.id)) map[dayStr].push(j);
+  });
+
   return map;
 }
 
