@@ -597,15 +597,13 @@ function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
         .filter(u => u.jobId === j.id)
         .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
 
-      // Job must have at least one in_progress update to appear on timesheet
+      // Use first in_progress update timestamp as start; fall back to job's scheduled date
       const firstStarted = jobUpds.find(u => ["in_progress","on_site","started"].includes(u.status));
-      if (!firstStarted) return;
-
-      const startDate = tsToCST(firstStarted.timestamp);
+      const startDate = firstStarted ? tsToCST(firstStarted.timestamp) : (j.date || todayStr);
 
       // End date: when completed, or today if still open
       const completedUpd = [...jobUpds].reverse().find(u => u.status === "completed");
-      const endDate = completedUpd ? tsToCST(completedUpd.timestamp) : todayStr;
+      const endDate = completedUpd ? tsToCST(completedUpd.timestamp) : (firstStarted ? todayStr : startDate);
 
       // Show job on every day within the week range between start and end
       const cur = new Date(Math.max(new Date(startDate + "T12:00:00"), mon));
@@ -1830,13 +1828,12 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
         setDayNotes(snap.data().dayNotes || {});
         setLoading(false);
       } else {
-        // Seed from dynamic job assignments so existing work isn't lost
+        // Seed from dynamic job assignments — include all assigned jobs, not just completed
         const seeded = {};
-        const completedJobIds = new Set((updates||[]).filter(u => u.status === "completed").map(u => u.jobId));
         const dayMap = buildDayJobMap(jobs || [], updates || [], member.id, member.name, mon, sat);
         DAYS.forEach(d => {
           const ds = localDateStr(d);
-          const seededJobs = (dayMap[ds] || []).filter(j => completedJobIds.has(j.id));
+          const seededJobs = dayMap[ds] || [];
           if (seededJobs.length > 0) seeded[ds] = seededJobs.map(j => j.id);
         });
         setJobEntries(seeded);
