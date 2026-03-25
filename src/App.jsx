@@ -601,9 +601,10 @@ function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
       const firstStarted = jobUpds.find(u => ["in_progress","on_site","started"].includes(u.status));
       const startDate = firstStarted ? tsToCST(firstStarted.timestamp) : (j.date || todayStr);
 
-      // End date: when completed, or today if still open
+      // End date: when completed, or the last update date if still open (prevents old open jobs from bleeding into future weeks)
       const completedUpd = [...jobUpds].reverse().find(u => u.status === "completed");
-      const endDate = completedUpd ? tsToCST(completedUpd.timestamp) : (firstStarted ? todayStr : startDate);
+      const lastUpd = jobUpds[jobUpds.length - 1]; // jobUpds is sorted asc
+      const endDate = completedUpd ? tsToCST(completedUpd.timestamp) : (firstStarted ? tsToCST(lastUpd.timestamp) : startDate);
 
       // Show job on every day within the week range between start and end
       const cur = new Date(Math.max(new Date(startDate + "T12:00:00"), mon));
