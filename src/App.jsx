@@ -580,10 +580,6 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 // ─── Crew Dashboard ───
 function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
   const map = {};
-  const localStr = (d) => d.toLocaleDateString("en-CA");
-  const monStr = localStr(mon);
-  const satStr = localStr(sat);
-  const todayStr = todayCST();
 
   (jobs || [])
     .filter(j => {
@@ -593,33 +589,18 @@ function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
       return inDefault || inAnyOverride;
     })
     .forEach(j => {
-      const jobUpds = (updates || [])
-        .filter(u => u.jobId === j.id)
-        .sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      // A job appears on its scheduled date only — no bleeding via update timestamps
+      if (!j.date) return;
+      const jobDateObj = new Date(j.date + "T12:00:00");
+      if (jobDateObj < mon || jobDateObj > sat) return;
 
-      // Use first in_progress update timestamp as start; fall back to job's scheduled date
-      const firstStarted = jobUpds.find(u => ["in_progress","on_site","started"].includes(u.status));
-      const startDate = firstStarted ? tsToCST(firstStarted.timestamp) : (j.date || todayStr);
-
-      // End date: when completed, or the last update date if still open (prevents old open jobs from bleeding into future weeks)
-      const completedUpd = [...jobUpds].reverse().find(u => u.status === "completed");
-      const lastUpd = jobUpds[jobUpds.length - 1]; // jobUpds is sorted asc
-      const endDate = completedUpd ? tsToCST(completedUpd.timestamp) : (firstStarted ? tsToCST(lastUpd.timestamp) : startDate);
-
-      // Show job on every day within the week range between start and end
-      const cur = new Date(Math.max(new Date(startDate + "T12:00:00"), mon));
-      const end = new Date(Math.min(new Date(endDate + "T12:00:00"), sat));
-
-      while (cur <= end) {
-        const dayStr = localStr(cur);
-        // Check dailyCrewOverrides for this day; fall back to default crewMemberIds
-        const overrides = j.dailyCrewOverrides || {};
-        const crewForDay = overrides[dayStr] ? overrides[dayStr] : (j.crewMemberIds || []);
-        if (crewForDay.includes(memberId)) {
-          if (!map[dayStr]) map[dayStr] = [];
-          if (!map[dayStr].find(x => x.id === j.id)) map[dayStr].push(j);
-        }
-        cur.setDate(cur.getDate() + 1);
+      const dayStr = j.date;
+      // Check dailyCrewOverrides for this day; fall back to default crewMemberIds
+      const overrides = j.dailyCrewOverrides || {};
+      const crewForDay = overrides[dayStr] ? overrides[dayStr] : (j.crewMemberIds || []);
+      if (crewForDay.includes(memberId)) {
+        if (!map[dayStr]) map[dayStr] = [];
+        if (!map[dayStr].find(x => x.id === j.id)) map[dayStr].push(j);
       }
     });
   return map;
