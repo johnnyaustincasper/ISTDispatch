@@ -2924,7 +2924,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
           <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} />
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign Technician" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <Select label="Assign Technician" value={jobForm.truckId} onChange={(e) => { const tid = e.target.value; const truckMembers = members.filter(m => m.truckId === tid).slice(0, 4).map(m => m.id); const slots = [truckMembers[0]||null, truckMembers[1]||null, truckMembers[2]||null, truckMembers[3]||null]; setJobForm({ ...jobForm, truckId: tid, crewMemberIds: tid ? slots : [null,null,null,null] }); }} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
           {/* Assign Crew Members — 4 slots */}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "10px" }}>Assign Crew Members</label>
@@ -3186,7 +3186,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign Truck" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <Select label="Assign Truck" value={editForm.truckId} onChange={(e) => { const tid = e.target.value; const truckMembers = members.filter(m => m.truckId === tid).slice(0, 4).map(m => m.id); const slots = [truckMembers[0]||null, truckMembers[1]||null, truckMembers[2]||null, truckMembers[3]||null]; setEditForm({ ...editForm, truckId: tid, crewMemberIds: tid ? slots : [null,null,null,null] }); }} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "10px" }}>Assign Crew Members</label>
             <div style={{ display: "flex", gap: "8px" }}>
