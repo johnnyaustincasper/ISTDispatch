@@ -816,7 +816,7 @@ function DailyProcedureCard() {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -1001,6 +1001,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             Tickets
             {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
           </button>
+          <button style={tabStyle(crewView === "tools")} onClick={() => setCrewView("tools")}>Tools</button>
         </div>
       </div>
 
@@ -1434,6 +1435,21 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         })()}
 
         {crewView === "timesheet" && <CrewTimesheetTab crewMemberId={crewMemberId} crewName={crewName} jobs={jobs} updates={updates} jobUpdates={jobUpdates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} />}
+        {crewView === "tools" && (
+          <ToolsView
+            isOffice={false}
+            tools={tools || []}
+            toolCheckouts={toolCheckouts || []}
+            onAddTool={() => {}}
+            onEditTool={() => {}}
+            onDeleteTool={() => {}}
+            onCheckout={onToolCheckout}
+            onReturn={() => {}}
+            adminName={crewName}
+            crewMembers={[]}
+          />
+        )}
+
         {crewView === "tickets" && (
           <>
             <SectionHeader title="My Tickets" right={<Button onClick={() => setShowTicketForm(true)}>+ Submit Ticket</Button>} />
@@ -1845,6 +1861,283 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               </div>
             </>
           )}
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ─── Tools View ───
+const TOOL_CATEGORIES = ["Hand Tools", "Power Tools", "Spray Equipment", "Safety", "Cleaning", "Measuring", "Other"];
+const TOOL_STATUSES = [
+  { value: "available", label: "Available", color: "#15803d", bg: "#dcfce7" },
+  { value: "checked_out", label: "Checked Out", color: "#b45309", bg: "#fef3c7" },
+  { value: "maintenance", label: "Maintenance", color: "#b91c1c", bg: "#fee2e2" },
+];
+
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers }) {
+  const [tab, setTab] = useState("inventory");
+  const [showAddTool, setShowAddTool] = useState(false);
+  const [editingTool, setEditingTool] = useState(null);
+  const [showCheckoutModal, setShowCheckoutModal] = useState(null); // tool obj
+  const [toolForm, setToolForm] = useState({ name: "", category: TOOL_CATEGORIES[0], quantity: 1, conditionNotes: "", status: "available" });
+  const [checkoutForm, setCheckoutForm] = useState({ employeeName: "", quantity: 1, expectedReturn: "" });
+  const [filterCat, setFilterCat] = useState("All");
+  const [historyTool, setHistoryTool] = useState(null);
+
+  const activeCheckouts = toolCheckouts.filter(c => !c.returnedAt);
+  const toolHistory = historyTool ? toolCheckouts.filter(c => c.toolId === historyTool.id).sort((a, b) => new Date(b.checkedOutAt) - new Date(a.checkedOutAt)) : [];
+
+  const getToolAvailableQty = (tool) => {
+    const checkedOut = activeCheckouts.filter(c => c.toolId === tool.id).reduce((sum, c) => sum + (c.quantity || 1), 0);
+    return Math.max(0, (tool.quantity || 1) - checkedOut);
+  };
+
+  const getToolStatus = (tool) => {
+    if (tool.status === "maintenance") return "maintenance";
+    const avail = getToolAvailableQty(tool);
+    if (avail === 0) return "checked_out";
+    return "available";
+  };
+
+  const filteredTools = tools.filter(t2 => filterCat === "All" || t2.category === filterCat);
+
+  const resetToolForm = () => setToolForm({ name: "", category: TOOL_CATEGORIES[0], quantity: 1, conditionNotes: "", status: "available" });
+
+  const handleSaveTool = async () => {
+    if (!toolForm.name.trim()) return;
+    if (editingTool) {
+      await onEditTool(editingTool.id, toolForm);
+      setEditingTool(null);
+    } else {
+      await onAddTool(toolForm);
+      setShowAddTool(false);
+    }
+    resetToolForm();
+  };
+
+  const handleDeleteTool = async (tool) => {
+    if (!window.confirm(`Delete "${tool.name}"? This cannot be undone.`)) return;
+    await onDeleteTool(tool.id);
+  };
+
+  const handleCheckout = async () => {
+    if (!checkoutForm.employeeName.trim()) return;
+    const avail = getToolAvailableQty(showCheckoutModal);
+    if ((checkoutForm.quantity || 1) > avail) { alert("Not enough available."); return; }
+    await onCheckout({
+      toolId: showCheckoutModal.id,
+      toolName: showCheckoutModal.name,
+      employeeName: checkoutForm.employeeName.trim(),
+      quantity: checkoutForm.quantity || 1,
+      expectedReturn: checkoutForm.expectedReturn || null,
+      checkedOutAt: new Date().toISOString(),
+      checkedOutBy: adminName || checkoutForm.employeeName,
+    });
+    setShowCheckoutModal(null);
+    setCheckoutForm({ employeeName: "", quantity: 1, expectedReturn: "" });
+  };
+
+  const handleReturn = async (checkout) => {
+    if (!window.confirm(`Mark "${checkout.toolName}" returned from ${checkout.employeeName}?`)) return;
+    await onReturn(checkout.id);
+  };
+
+  const tabStyle = (active) => ({
+    padding: "8px 20px", borderRadius: "6px", fontSize: "13px", fontWeight: 600,
+    background: active ? t.accent : "transparent",
+    color: active ? "#fff" : t.textMuted,
+    border: active ? "none" : "1px solid " + t.border,
+    cursor: "pointer", fontFamily: "inherit",
+  });
+
+  const cats = ["All", ...TOOL_CATEGORIES.filter(c => tools.some(tl => tl.category === c))];
+
+  return (
+    <div>
+      <SectionHeader title="Tools" right={
+        <div style={{ display: "flex", gap: 8 }}>
+          {isOffice && tab === "inventory" && <Button onClick={() => { resetToolForm(); setShowAddTool(true); }}>+ Add Tool</Button>}
+        </div>
+      } />
+
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <button style={tabStyle(tab === "inventory")} onClick={() => setTab("inventory")}>Inventory</button>
+        <button style={tabStyle(tab === "checkouts")} onClick={() => setTab("checkouts")}>
+          Checkouts {activeCheckouts.length > 0 && <span style={{ background: "#fef3c7", color: "#b45309", borderRadius: 10, padding: "0 6px", fontSize: 11, fontWeight: 700, marginLeft: 4 }}>{activeCheckouts.length}</span>}
+        </button>
+      </div>
+
+      {/* INVENTORY TAB */}
+      {tab === "inventory" && (
+        <>
+          {/* Category filter */}
+          {cats.length > 2 && (
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+              {cats.map(c => (
+                <button key={c} onClick={() => setFilterCat(c)} style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: filterCat === c ? 700 : 400, background: filterCat === c ? t.accent : t.bg, color: filterCat === c ? "#fff" : t.textSecondary, border: "1px solid " + (filterCat === c ? t.accent : t.border), cursor: "pointer", fontFamily: "inherit" }}>{c}</button>
+              ))}
+            </div>
+          )}
+
+          {filteredTools.length === 0
+            ? <EmptyState text="No tools yet." sub={isOffice ? "Tap '+ Add Tool' to add your first tool." : "No tools in inventory."} />
+            : filteredTools.sort((a, b) => a.name.localeCompare(b.name)).map(tool => {
+                const status = getToolStatus(tool);
+                const statusObj = TOOL_STATUSES.find(s => s.value === status);
+                const avail = getToolAvailableQty(tool);
+                const checkedOutQty = (tool.quantity || 1) - avail;
+                return (
+                  <Card key={tool.id}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <div style={{ fontWeight: 600, fontSize: 15, color: t.text }}>{tool.name}</div>
+                          <Badge color={statusObj?.color} bg={statusObj?.bg}>{statusObj?.label}</Badge>
+                        </div>
+                        <div style={{ fontSize: 12, color: t.textMuted }}>
+                          <span style={{ marginRight: 12 }}>{tool.category}</span>
+                          <span style={{ marginRight: 12 }}>Total: {tool.quantity || 1}</span>
+                          <span style={{ color: avail > 0 ? "#15803d" : "#b91c1c", fontWeight: 600 }}>Available: {avail}</span>
+                          {checkedOutQty > 0 && <span style={{ color: "#b45309", marginLeft: 8 }}>Out: {checkedOutQty}</span>}
+                        </div>
+                        {tool.conditionNotes && <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 4, fontStyle: "italic" }}>{tool.conditionNotes}</div>}
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                        <Button variant="secondary" onClick={() => setHistoryTool(tool)} style={{ fontSize: 12, padding: "6px 10px" }}>History</Button>
+                        {avail > 0 && status !== "maintenance" && (
+                          <Button onClick={() => { setShowCheckoutModal(tool); setCheckoutForm({ employeeName: "", quantity: 1, expectedReturn: "" }); }} style={{ fontSize: 12, padding: "6px 10px" }}>Check Out</Button>
+                        )}
+                        {isOffice && (
+                          <>
+                            <Button variant="secondary" onClick={() => { setEditingTool(tool); setToolForm({ name: tool.name, category: tool.category, quantity: tool.quantity || 1, conditionNotes: tool.conditionNotes || "", status: tool.status || "available" }); }} style={{ fontSize: 12, padding: "6px 10px" }}>Edit</Button>
+                            <Button variant="danger" onClick={() => handleDeleteTool(tool)} style={{ fontSize: 12, padding: "6px 10px" }}>Del</Button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </Card>
+                );
+              })
+          }
+        </>
+      )}
+
+      {/* CHECKOUTS TAB */}
+      {tab === "checkouts" && (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 12 }}>Active Checkouts</div>
+          {activeCheckouts.length === 0
+            ? <EmptyState text="No active checkouts." />
+            : activeCheckouts.sort((a, b) => new Date(b.checkedOutAt) - new Date(a.checkedOutAt)).map(co => {
+                const tool = tools.find(t2 => t2.id === co.toolId);
+                return (
+                  <Card key={co.id} style={{ borderLeft: "3px solid #b45309" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName}</div>
+                        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                          <span style={{ marginRight: 12 }}><strong>{co.employeeName}</strong></span>
+                          <span style={{ marginRight: 12 }}>Qty: {co.quantity || 1}</span>
+                          <span>Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                          {co.expectedReturn && <span style={{ marginLeft: 8, color: t.accent }}>Return by: {co.expectedReturn}</span>}
+                        </div>
+                        {tool?.category && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{tool.category}</div>}
+                      </div>
+                      {isOffice && (
+                        <Button variant="secondary" onClick={() => handleReturn(co)} style={{ fontSize: 12, padding: "6px 10px", color: "#15803d", borderColor: "#86efac" }}>Mark Returned</Button>
+                      )}
+                    </div>
+                  </Card>
+                );
+              })
+          }
+
+          <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginTop: 24, marginBottom: 12 }}>Return History</div>
+          {toolCheckouts.filter(c => c.returnedAt).length === 0
+            ? <EmptyState text="No completed checkouts yet." />
+            : toolCheckouts.filter(c => c.returnedAt).sort((a, b) => new Date(b.returnedAt) - new Date(a.returnedAt)).slice(0, 30).map(co => (
+                <Card key={co.id} style={{ opacity: 0.8 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{co.toolName}</div>
+                      <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                        <strong>{co.employeeName}</strong>
+                        {" · "}Qty: {co.quantity || 1}
+                        {" · "}Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        {" → "}Returned: {new Date(co.returnedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      </div>
+                    </div>
+                    <Badge color="#15803d" bg="#dcfce7">Returned</Badge>
+                  </div>
+                </Card>
+              ))
+          }
+        </>
+      )}
+
+      {/* Add/Edit Tool Modal */}
+      {(showAddTool || editingTool) && (
+        <Modal title={editingTool ? "Edit Tool" : "Add Tool"} onClose={() => { setShowAddTool(false); setEditingTool(null); resetToolForm(); }}>
+          <Input label="Tool Name" placeholder="e.g. Staple Hammer, Box Knife, Caulk Gun" value={toolForm.name} onChange={e => setToolForm({ ...toolForm, name: e.target.value })} />
+          <Select label="Category" value={toolForm.category} onChange={e => setToolForm({ ...toolForm, category: e.target.value })} options={TOOL_CATEGORIES.map(c => ({ value: c, label: c }))} />
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Total Quantity</label>
+            <input type="number" min="1" value={toolForm.quantity} onChange={e => setToolForm(f => ({ ...f, quantity: Math.max(1, parseInt(e.target.value) || 1) }))} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <TextArea label="Condition Notes (optional)" placeholder="e.g. Blade slightly dull, works fine" value={toolForm.conditionNotes} onChange={e => setToolForm({ ...toolForm, conditionNotes: e.target.value })} />
+          <Select label="Status" value={toolForm.status} onChange={e => setToolForm({ ...toolForm, status: e.target.value })} options={TOOL_STATUSES.map(s => ({ value: s.value, label: s.label }))} />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <Button variant="secondary" onClick={() => { setShowAddTool(false); setEditingTool(null); resetToolForm(); }} style={{ flex: 1 }}>Cancel</Button>
+            <Button onClick={handleSaveTool} disabled={!toolForm.name.trim()} style={{ flex: 1 }}>{editingTool ? "Save" : "Add Tool"}</Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* Checkout Modal */}
+      {showCheckoutModal && (
+        <Modal title={`Check Out — ${showCheckoutModal.name}`} onClose={() => setShowCheckoutModal(null)}>
+          <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 14 }}>
+            Available: <strong style={{ color: "#15803d" }}>{getToolAvailableQty(showCheckoutModal)}</strong> of {showCheckoutModal.quantity || 1}
+          </div>
+          <Input label="Employee Name" placeholder="Who is checking this out?" value={checkoutForm.employeeName} onChange={e => setCheckoutForm({ ...checkoutForm, employeeName: e.target.value })} />
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Quantity</label>
+            <input type="number" min="1" max={getToolAvailableQty(showCheckoutModal)} value={checkoutForm.quantity} onChange={e => setCheckoutForm(f => ({ ...f, quantity: Math.max(1, Math.min(getToolAvailableQty(showCheckoutModal), parseInt(e.target.value) || 1)) }))} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <Input label="Expected Return Date (optional)" type="date" value={checkoutForm.expectedReturn} onChange={e => setCheckoutForm({ ...checkoutForm, expectedReturn: e.target.value })} />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <Button variant="secondary" onClick={() => setShowCheckoutModal(null)} style={{ flex: 1 }}>Cancel</Button>
+            <Button onClick={handleCheckout} disabled={!checkoutForm.employeeName.trim()} style={{ flex: 1 }}>Check Out</Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* History Modal */}
+      {historyTool && (
+        <Modal title={`History — ${historyTool.name}`} onClose={() => setHistoryTool(null)}>
+          {toolHistory.length === 0
+            ? <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic" }}>No checkout history yet.</div>
+            : toolHistory.map(co => (
+                <div key={co.id} style={{ padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{co.employeeName}</div>
+                      <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                        Qty: {co.quantity || 1}
+                        {" · "}Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        {co.returnedAt && <> {" → "} Returned: {new Date(co.returnedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</>}
+                      </div>
+                    </div>
+                    {co.returnedAt
+                      ? <Badge color="#15803d" bg="#dcfce7">Returned</Badge>
+                      : <Badge color="#b45309" bg="#fef3c7">Out</Badge>
+                    }
+                  </div>
+                </div>
+              ))
+          }
         </Modal>
       )}
     </div>
@@ -2512,7 +2805,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
 }
 
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [showAddJob, setShowAddJob] = useState(false);
@@ -2696,12 +2989,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     roster: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg>,
     inventory: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"/></svg>,
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
+    tools: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>,
   };
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
     { key: "calendar", label: "Calendar" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
+    { key: "tools", label: "Tools" },
     { key: "inventory", label: "Inventory" },
     { key: "roster", label: "Roster" },
     { key: "log", label: "Log" },
@@ -3162,6 +3457,21 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
         {view === "roster" && (
           <RosterView trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} />
+        )}
+
+        {view === "tools" && (
+          <ToolsView
+            isOffice={true}
+            tools={tools}
+            toolCheckouts={toolCheckouts}
+            onAddTool={onAddTool}
+            onEditTool={onEditTool}
+            onDeleteTool={onDeleteTool}
+            onCheckout={onCheckout}
+            onReturn={onReturn}
+            adminName={adminName}
+            crewMembers={members}
+          />
         )}
 
         {view === "inventory" && (() => {
@@ -3890,6 +4200,8 @@ export default function App() {
   const [members, setMembers] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [truckInventory, setTruckInventory] = useState({});
+  const [tools, setTools] = useState([]);
+  const [toolCheckouts, setToolCheckouts] = useState([]);
 
   useEffect(() => {
     const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
@@ -3904,7 +4216,9 @@ export default function App() {
     const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubLoadLog = onSnapshot(collection(db, "loadLog"), (snap) => { setLoadLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubJobUpdates = onSnapshot(collection(db, "jobUpdates"), (snap) => { setJobUpdates(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); unsubJobUpdates(); };
+    const unsubTools = onSnapshot(collection(db, "tools"), (snap) => { setTools(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); };
   }, []);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
@@ -4098,6 +4412,12 @@ export default function App() {
       await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: new Date().toISOString() });
     }
   };
+  const handleAddTool = async (data) => { await addDoc(collection(db, "tools"), { ...data, createdAt: new Date().toISOString() }); };
+  const handleEditTool = async (id, data) => { await updateDoc(doc(db, "tools", id), data); };
+  const handleDeleteTool = async (id) => { await deleteDoc(doc(db, "tools", id)); };
+  const handleToolCheckout = async (data) => { await addDoc(collection(db, "toolCheckouts"), { ...data, returnedAt: null }); };
+  const handleToolReturn = async (checkoutId) => { await updateDoc(doc(db, "toolCheckouts", checkoutId), { returnedAt: new Date().toISOString() }); };
+
   const handleCrewLogin = (member, truck) => {
     setCrewSession({ memberId: member.id, crewName: member.name, truckId: truck?.id || null });
     setRole("crew");
@@ -4134,7 +4454,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
@@ -4165,6 +4485,6 @@ export default function App() {
     </AuthShell>
     </div>
   );
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
   return null;
 }
