@@ -1,4 +1,5 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
+import * as THREE from "three";
 import { db } from "./firebase.js";
 import {
   collection,
@@ -2277,6 +2278,466 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 
 
 // ─── Truck Detail Modal ───
+// ─── 3D Truck Viewer ───
+function TruckViewer3D({ issues, onPickLocation, onClickIssue }) {
+  const mountRef = useRef(null);
+  const sceneRef = useRef(null);
+  const rendererRef = useRef(null);
+  const cameraRef = useRef(null);
+  const frameRef = useRef(null);
+  const truckGroupRef = useRef(null);
+  const isDraggingRef = useRef(false);
+  const prevMouseRef = useRef({ x: 0, y: 0 });
+  const autoRotateRef = useRef(true);
+  const sphericalRef = useRef({ theta: 0.4, phi: Math.PI / 3.5 });
+  const pinMeshesRef = useRef([]);
+
+  useEffect(() => {
+    const el = mountRef.current;
+    if (!el) return;
+    const w = el.clientWidth || 340;
+    const h = 220;
+
+    // Scene
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0a0a1a);
+    sceneRef.current = scene;
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(w, h);
+    renderer.setPixelRatio(window.devicePixelRatio);
+    el.appendChild(renderer.domElement);
+    rendererRef.current = renderer;
+
+    // Camera
+    const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+    camera.position.set(6, 3, 6);
+    camera.lookAt(0, 0.5, 0);
+    cameraRef.current = camera;
+
+    // Lights
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    dirLight.position.set(5, 8, 5);
+    scene.add(dirLight);
+    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
+    fillLight.position.set(-5, 2, -5);
+    scene.add(fillLight);
+
+    // ─── Build Box Truck ───
+    const truckGroup = new THREE.Group();
+    truckGroupRef.current = truckGroup;
+
+    const whiteMat = new THREE.MeshLambertMaterial({ color: 0xf0f0f0 });
+    const darkGreyMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+    const greyMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
+    const yellowMat = new THREE.MeshLambertMaterial({ color: 0xffdd44 });
+    const redMat = new THREE.MeshLambertMaterial({ color: 0xff2222 });
+    const glassMat = new THREE.MeshLambertMaterial({ color: 0x88aacc, transparent: true, opacity: 0.6 });
+
+    // Chassis bar
+    const chassis = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.15, 1.2), greyMat);
+    chassis.position.set(0, 0.07, 0);
+    truckGroup.add(chassis);
+
+    // Cargo box (rear, large)
+    const cargoBox = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.8, 1.6), whiteMat);
+    cargoBox.position.set(-0.7, 1.1, 0);
+    cargoBox.name = "cargo";
+    truckGroup.add(cargoBox);
+
+    // Cab (front, shorter)
+    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.3, 1.5), whiteMat);
+    cab.position.set(1.85, 0.85, 0);
+    cab.name = "cab";
+    truckGroup.add(cab);
+
+    // Windshield
+    const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.7, 1.2), glassMat);
+    windshield.position.set(2.57, 1.0, 0);
+    truckGroup.add(windshield);
+
+    // Cab roof
+    const cabRoof = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 1.4), greyMat);
+    cabRoof.position.set(1.85, 1.52, 0);
+    truckGroup.add(cabRoof);
+
+    // Headlights
+    [-0.45, 0.45].forEach(z => {
+      const hl = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), yellowMat);
+      hl.position.set(2.6, 0.75, z);
+      truckGroup.add(hl);
+    });
+
+    // Tail lights
+    [-0.55, 0.55].forEach(z => {
+      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.12), redMat);
+      tl.position.set(-2.3, 0.9, z);
+      truckGroup.add(tl);
+    });
+
+    // Wheels (4 cylinders) — front and rear
+    const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
+    const wheelPositions = [
+      [1.8, 0.35, 0.75],  // front right
+      [1.8, 0.35, -0.75], // front left
+      [-1.2, 0.35, 0.75], // rear right
+      [-1.2, 0.35, -0.75],// rear left
+    ];
+    wheelPositions.forEach(([x, y, z]) => {
+      const wheel = new THREE.Mesh(wheelGeo, darkGreyMat);
+      wheel.rotation.x = Math.PI / 2;
+      wheel.position.set(x, y, z);
+      truckGroup.add(wheel);
+      // Hubcap
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.27, 8), greyMat);
+      hub.rotation.x = Math.PI / 2;
+      hub.position.set(x, y, z);
+      truckGroup.add(hub);
+    });
+
+    scene.add(truckGroup);
+
+    // ─── Animation Loop ───
+    const radius = 9;
+    const animate = () => {
+      frameRef.current = requestAnimationFrame(animate);
+      if (autoRotateRef.current && !isDraggingRef.current) {
+        sphericalRef.current.theta += 0.005;
+      }
+      const { theta, phi } = sphericalRef.current;
+      camera.position.x = radius * Math.sin(phi) * Math.cos(theta);
+      camera.position.y = radius * Math.cos(phi);
+      camera.position.z = radius * Math.sin(phi) * Math.sin(theta);
+      camera.lookAt(0, 0.5, 0);
+      renderer.render(scene, camera);
+    };
+    animate();
+
+    // ─── Mouse Events ───
+    const onMouseDown = (e) => {
+      isDraggingRef.current = false;
+      prevMouseRef.current = { x: e.clientX, y: e.clientY };
+      autoRotateRef.current = false;
+      el.addEventListener("mousemove", onMouseMove);
+      el.addEventListener("mouseup", onMouseUp);
+    };
+    const onMouseMove = (e) => {
+      const dx = e.clientX - prevMouseRef.current.x;
+      const dy = e.clientY - prevMouseRef.current.y;
+      if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isDraggingRef.current = true;
+      sphericalRef.current.theta -= dx * 0.01;
+      sphericalRef.current.phi = Math.max(0.2, Math.min(Math.PI / 2, sphericalRef.current.phi + dy * 0.01));
+      prevMouseRef.current = { x: e.clientX, y: e.clientY };
+    };
+    const onMouseUp = (e) => {
+      el.removeEventListener("mousemove", onMouseMove);
+      el.removeEventListener("mouseup", onMouseUp);
+      if (!isDraggingRef.current) {
+        // Click on truck
+        const rect = el.getBoundingClientRect();
+        const mx = ((e.clientX - rect.left) / w) * 2 - 1;
+        const my = -((e.clientY - rect.top) / h) * 2 + 1;
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera({ x: mx, y: my }, camera);
+        // Check issue pins first
+        const pinHits = raycaster.intersectObjects(pinMeshesRef.current);
+        if (pinHits.length > 0) {
+          const idx = pinMeshesRef.current.indexOf(pinHits[0].object);
+          if (idx >= 0 && onClickIssue) onClickIssue(idx);
+          return;
+        }
+        // Check truck parts
+        const truckMeshes = truckGroup.children.filter(c => c.isMesh && (c.name === "cargo" || c.name === "cab" || !c.name));
+        const hits = raycaster.intersectObjects(truckMeshes);
+        if (hits.length > 0 && onPickLocation) {
+          onPickLocation(hits[0].point, hits[0].object);
+        }
+      }
+      setTimeout(() => { autoRotateRef.current = true; }, 3000);
+    };
+
+    // Touch events
+    let touchStart = null;
+    const onTouchStart = (e) => {
+      touchStart = { x: e.touches[0].clientX, y: e.touches[0].clientY, theta: sphericalRef.current.theta, phi: sphericalRef.current.phi };
+      autoRotateRef.current = false;
+    };
+    const onTouchMove = (e) => {
+      if (!touchStart) return;
+      const dx = e.touches[0].clientX - touchStart.x;
+      const dy = e.touches[0].clientY - touchStart.y;
+      sphericalRef.current.theta = touchStart.theta - dx * 0.01;
+      sphericalRef.current.phi = Math.max(0.2, Math.min(Math.PI / 2, touchStart.phi + dy * 0.01));
+    };
+    const onTouchEnd = () => { setTimeout(() => { autoRotateRef.current = true; }, 3000); };
+
+    el.addEventListener("mousedown", onMouseDown);
+    el.addEventListener("touchstart", onTouchStart, { passive: true });
+    el.addEventListener("touchmove", onTouchMove, { passive: true });
+    el.addEventListener("touchend", onTouchEnd);
+
+    return () => {
+      cancelAnimationFrame(frameRef.current);
+      el.removeEventListener("mousedown", onMouseDown);
+      el.removeEventListener("touchstart", onTouchStart);
+      el.removeEventListener("touchmove", onTouchMove);
+      el.removeEventListener("touchend", onTouchEnd);
+      if (el.contains(renderer.domElement)) el.removeChild(renderer.domElement);
+      renderer.dispose();
+    };
+  }, []);
+
+  // Update pin meshes when issues change
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    // Remove old pins
+    pinMeshesRef.current.forEach(m => scene.remove(m));
+    pinMeshesRef.current = [];
+    // Add new pins
+    (issues || []).forEach((issue) => {
+      if (!issue.position3d) return;
+      const color = issue.status === "resolved" ? 0x00ff88 : 0xff4466;
+      const pin = new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 10), new THREE.MeshLambertMaterial({ color }));
+      pin.position.set(issue.position3d.x, issue.position3d.y + 0.15, issue.position3d.z);
+      scene.add(pin);
+      pinMeshesRef.current.push(pin);
+    });
+  }, [issues]);
+
+  return (
+    <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", background: "#0a0a1a" }}>
+      <div ref={mountRef} style={{ width: "100%", height: 220, cursor: "grab" }} />
+      <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
+        Drag to rotate · Click to pin issue
+      </div>
+    </div>
+  );
+}
+
+// ─── Vehicle / Issues Tab ───
+function VehicleTab({ truck }) {
+  const [issues, setIssues] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [pendingPos, setPendingPos] = useState(null); // { x, y, z } from 3D click
+  const [clickedIssueIdx, setClickedIssueIdx] = useState(null);
+  const [form, setForm] = useState({ description: "", severity: "medium", location: "cab", photo: null });
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!truck?.id) return;
+    const q = query(collection(db, "truckIssues"), where("truckId", "==", truck.id));
+    const unsub = onSnapshot(q, snap => {
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => {
+        const ta = a.reportedAt?.toDate?.() || new Date(a.reportedAt || 0);
+        const tb = b.reportedAt?.toDate?.() || new Date(b.reportedAt || 0);
+        return tb - ta;
+      });
+      setIssues(data);
+      setLoading(false);
+    });
+    return unsub;
+  }, [truck?.id]);
+
+  const handlePickLocation = useCallback((point, obj) => {
+    setPendingPos({ x: point.x, y: point.y, z: point.z });
+    setForm(f => ({ ...f, location: obj?.name === "cargo" ? "cargo box" : obj?.name === "cab" ? "cab" : "front" }));
+    setShowForm(true);
+  }, []);
+
+  const handleClickIssue = useCallback((idx) => {
+    setClickedIssueIdx(idx);
+  }, []);
+
+  const submitIssue = async () => {
+    if (!form.description.trim()) return;
+    setSaving(true);
+    await addDoc(collection(db, "truckIssues"), {
+      truckId: truck.id,
+      description: form.description.trim(),
+      severity: form.severity,
+      location: form.location,
+      position3d: pendingPos || null,
+      status: "open",
+      reportedAt: serverTimestamp(),
+    });
+    setForm({ description: "", severity: "medium", location: "cab", photo: null });
+    setPendingPos(null);
+    setShowForm(false);
+    setSaving(false);
+  };
+
+  const resolveIssue = async (issue) => {
+    await updateDoc(doc(db, "truckIssues", issue.id), {
+      status: "resolved",
+      resolvedAt: serverTimestamp(),
+    });
+  };
+
+  const deleteIssue = async (issue) => {
+    await deleteDoc(doc(db, "truckIssues", issue.id));
+  };
+
+  const fmtDate = (ts) => {
+    if (!ts) return "—";
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  };
+
+  const severityColor = { low: "#15803d", medium: "#b45309", high: "#dc2626", critical: "#7c3aed" };
+  const severityBg = { low: "#dcfce7", medium: "#fef3c7", high: "#fee2e2", critical: "#ede9fe" };
+
+  const openCount = issues.filter(i => i.status === "open").length;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      {/* 3D Viewer */}
+      <TruckViewer3D
+        issues={issues}
+        onPickLocation={handlePickLocation}
+        onClickIssue={handleClickIssue}
+      />
+
+      {/* Clicked issue detail popup */}
+      {clickedIssueIdx !== null && issues[clickedIssueIdx] && (
+        <div style={{ background: "#1a1a2e", color: "#fff", borderRadius: 10, padding: 12, fontSize: 13 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+            <div style={{ fontWeight: 700, color: issues[clickedIssueIdx].status === "resolved" ? "#00ff88" : "#ff4466" }}>
+              {issues[clickedIssueIdx].status === "resolved" ? "✅" : "🔴"} Issue #{issues.length - clickedIssueIdx}
+            </div>
+            <button onClick={() => setClickedIssueIdx(null)} style={{ background: "none", border: "none", color: "#888", cursor: "pointer", fontSize: 16 }}>✕</button>
+          </div>
+          <div style={{ marginTop: 6 }}>{issues[clickedIssueIdx].description}</div>
+          <div style={{ marginTop: 4, fontSize: 11, color: "#aaa" }}>📍 {issues[clickedIssueIdx].location} · {fmtDate(issues[clickedIssueIdx].reportedAt)}</div>
+        </div>
+      )}
+
+      {/* Stats bar */}
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1, background: openCount > 0 ? "#fee2e2" : "#dcfce7", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: openCount > 0 ? "#dc2626" : "#15803d" }}>{openCount}</div>
+          <div style={{ fontSize: 11, color: openCount > 0 ? "#dc2626" : "#15803d", fontWeight: 600 }}>Open Issues</div>
+        </div>
+        <div style={{ flex: 1, background: "#f0fdf4", borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: "#15803d" }}>{issues.filter(i => i.status === "resolved").length}</div>
+          <div style={{ fontSize: 11, color: "#15803d", fontWeight: 600 }}>Resolved</div>
+        </div>
+        <div style={{ flex: 1, background: t.surface, border: "1px solid " + t.border, borderRadius: 8, padding: "8px 12px", textAlign: "center" }}>
+          <div style={{ fontSize: 20, fontWeight: 800, color: t.text }}>{issues.length}</div>
+          <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Total</div>
+        </div>
+      </div>
+
+      {/* Report New Issue button */}
+      <button
+        onClick={() => { setPendingPos(null); setShowForm(v => !v); }}
+        style={{ padding: "10px", borderRadius: 8, background: showForm ? t.bg : "#ff4466", color: showForm ? t.textMuted : "#fff", border: showForm ? "1px solid " + t.border : "none", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}
+      >
+        {showForm ? "Cancel" : "+ Report New Issue"}
+      </button>
+
+      {/* New Issue Form */}
+      {showForm && (
+        <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+          {pendingPos && (
+            <div style={{ fontSize: 12, color: t.textMuted, background: t.bg, borderRadius: 6, padding: "6px 10px" }}>
+              📍 Position pinned from 3D view
+            </div>
+          )}
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Description *</div>
+            <textarea
+              value={form.description}
+              onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+              placeholder="Describe the issue..."
+              rows={2}
+              style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }}
+            />
+          </div>
+          <div style={{ display: "flex", gap: 10 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Severity</div>
+              <select
+                value={form.severity}
+                onChange={e => setForm(f => ({ ...f, severity: e.target.value }))}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit" }}
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>Location</div>
+              <select
+                value={form.location}
+                onChange={e => setForm(f => ({ ...f, location: e.target.value }))}
+                style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit" }}
+              >
+                <option value="front">Front</option>
+                <option value="rear">Rear</option>
+                <option value="left side">Left Side</option>
+                <option value="right side">Right Side</option>
+                <option value="top">Top</option>
+                <option value="cab">Cab</option>
+                <option value="cargo box">Cargo Box</option>
+              </select>
+            </div>
+          </div>
+          <button
+            onClick={submitIssue}
+            disabled={saving || !form.description.trim()}
+            style={{ padding: "10px", borderRadius: 8, background: "#ff4466", color: "#fff", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", opacity: saving || !form.description.trim() ? 0.5 : 1 }}
+          >
+            {saving ? "Saving…" : "📌 Save Issue"}
+          </button>
+        </div>
+      )}
+
+      {/* Issues List */}
+      {loading ? (
+        <div style={{ fontSize: 13, color: t.textMuted, textAlign: "center", padding: 16 }}>Loading issues…</div>
+      ) : issues.length === 0 ? (
+        <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", padding: 16 }}>No issues reported yet. Click on the truck above or use "Report New Issue".</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Issue Log</div>
+          {issues.map((issue, idx) => (
+            <div key={issue.id} style={{ background: t.surface, border: "1px solid " + (issue.status === "resolved" ? "#bbf7d0" : "#fecaca"), borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <span style={{ fontSize: 15 }}>{issue.status === "resolved" ? "✅" : "🔴"}</span>
+                    <span style={{ fontWeight: 700, fontSize: 13, color: t.text }}>#{issues.length - idx} — {issue.description}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: t.textMuted, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span>📍 {issue.location}</span>
+                    <span>📅 {fmtDate(issue.reportedAt)}</span>
+                    {issue.status === "resolved" && issue.resolvedAt && <span style={{ color: "#15803d" }}>✓ Resolved {fmtDate(issue.resolvedAt)}</span>}
+                  </div>
+                </div>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 4, background: severityBg[issue.severity] || t.accentBg, color: severityColor[issue.severity] || t.accent, textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                  {issue.severity || "medium"}
+                </span>
+              </div>
+              {issue.status === "open" && (
+                <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                  <button onClick={() => resolveIssue(issue)} style={{ padding: "5px 10px", borderRadius: 6, background: "#dcfce7", color: "#15803d", border: "1px solid #bbf7d0", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>✓ Mark Resolved</button>
+                  <button onClick={() => deleteIssue(issue)} style={{ padding: "5px 10px", borderRadius: 6, background: t.dangerBg, color: t.danger, border: "1px solid #fecaca", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, jobs, members, onClose, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onOpenCalendar }) {
   const [tab, setTab] = useState("info"); // info | loadout | history
   const [infoForm, setInfoForm] = useState({ description: truck.description || "", year: truck.year || "", make: truck.make || "", model: truck.model || "", notes: truck.notes || "" });
@@ -2382,34 +2843,14 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
     <Modal title={(truck.members || truck.name)} onClose={onClose}>
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, background: t.surface, borderRadius: 10, padding: 4, marginBottom: 16 }}>
-        {tabBtn("info", "🚛 Info")}
+        {tabBtn("info", "🚛 Vehicle")}
         {tabBtn("loadout", "📦 Loadout")}
         {tabBtn("history", "📋 History")}
       </div>
 
-      {/* INFO TAB */}
+      {/* VEHICLE TAB */}
       {tab === "info" && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Truck Name</div>
-          <div style={{ fontSize: 15, fontWeight: 700, color: t.text, marginBottom: 4 }}>{truck.members || truck.name}</div>
-          {[
-            { key: "description", label: "Description", placeholder: "e.g. 2019 Ford F-350, white, plate XYZ, foam rig", multiline: true },
-            { key: "year", label: "Year", placeholder: "e.g. 2019" },
-            { key: "make", label: "Make", placeholder: "e.g. Ford" },
-            { key: "model", label: "Model", placeholder: "e.g. F-350" },
-            { key: "notes", label: "Notes", placeholder: "Anything else...", multiline: true },
-          ].map(f => (
-            <div key={f.key}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{f.label}</div>
-              {f.multiline
-                ? <textarea value={infoForm[f.key]} onChange={e => setInfoForm(v => ({ ...v, [f.key]: e.target.value }))} placeholder={f.placeholder} rows={2} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
-                : <input value={infoForm[f.key]} onChange={e => setInfoForm(v => ({ ...v, [f.key]: e.target.value }))} placeholder={f.placeholder} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
-              }
-            </div>
-          ))}
-          <button onClick={saveInfo} disabled={savingInfo} style={{ marginTop: 4, padding: "10px", borderRadius: 8, background: t.accent, color: "#fff", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>{savingInfo ? "Saving…" : "Save Info"}</button>
-          <button onClick={onOpenCalendar} style={{ padding: "9px", borderRadius: 8, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📅 View Calendar History</button>
-        </div>
+        <VehicleTab truck={truck} />
       )}
 
       {/* LOADOUT TAB */}
