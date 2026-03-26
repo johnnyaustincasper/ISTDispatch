@@ -2289,14 +2289,14 @@ function TruckViewer3D({ issues, onPickLocation, onClickIssue }) {
   const isDraggingRef = useRef(false);
   const prevMouseRef = useRef({ x: 0, y: 0 });
   const autoRotateRef = useRef(true);
-  const sphericalRef = useRef({ theta: 0.4, phi: Math.PI / 3.5 });
+  const sphericalRef = useRef({ theta: 0.6, phi: Math.PI / 3.2 });
   const pinMeshesRef = useRef([]);
 
   useEffect(() => {
     const el = mountRef.current;
     if (!el) return;
     const w = el.clientWidth || 340;
-    const h = 220;
+    const h = 280;
 
     // Scene
     const scene = new THREE.Scene();
@@ -2304,113 +2304,264 @@ function TruckViewer3D({ issues, onPickLocation, onClickIssue }) {
     sceneRef.current = scene;
 
     // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const canvas = document.createElement("canvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
     renderer.setSize(w, h);
     renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.shadowMap.enabled = true;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.2;
     el.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
     // Camera
-    const camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
-    camera.position.set(6, 3, 6);
-    camera.lookAt(0, 0.5, 0);
+    const camera = new THREE.PerspectiveCamera(42, w / h, 0.1, 100);
     cameraRef.current = camera;
 
-    // Lights
-    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-    const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
-    dirLight.position.set(5, 8, 5);
-    scene.add(dirLight);
-    const fillLight = new THREE.DirectionalLight(0x8888ff, 0.3);
-    fillLight.position.set(-5, 2, -5);
+    // ─── Lights ───
+    scene.add(new THREE.AmbientLight(0xffffff, 0.45));
+    // Key light — upper front right
+    const keyLight = new THREE.DirectionalLight(0xfff5e0, 1.1);
+    keyLight.position.set(6, 9, 5);
+    keyLight.castShadow = true;
+    scene.add(keyLight);
+    // Fill light — upper left
+    const fillLight = new THREE.DirectionalLight(0xaabbff, 0.4);
+    fillLight.position.set(-6, 4, -3);
     scene.add(fillLight);
+    // Rim light — behind
+    const rimLight = new THREE.DirectionalLight(0xffffff, 0.25);
+    rimLight.position.set(-2, 3, -8);
+    scene.add(rimLight);
+
+    // ─── Materials ───
+    const whiteMat    = new THREE.MeshStandardMaterial({ color: 0xf2f2f2, roughness: 0.35, metalness: 0.05 });
+    const darkGreyMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
+    const blackMat    = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.9 });
+    const greyMat     = new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 0.5, metalness: 0.3 });
+    const silverMat   = new THREE.MeshStandardMaterial({ color: 0xc0c0c0, roughness: 0.2, metalness: 0.8 });
+    const chromeMat   = new THREE.MeshStandardMaterial({ color: 0x999999, roughness: 0.1, metalness: 0.95 });
+    const glassMat    = new THREE.MeshStandardMaterial({ color: 0x2a3a55, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.75 });
+    const orangeMat   = new THREE.MeshStandardMaterial({ color: 0xff8800, roughness: 0.5, emissive: 0x441100 });
+    const redMat      = new THREE.MeshStandardMaterial({ color: 0xdd0000, roughness: 0.4, emissive: 0x330000 });
+    const yellowMat   = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3, emissive: 0x555555 });
+    const chassisMat  = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.85 });
+    const tireMat     = new THREE.MeshStandardMaterial({ color: 0x0d0d0d, roughness: 0.95 });
+    const doorLineMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.9 });
 
     // ─── Build Box Truck ───
     const truckGroup = new THREE.Group();
     truckGroupRef.current = truckGroup;
 
-    const whiteMat = new THREE.MeshLambertMaterial({ color: 0xf0f0f0 });
-    const darkGreyMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
-    const greyMat = new THREE.MeshLambertMaterial({ color: 0x888888 });
-    const yellowMat = new THREE.MeshLambertMaterial({ color: 0xffdd44 });
-    const redMat = new THREE.MeshLambertMaterial({ color: 0xff2222 });
-    const glassMat = new THREE.MeshLambertMaterial({ color: 0x88aacc, transparent: true, opacity: 0.6 });
+    // Helper
+    const box = (w, h, d, mat, x, y, z, name) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+      m.position.set(x, y, z);
+      if (name) m.name = name;
+      m.castShadow = true;
+      m.receiveShadow = true;
+      truckGroup.add(m);
+      return m;
+    };
 
-    // Chassis bar
-    const chassis = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.15, 1.2), greyMat);
-    chassis.position.set(0, 0.07, 0);
-    truckGroup.add(chassis);
+    // ═══ CHASSIS / FRAME ═══
+    // Main chassis beam
+    box(6.0, 0.18, 0.9, chassisMat, -0.3, 0.09, 0, "chassis");
+    // Side rail left
+    box(5.8, 0.12, 0.12, chassisMat, -0.3, 0.15, 0.52);
+    // Side rail right
+    box(5.8, 0.12, 0.12, chassisMat, -0.3, 0.15, -0.52);
 
-    // Cargo box (rear, large)
-    const cargoBox = new THREE.Mesh(new THREE.BoxGeometry(3.2, 1.8, 1.6), whiteMat);
-    cargoBox.position.set(-0.7, 1.1, 0);
-    cargoBox.name = "cargo";
-    truckGroup.add(cargoBox);
+    // ═══ CARGO BOX ═══
+    // The large white cargo box — positioned to the rear (negative X)
+    // Dimensions: 3.6 long, 2.2 tall, 1.9 wide
+    const CARGO_X = -0.9;  // center X
+    const CARGO_Y = 1.35;  // center Y (sits on chassis at ~0.24)
+    const CARGO_W = 3.6;
+    const CARGO_H = 2.2;
+    const CARGO_D = 1.9;
 
-    // Cab (front, shorter)
-    const cab = new THREE.Mesh(new THREE.BoxGeometry(1.5, 1.3, 1.5), whiteMat);
-    cab.position.set(1.85, 0.85, 0);
-    cab.name = "cab";
-    truckGroup.add(cab);
+    // Main cargo body
+    box(CARGO_W, CARGO_H, CARGO_D, whiteMat, CARGO_X, CARGO_Y, 0, "cargo");
 
-    // Windshield
-    const windshield = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.7, 1.2), glassMat);
-    windshield.position.set(2.57, 1.0, 0);
-    truckGroup.add(windshield);
+    // Cargo box floor (slightly darker underside)
+    box(CARGO_W, 0.08, CARGO_D, greyMat, CARGO_X, CARGO_Y - CARGO_H / 2 + 0.04, 0);
 
-    // Cab roof
-    const cabRoof = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.15, 1.4), greyMat);
-    cabRoof.position.set(1.85, 1.52, 0);
-    truckGroup.add(cabRoof);
+    // ── Rear roll-up door lines (horizontal dark strips on rear face) ──
+    const rearFaceX = CARGO_X - CARGO_W / 2 - 0.01;
+    for (let i = 0; i < 9; i++) {
+      const lineY = (CARGO_Y - CARGO_H / 2 + 0.18) + i * 0.22;
+      box(0.03, 0.05, CARGO_D * 0.92, doorLineMat, rearFaceX, lineY, 0);
+    }
+    // Door handle bar
+    box(0.03, 0.08, 0.5, darkGreyMat, rearFaceX, CARGO_Y - CARGO_H / 2 + 0.32, 0);
 
-    // Headlights
-    [-0.45, 0.45].forEach(z => {
-      const hl = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 8), yellowMat);
-      hl.position.set(2.6, 0.75, z);
-      truckGroup.add(hl);
+    // ── Tail lights — red boxes at rear corners ──
+    [-CARGO_D / 2 + 0.08, CARGO_D / 2 - 0.08].forEach(z => {
+      box(0.07, 0.32, 0.14, redMat, rearFaceX, CARGO_Y - 0.3, z, "taillightOuter");
+      // Reverse/white inner
+      box(0.07, 0.12, 0.1, yellowMat, rearFaceX, CARGO_Y + 0.15, z);
     });
 
-    // Tail lights
-    [-0.55, 0.55].forEach(z => {
-      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.2, 0.12), redMat);
-      tl.position.set(-2.3, 0.9, z);
-      truckGroup.add(tl);
+    // ── Top running lights along front-top edge of cargo box ──
+    const cargoFrontX = CARGO_X + CARGO_W / 2 + 0.01;
+    const topY = CARGO_Y + CARGO_H / 2 + 0.03;
+    for (let i = 0; i < 6; i++) {
+      const oz = -0.65 + i * 0.26;
+      const rl = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.07, 8), orangeMat);
+      rl.rotation.z = Math.PI / 2;
+      rl.position.set(cargoFrontX, topY, oz);
+      rl.castShadow = true;
+      truckGroup.add(rl);
+    }
+
+    // ── IST logo placeholder — dark rect on driver side ──
+    box(0.03, 0.45, 1.2, new THREE.MeshStandardMaterial({ color: 0x1a3a6a, roughness: 0.8 }), CARGO_X, CARGO_Y + 0.3, CARGO_D / 2 + 0.01);
+
+    // ═══ CAB ═══
+    // Cab sits forward of cargo box
+    const CAB_X = 1.88;
+    const CAB_Y = 0.92;
+    const CAB_W = 1.55;
+    const CAB_H = 1.45;
+    const CAB_D = 1.75;
+
+    // Main cab body
+    box(CAB_W, CAB_H, CAB_D, whiteMat, CAB_X, CAB_Y, 0, "cab");
+
+    // ── Cab roof / visor (slightly wider at front) ──
+    box(CAB_W + 0.1, 0.1, CAB_D + 0.05, greyMat, CAB_X + 0.05, CAB_Y + CAB_H / 2 + 0.05, 0);
+    // Roof visor overhang at front edge
+    box(0.18, 0.06, CAB_D + 0.05, greyMat, CAB_X + CAB_W / 2 + 0.09 + 0.04, CAB_Y + CAB_H / 2 + 0.02, 0);
+
+    // ── Windshield (front face, inset slightly) ──
+    box(0.06, 0.72, 1.35, glassMat, CAB_X + CAB_W / 2 - 0.03, CAB_Y + 0.18, 0);
+
+    // ── Side windows — driver side (positive Z) ──
+    // Front side window
+    box(0.55, 0.42, 0.05, glassMat, CAB_X + 0.2, CAB_Y + 0.28, CAB_D / 2 + 0.01);
+    // Rear small quarter window
+    box(0.28, 0.32, 0.05, glassMat, CAB_X - 0.42, CAB_Y + 0.28, CAB_D / 2 + 0.01);
+
+    // ── Side windows — passenger side (negative Z) ──
+    box(0.55, 0.42, 0.05, glassMat, CAB_X + 0.2, CAB_Y + 0.28, -CAB_D / 2 - 0.01);
+    box(0.28, 0.32, 0.05, glassMat, CAB_X - 0.42, CAB_Y + 0.28, -CAB_D / 2 - 0.01);
+
+    // ── Front grille (lower center of cab front) ──
+    const frontX = CAB_X + CAB_W / 2;
+    box(0.06, 0.28, 0.8, darkGreyMat, frontX, CAB_Y - 0.28, 0);
+    // Chrome grille bars (horizontal)
+    for (let i = 0; i < 4; i++) {
+      box(0.07, 0.03, 0.78, chromeMat, frontX, CAB_Y - 0.18 + i * -0.08, 0);
+    }
+    // Chrome surround ring
+    box(0.06, 0.32, 0.86, chromeMat, frontX, CAB_Y - 0.27, 0);
+    box(0.06, 0.28, 0.8, darkGreyMat, frontX + 0.01, CAB_Y - 0.27, 0);
+
+    // ── Front bumper (black bar across bottom) ──
+    box(0.14, 0.22, CAB_D + 0.1, blackMat, frontX + 0.04, CAB_Y - CAB_H / 2 + 0.1, 0);
+    // Bumper step plate
+    box(0.12, 0.05, 0.55, greyMat, frontX + 0.04, CAB_Y - CAB_H / 2 + 0.22, 0);
+
+    // ── Headlights — rectangular, either side of grille ──
+    [-0.52, 0.52].forEach(z => {
+      box(0.07, 0.18, 0.26, yellowMat, frontX, CAB_Y - 0.14, z);
+      // Chrome surround
+      box(0.06, 0.22, 0.32, chromeMat, frontX, CAB_Y - 0.13, z);
+      box(0.07, 0.18, 0.26, yellowMat, frontX + 0.005, CAB_Y - 0.14, z);
     });
 
-    // Wheels (4 cylinders) — front and rear
-    const wheelGeo = new THREE.CylinderGeometry(0.35, 0.35, 0.25, 16);
+    // ── Turn signals — orange boxes at front corners ──
+    [-CAB_D / 2 + 0.06, CAB_D / 2 - 0.06].forEach(z => {
+      box(0.09, 0.14, 0.12, orangeMat, frontX - 0.02, CAB_Y - 0.22, z);
+    });
+
+    // ── Side mirrors — grey boxes sticking out from upper cab sides ──
+    // Driver side
+    const mirrorArm = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), greyMat);
+    mirrorArm.position.set(CAB_X + 0.35, CAB_Y + 0.38, CAB_D / 2 + 0.14);
+    truckGroup.add(mirrorArm);
+    const mirrorHead = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.22, 0.12), darkGreyMat);
+    mirrorHead.position.set(CAB_X + 0.35, CAB_Y + 0.28, CAB_D / 2 + 0.29);
+    truckGroup.add(mirrorHead);
+    // Passenger side
+    const mirrorArmR = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.28), greyMat);
+    mirrorArmR.position.set(CAB_X + 0.35, CAB_Y + 0.38, -CAB_D / 2 - 0.14);
+    truckGroup.add(mirrorArmR);
+    const mirrorHeadR = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.22, 0.12), darkGreyMat);
+    mirrorHeadR.position.set(CAB_X + 0.35, CAB_Y + 0.28, -CAB_D / 2 - 0.29);
+    truckGroup.add(mirrorHeadR);
+
+    // ── Exhaust stack — right rear of cab ──
+    const exhaustGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.1, 8);
+    const exhaust = new THREE.Mesh(exhaustGeo, darkGreyMat);
+    exhaust.position.set(CAB_X - CAB_W / 2 + 0.06, CAB_Y + CAB_H / 2 + 0.55, -CAB_D / 2 + 0.12);
+    truckGroup.add(exhaust);
+
+    // ═══ WHEELS ═══
+    const WHEEL_R = 0.38;
+    const WHEEL_W = 0.28;
+    const wheelGeo = new THREE.CylinderGeometry(WHEEL_R, WHEEL_R, WHEEL_W, 20);
+    const innerTireGeo = new THREE.CylinderGeometry(WHEEL_R * 0.88, WHEEL_R * 0.88, WHEEL_W + 0.01, 20);
+    const hubGeo = new THREE.CylinderGeometry(WHEEL_R * 0.42, WHEEL_R * 0.42, WHEEL_W + 0.02, 8);
+
     const wheelPositions = [
-      [1.8, 0.35, 0.75],  // front right
-      [1.8, 0.35, -0.75], // front left
-      [-1.2, 0.35, 0.75], // rear right
-      [-1.2, 0.35, -0.75],// rear left
+      { x: CAB_X - 0.05, z:  (CAB_D / 2 + 0.14), label: "frontR" },
+      { x: CAB_X - 0.05, z: -(CAB_D / 2 + 0.14), label: "frontL" },
+      { x: CARGO_X - 0.85, z:  (CARGO_D / 2 + 0.12), label: "rearR" },
+      { x: CARGO_X - 0.85, z: -(CARGO_D / 2 + 0.12), label: "rearL" },
     ];
-    wheelPositions.forEach(([x, y, z]) => {
-      const wheel = new THREE.Mesh(wheelGeo, darkGreyMat);
-      wheel.rotation.x = Math.PI / 2;
-      wheel.position.set(x, y, z);
-      truckGroup.add(wheel);
-      // Hubcap
-      const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.27, 8), greyMat);
+    const groundY = WHEEL_R;
+    wheelPositions.forEach(({ x, z }) => {
+      // Outer tire
+      const tire = new THREE.Mesh(wheelGeo, tireMat);
+      tire.rotation.x = Math.PI / 2;
+      tire.position.set(x, groundY, z);
+      tire.castShadow = true;
+      truckGroup.add(tire);
+      // Inner tread ring (slightly lighter)
+      const tread = new THREE.Mesh(innerTireGeo, darkGreyMat);
+      tread.rotation.x = Math.PI / 2;
+      tread.position.set(x, groundY, z);
+      truckGroup.add(tread);
+      // Silver hubcap disc
+      const hub = new THREE.Mesh(hubGeo, silverMat);
       hub.rotation.x = Math.PI / 2;
-      hub.position.set(x, y, z);
+      hub.position.set(x, groundY, z);
+      hub.castShadow = true;
       truckGroup.add(hub);
+      // Lug nut ring (cosmetic dark disc)
+      const lugGeo = new THREE.CylinderGeometry(WHEEL_R * 0.22, WHEEL_R * 0.22, WHEEL_W + 0.03, 6);
+      const lug = new THREE.Mesh(lugGeo, darkGreyMat);
+      lug.rotation.x = Math.PI / 2;
+      lug.position.set(x, groundY, z);
+      truckGroup.add(lug);
     });
 
+    // ═══ GROUND / SHADOW DISC ═══
+    const shadowGeo = new THREE.CylinderGeometry(3.0, 3.0, 0.01, 32);
+    const shadowMat = new THREE.MeshStandardMaterial({ color: 0x000000, roughness: 1, transparent: true, opacity: 0.35 });
+    const shadow = new THREE.Mesh(shadowGeo, shadowMat);
+    shadow.position.set(-0.3, 0.001, 0);
+    shadow.receiveShadow = true;
+    truckGroup.add(shadow);
+
+    // Center the truck group vertically so wheels touch ~y=0
+    truckGroup.position.y = 0;
     scene.add(truckGroup);
 
     // ─── Animation Loop ───
-    const radius = 9;
+    const radius = 10;
     const animate = () => {
       frameRef.current = requestAnimationFrame(animate);
       if (autoRotateRef.current && !isDraggingRef.current) {
-        sphericalRef.current.theta += 0.005;
+        sphericalRef.current.theta += 0.003;
       }
       const { theta, phi } = sphericalRef.current;
       camera.position.x = radius * Math.sin(phi) * Math.cos(theta);
       camera.position.y = radius * Math.cos(phi);
       camera.position.z = radius * Math.sin(phi) * Math.sin(theta);
-      camera.lookAt(0, 0.5, 0);
+      camera.lookAt(0, 1.0, 0);
       renderer.render(scene, camera);
     };
     animate();
@@ -2428,28 +2579,25 @@ function TruckViewer3D({ issues, onPickLocation, onClickIssue }) {
       const dy = e.clientY - prevMouseRef.current.y;
       if (Math.abs(dx) > 2 || Math.abs(dy) > 2) isDraggingRef.current = true;
       sphericalRef.current.theta -= dx * 0.01;
-      sphericalRef.current.phi = Math.max(0.2, Math.min(Math.PI / 2, sphericalRef.current.phi + dy * 0.01));
+      sphericalRef.current.phi = Math.max(0.15, Math.min(Math.PI / 2.1, sphericalRef.current.phi + dy * 0.01));
       prevMouseRef.current = { x: e.clientX, y: e.clientY };
     };
     const onMouseUp = (e) => {
       el.removeEventListener("mousemove", onMouseMove);
       el.removeEventListener("mouseup", onMouseUp);
       if (!isDraggingRef.current) {
-        // Click on truck
         const rect = el.getBoundingClientRect();
         const mx = ((e.clientX - rect.left) / w) * 2 - 1;
         const my = -((e.clientY - rect.top) / h) * 2 + 1;
         const raycaster = new THREE.Raycaster();
         raycaster.setFromCamera({ x: mx, y: my }, camera);
-        // Check issue pins first
         const pinHits = raycaster.intersectObjects(pinMeshesRef.current);
         if (pinHits.length > 0) {
           const idx = pinMeshesRef.current.indexOf(pinHits[0].object);
           if (idx >= 0 && onClickIssue) onClickIssue(idx);
           return;
         }
-        // Check truck parts
-        const truckMeshes = truckGroup.children.filter(c => c.isMesh && (c.name === "cargo" || c.name === "cab" || !c.name));
+        const truckMeshes = truckGroup.children.filter(c => c.isMesh && (c.name === "cargo" || c.name === "cab"));
         const hits = raycaster.intersectObjects(truckMeshes);
         if (hits.length > 0 && onPickLocation) {
           onPickLocation(hits[0].point, hits[0].object);
@@ -2469,7 +2617,7 @@ function TruckViewer3D({ issues, onPickLocation, onClickIssue }) {
       const dx = e.touches[0].clientX - touchStart.x;
       const dy = e.touches[0].clientY - touchStart.y;
       sphericalRef.current.theta = touchStart.theta - dx * 0.01;
-      sphericalRef.current.phi = Math.max(0.2, Math.min(Math.PI / 2, touchStart.phi + dy * 0.01));
+      sphericalRef.current.phi = Math.max(0.15, Math.min(Math.PI / 2.1, touchStart.phi + dy * 0.01));
     };
     const onTouchEnd = () => { setTimeout(() => { autoRotateRef.current = true; }, 3000); };
 
@@ -2509,7 +2657,7 @@ function TruckViewer3D({ issues, onPickLocation, onClickIssue }) {
 
   return (
     <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", background: "#0a0a1a" }}>
-      <div ref={mountRef} style={{ width: "100%", height: 220, cursor: "grab" }} />
+      <div ref={mountRef} style={{ width: "100%", height: 280, cursor: "grab" }} />
       <div style={{ position: "absolute", bottom: 8, right: 10, fontSize: 10, color: "rgba(255,255,255,0.4)" }}>
         Drag to rotate · Click to pin issue
       </div>
