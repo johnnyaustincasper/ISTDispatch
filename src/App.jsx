@@ -3837,6 +3837,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 </div>
               </div>
 
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12, padding: "0 14px 8px" }}>
               {categories.map(cat => {
                 const catItems = sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(i => !searchLower || i.name.toLowerCase().includes(searchLower)));
                 if (catItems.length === 0) return null;
@@ -3844,7 +3845,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 const outCount = catItems.filter(i => getQty(i.id) === 0).length;
                 const lowCount = catItems.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; }).length;
                 return (
-                  <details key={cat} open style={{ marginBottom: 10, borderRadius: 10, overflow: "hidden", border: "1px solid " + t.border }}>
+                  <details key={cat} open style={{ borderRadius: 10, overflow: "hidden", border: "1px solid " + t.border, alignSelf: "start" }}>
                     <summary style={{ background: "#1e293b", color: "#fff", padding: "9px 14px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, cursor: "pointer", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none" }}>
                       <span>{cat}</span>
                       <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -3901,6 +3902,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   </details>
                 );
               })}
+              </div>
               {invSearch && categories.every(cat => sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(i => i.name.toLowerCase().includes(searchLower))).length === 0) && (
                 <div style={{ textAlign: "center", padding: "32px 16px", color: t.textMuted, fontSize: 13 }}>No items match "{invSearch}"</div>
               )}
