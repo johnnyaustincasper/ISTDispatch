@@ -2109,7 +2109,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                   </button>
 
                   {!collapsedCats[cat] && (
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 8 }}>
                       {items.map(tool => {
                         const status = getToolStatus(tool);
                         const statusObj = TOOL_STATUSES.find(s => s.value === status);
@@ -2122,8 +2122,8 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                           <div key={tool.id} style={{
                             background: t.card,
                             border: "1px solid " + t.border,
-                            borderRadius: "10px",
-                            padding: "14px",
+                            borderRadius: "8px",
+                            padding: "10px",
                             boxShadow: t.shadow,
                             display: "flex",
                             flexDirection: "column",
@@ -2134,38 +2134,38 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                           onMouseLeave={e => { e.currentTarget.style.boxShadow = t.shadow; e.currentTarget.style.borderColor = t.border; }}
                           >
                             {/* Status badge row */}
-                            <div style={{ marginBottom: 8 }}>
+                            <div style={{ marginBottom: 4 }}>
                               <Badge color={statusObj?.color} bg={statusObj?.bg}>{statusObj?.label}</Badge>
                             </div>
 
                             {/* Tool name */}
-                            <div style={{ fontWeight: 700, fontSize: 14, color: t.text, lineHeight: 1.3, marginBottom: 10 }}>{tool.name}</div>
+                            <div style={{ fontWeight: 700, fontSize: 13, color: t.text, lineHeight: 1.2, marginBottom: 6 }}>{tool.name}</div>
 
-                            {/* Availability — big and prominent */}
-                            <div style={{ background: t.bg, borderRadius: 8, padding: "8px 12px", marginBottom: 10, textAlign: "center" }}>
-                              <div style={{ fontSize: 22, fontWeight: 800, color: availColor, lineHeight: 1 }}>{avail}<span style={{ fontSize: 14, fontWeight: 500, color: t.textMuted }}> / {total}</span></div>
-                              <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginTop: 2 }}>available</div>
+                            {/* Availability */}
+                            <div style={{ background: t.bg, borderRadius: 6, padding: "4px 8px", marginBottom: 6, textAlign: "center" }}>
+                              <div style={{ fontSize: 16, fontWeight: 700, color: availColor, lineHeight: 1 }}>{avail}<span style={{ fontSize: 12, fontWeight: 500, color: t.textMuted }}> / {total}</span></div>
+                              <div style={{ fontSize: 9, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginTop: 1 }}>available</div>
                             </div>
 
                             {/* Condition notes */}
                             {tool.conditionNotes && (
-                              <div style={{ fontSize: 11, color: t.textSecondary, fontStyle: "italic", marginBottom: 10, lineHeight: 1.4 }}>{tool.conditionNotes}</div>
+                              <div style={{ fontSize: 10, color: t.textSecondary, fontStyle: "italic", marginBottom: 6, lineHeight: 1.3 }}>{tool.conditionNotes}</div>
                             )}
 
                             {/* Action buttons */}
-                            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: "auto" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: "auto" }}>
                               {avail > 0 && status !== "maintenance" && (
                                 <button
                                   onClick={() => { setShowCheckoutModal(tool); setCheckoutForm({ employeeName: "", quantity: 1, expectedReturn: "" }); }}
-                                  style={{ width: "100%", padding: "8px 0", background: t.accent, border: "none", borderRadius: 6, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
+                                  style={{ width: "100%", padding: "5px 0", background: t.accent, border: "none", borderRadius: 5, color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
                                 >
                                   Check Out
                                 </button>
                               )}
-                              <div style={{ display: "flex", gap: 5 }}>
+                              <div style={{ display: "flex", gap: 4 }}>
                                 <button
                                   onClick={() => setHistoryTool(tool)}
-                                  style={{ flex: 1, padding: "6px 0", background: t.bg, border: "1px solid " + t.border, borderRadius: 6, color: t.textSecondary, fontWeight: 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                                  style={{ flex: 1, padding: "4px 0", background: t.bg, border: "1px solid " + t.border, borderRadius: 5, color: t.textSecondary, fontWeight: 500, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
                                 >
                                   History
                                 </button>
@@ -2173,13 +2173,13 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                                   <>
                                     <button
                                       onClick={() => { setEditingTool(tool); setToolForm({ name: tool.name, category: tool.category, quantity: tool.quantity || 1, conditionNotes: tool.conditionNotes || "", status: tool.status || "available" }); }}
-                                      style={{ flex: 1, padding: "6px 0", background: t.bg, border: "1px solid " + t.border, borderRadius: 6, color: t.textSecondary, fontWeight: 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                                      style={{ flex: 1, padding: "4px 0", background: t.bg, border: "1px solid " + t.border, borderRadius: 5, color: t.textSecondary, fontWeight: 500, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
                                     >
                                       Edit
                                     </button>
                                     <button
                                       onClick={() => handleDeleteTool(tool)}
-                                      style={{ flex: 1, padding: "6px 0", background: t.dangerBg, border: "1px solid #fecaca", borderRadius: 6, color: t.danger, fontWeight: 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                                      style={{ flex: 1, padding: "4px 0", background: t.dangerBg, border: "1px solid #fecaca", borderRadius: 5, color: t.danger, fontWeight: 500, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
                                     >
                                       Del
                                     </button>
