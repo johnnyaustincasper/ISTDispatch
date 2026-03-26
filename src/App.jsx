@@ -1910,6 +1910,8 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
   const [toolForm, setToolForm] = useState({ name: "", category: TOOL_CATEGORIES[0], quantity: 1, conditionNotes: "", status: "available" });
   const [checkoutForm, setCheckoutForm] = useState({ employeeName: "", quantity: 1, expectedReturn: "" });
   const [filterCat, setFilterCat] = useState("All");
+  const [toolSearch, setToolSearch] = useState("");
+  const [collapsedCats, setCollapsedCats] = useState({});
   const [historyTool, setHistoryTool] = useState(null);
   const [empDetailName, setEmpDetailName] = useState(null); // employee name for detail modal
   const [flagModalEmp, setFlagModalEmp] = useState(null); // { name, currentFlag, autoFlag }
@@ -2047,58 +2049,155 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       </div>
 
       {/* INVENTORY TAB */}
-      {tab === "inventory" && (
-        <>
-          {cats.length > 2 && (
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
+      {tab === "inventory" && (() => {
+        const searchLower = toolSearch.trim().toLowerCase();
+        const searchFiltered = tools.filter(tl =>
+          (filterCat === "All" || tl.category === filterCat) &&
+          (!searchLower || tl.name.toLowerCase().includes(searchLower))
+        );
+
+        // Group by category when "All" is selected, otherwise single group
+        const groups = filterCat === "All"
+          ? TOOL_CATEGORIES
+              .filter(c => searchFiltered.some(tl => tl.category === c))
+              .map(c => ({ cat: c, items: searchFiltered.filter(tl => tl.category === c).sort((a, b) => a.name.localeCompare(b.name)) }))
+          : [{ cat: filterCat, items: searchFiltered.sort((a, b) => a.name.localeCompare(b.name)) }];
+
+        return (
+          <>
+            {/* Search bar */}
+            <div style={{ position: "relative", marginBottom: 12 }}>
+              <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: t.textMuted, fontSize: 15, pointerEvents: "none" }}>🔍</span>
+              <input
+                type="text"
+                placeholder="Search tools..."
+                value={toolSearch}
+                onChange={e => setToolSearch(e.target.value)}
+                style={{ width: "100%", padding: "10px 12px 10px 36px", background: "#fff", border: "1px solid " + t.border, borderRadius: "8px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                onFocus={e => e.target.style.borderColor = t.accent}
+                onBlur={e => e.target.style.borderColor = t.border}
+              />
+              {toolSearch && (
+                <button onClick={() => setToolSearch("")} style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 16, lineHeight: 1, padding: 2 }}>✕</button>
+              )}
+            </div>
+
+            {/* Category filter pills */}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 18 }}>
               {cats.map(c => (
-                <button key={c} onClick={() => setFilterCat(c)} style={{ padding: "4px 12px", borderRadius: 20, fontSize: 12, fontWeight: filterCat === c ? 700 : 400, background: filterCat === c ? t.accent : t.bg, color: filterCat === c ? "#fff" : t.textSecondary, border: "1px solid " + (filterCat === c ? t.accent : t.border), cursor: "pointer", fontFamily: "inherit" }}>{c}</button>
+                <button key={c} onClick={() => setFilterCat(c)} style={{ padding: "5px 14px", borderRadius: 20, fontSize: 12, fontWeight: filterCat === c ? 700 : 500, background: filterCat === c ? t.accent : t.bg, color: filterCat === c ? "#fff" : t.textSecondary, border: "1px solid " + (filterCat === c ? t.accent : t.border), cursor: "pointer", fontFamily: "inherit", transition: "all 0.12s" }}>{c}</button>
               ))}
             </div>
-          )}
 
-          {filteredTools.length === 0
-            ? <EmptyState text="No tools yet." sub={isOffice ? "Tap '+ Add Tool' to add your first tool." : "No tools in inventory."} />
-            : filteredTools.sort((a, b) => a.name.localeCompare(b.name)).map(tool => {
-                const status = getToolStatus(tool);
-                const statusObj = TOOL_STATUSES.find(s => s.value === status);
-                const avail = getToolAvailableQty(tool);
-                const checkedOutQty = (tool.quantity || 1) - avail;
-                return (
-                  <Card key={tool.id}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <div style={{ fontWeight: 600, fontSize: 15, color: t.text }}>{tool.name}</div>
-                          <Badge color={statusObj?.color} bg={statusObj?.bg}>{statusObj?.label}</Badge>
-                        </div>
-                        <div style={{ fontSize: 12, color: t.textMuted }}>
-                          <span style={{ marginRight: 12 }}>{tool.category}</span>
-                          <span style={{ marginRight: 12 }}>Total: {tool.quantity || 1}</span>
-                          <span style={{ color: avail > 0 ? "#15803d" : "#b91c1c", fontWeight: 600 }}>Available: {avail}</span>
-                          {checkedOutQty > 0 && <span style={{ color: "#b45309", marginLeft: 8 }}>Out: {checkedOutQty}</span>}
-                        </div>
-                        {tool.conditionNotes && <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 4, fontStyle: "italic" }}>{tool.conditionNotes}</div>}
-                      </div>
-                      <div style={{ display: "flex", gap: 6, flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
-                        <Button variant="secondary" onClick={() => setHistoryTool(tool)} style={{ fontSize: 12, padding: "6px 10px" }}>History</Button>
-                        {avail > 0 && status !== "maintenance" && (
-                          <Button onClick={() => { setShowCheckoutModal(tool); setCheckoutForm({ employeeName: "", quantity: 1, expectedReturn: "" }); }} style={{ fontSize: 12, padding: "6px 10px" }}>Check Out</Button>
-                        )}
-                        {isOffice && (
-                          <>
-                            <Button variant="secondary" onClick={() => { setEditingTool(tool); setToolForm({ name: tool.name, category: tool.category, quantity: tool.quantity || 1, conditionNotes: tool.conditionNotes || "", status: tool.status || "available" }); }} style={{ fontSize: 12, padding: "6px 10px" }}>Edit</Button>
-                            <Button variant="danger" onClick={() => handleDeleteTool(tool)} style={{ fontSize: 12, padding: "6px 10px" }}>Del</Button>
-                          </>
-                        )}
-                      </div>
+            {tools.length === 0 ? (
+              <EmptyState text="No tools yet." sub={isOffice ? "Tap '+ Add Tool' to add your first tool." : "No tools in inventory."} />
+            ) : searchFiltered.length === 0 ? (
+              <EmptyState text="No tools match your search." sub="Try a different name or category." />
+            ) : (
+              groups.map(({ cat, items }) => (
+                <div key={cat} style={{ marginBottom: 24 }}>
+                  {/* Category header */}
+                  <button
+                    onClick={() => setCollapsedCats(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                    style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "none", padding: "6px 0 10px", cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: "1px" }}>{cat}</span>
+                      <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 500 }}>{items.length} tool{items.length !== 1 ? "s" : ""}</span>
                     </div>
-                  </Card>
-                );
-              })
-          }
-        </>
-      )}
+                    <span style={{ fontSize: 14, color: t.textMuted, transform: collapsedCats[cat] ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.2s", display: "inline-block" }}>▾</span>
+                  </button>
+
+                  {!collapsedCats[cat] && (
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(210px, 1fr))", gap: 12 }}>
+                      {items.map(tool => {
+                        const status = getToolStatus(tool);
+                        const statusObj = TOOL_STATUSES.find(s => s.value === status);
+                        const avail = getToolAvailableQty(tool);
+                        const total = tool.quantity || 1;
+                        const checkedOutQty = total - avail;
+                        const availColor = status === "maintenance" ? "#b91c1c" : avail > 0 ? "#15803d" : "#b91c1c";
+
+                        return (
+                          <div key={tool.id} style={{
+                            background: t.card,
+                            border: "1px solid " + t.border,
+                            borderRadius: "10px",
+                            padding: "14px",
+                            boxShadow: t.shadow,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 0,
+                            transition: "box-shadow 0.15s, border-color 0.15s",
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.boxShadow = t.shadowMd; e.currentTarget.style.borderColor = t.accent; }}
+                          onMouseLeave={e => { e.currentTarget.style.boxShadow = t.shadow; e.currentTarget.style.borderColor = t.border; }}
+                          >
+                            {/* Status badge row */}
+                            <div style={{ marginBottom: 8 }}>
+                              <Badge color={statusObj?.color} bg={statusObj?.bg}>{statusObj?.label}</Badge>
+                            </div>
+
+                            {/* Tool name */}
+                            <div style={{ fontWeight: 700, fontSize: 14, color: t.text, lineHeight: 1.3, marginBottom: 10 }}>{tool.name}</div>
+
+                            {/* Availability — big and prominent */}
+                            <div style={{ background: t.bg, borderRadius: 8, padding: "8px 12px", marginBottom: 10, textAlign: "center" }}>
+                              <div style={{ fontSize: 22, fontWeight: 800, color: availColor, lineHeight: 1 }}>{avail}<span style={{ fontSize: 14, fontWeight: 500, color: t.textMuted }}> / {total}</span></div>
+                              <div style={{ fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginTop: 2 }}>available</div>
+                            </div>
+
+                            {/* Condition notes */}
+                            {tool.conditionNotes && (
+                              <div style={{ fontSize: 11, color: t.textSecondary, fontStyle: "italic", marginBottom: 10, lineHeight: 1.4 }}>{tool.conditionNotes}</div>
+                            )}
+
+                            {/* Action buttons */}
+                            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: "auto" }}>
+                              {avail > 0 && status !== "maintenance" && (
+                                <button
+                                  onClick={() => { setShowCheckoutModal(tool); setCheckoutForm({ employeeName: "", quantity: 1, expectedReturn: "" }); }}
+                                  style={{ width: "100%", padding: "8px 0", background: t.accent, border: "none", borderRadius: 6, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}
+                                >
+                                  Check Out
+                                </button>
+                              )}
+                              <div style={{ display: "flex", gap: 5 }}>
+                                <button
+                                  onClick={() => setHistoryTool(tool)}
+                                  style={{ flex: 1, padding: "6px 0", background: t.bg, border: "1px solid " + t.border, borderRadius: 6, color: t.textSecondary, fontWeight: 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                                >
+                                  History
+                                </button>
+                                {isOffice && (
+                                  <>
+                                    <button
+                                      onClick={() => { setEditingTool(tool); setToolForm({ name: tool.name, category: tool.category, quantity: tool.quantity || 1, conditionNotes: tool.conditionNotes || "", status: tool.status || "available" }); }}
+                                      style={{ flex: 1, padding: "6px 0", background: t.bg, border: "1px solid " + t.border, borderRadius: 6, color: t.textSecondary, fontWeight: 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteTool(tool)}
+                                      style={{ flex: 1, padding: "6px 0", background: t.dangerBg, border: "1px solid #fecaca", borderRadius: 6, color: t.danger, fontWeight: 500, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                                    >
+                                      Del
+                                    </button>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </>
+        );
+      })()}
 
       {/* CHECKOUTS TAB */}
       {tab === "checkouts" && (
