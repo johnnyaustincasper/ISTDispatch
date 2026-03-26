@@ -1875,18 +1875,78 @@ const TOOL_STATUSES = [
   { value: "maintenance", label: "Maintenance", color: "#b91c1c", bg: "#fee2e2" },
 ];
 
-function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers }) {
+const RETURN_STATUSES = [
+  { value: "good", label: "✅ Returned Good", color: "#15803d", bg: "#dcfce7" },
+  { value: "broken", label: "🔧 Returned Broken", color: "#b45309", bg: "#fef3c7" },
+  { value: "lost", label: "❌ Lost / Written Off", color: "#b91c1c", bg: "#fee2e2" },
+];
+
+function getReturnStatusBadge(status) {
+  const rs = RETURN_STATUSES.find(r => r.value === status);
+  if (!rs) return null;
+  return <Badge color={rs.color} bg={rs.bg}>{rs.label}</Badge>;
+}
+
+function calcEmployeeFlag(stats) {
+  const { broken, lost } = stats;
+  if (lost > 2 || (broken + lost) > 4) return "flagged";
+  if (lost > 1 || (broken + lost) > 2) return "warning";
+  return null;
+}
+
+function EmployeeFlagBadge({ flag }) {
+  if (!flag) return null;
+  if (flag === "flagged") return <span title="FLAGGED — high loss/damage pattern" style={{ fontSize: 14, cursor: "default" }}>🚨</span>;
+  if (flag === "warning") return <span title="WARNING — some loss/damage history" style={{ fontSize: 14, cursor: "default" }}>⚠️</span>;
+  return null;
+}
+
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag }) {
   const [tab, setTab] = useState("inventory");
   const [showAddTool, setShowAddTool] = useState(false);
   const [editingTool, setEditingTool] = useState(null);
-  const [showCheckoutModal, setShowCheckoutModal] = useState(null); // tool obj
+  const [showCheckoutModal, setShowCheckoutModal] = useState(null);
+  const [returnModal, setReturnModal] = useState(null); // checkout record awaiting return status
   const [toolForm, setToolForm] = useState({ name: "", category: TOOL_CATEGORIES[0], quantity: 1, conditionNotes: "", status: "available" });
   const [checkoutForm, setCheckoutForm] = useState({ employeeName: "", quantity: 1, expectedReturn: "" });
   const [filterCat, setFilterCat] = useState("All");
   const [historyTool, setHistoryTool] = useState(null);
+  const [empDetailName, setEmpDetailName] = useState(null); // employee name for detail modal
+  const [flagModalEmp, setFlagModalEmp] = useState(null); // { name, currentFlag, autoFlag }
+  const [flagNote, setFlagNote] = useState("");
+  const [flagOverride, setFlagOverride] = useState(null); // "clear" | "warning" | "flagged"
 
   const activeCheckouts = toolCheckouts.filter(c => !c.returnedAt);
   const toolHistory = historyTool ? toolCheckouts.filter(c => c.toolId === historyTool.id).sort((a, b) => new Date(b.checkedOutAt) - new Date(a.checkedOutAt)) : [];
+
+  // Build per-employee stats from all checkouts
+  const employeeStats = (() => {
+    const stats = {};
+    toolCheckouts.forEach(co => {
+      const name = co.employeeName;
+      if (!name) return;
+      if (!stats[name]) stats[name] = { name, total: 0, good: 0, broken: 0, lost: 0, currentOut: 0 };
+      stats[name].total += 1;
+      if (!co.returnedAt) {
+        stats[name].currentOut += (co.quantity || 1);
+      } else {
+        if (co.returnStatus === "broken") stats[name].broken += 1;
+        else if (co.returnStatus === "lost") stats[name].lost += 1;
+        else stats[name].good += 1;
+      }
+    });
+    return Object.values(stats).sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
+  const getEmpFlag = (empName) => {
+    const flagDoc = (employeeFlags || []).find(f => f.employeeName === empName);
+    if (flagDoc?.override === "clear") return null;
+    if (flagDoc?.override === "warning") return "warning";
+    if (flagDoc?.override === "flagged") return "flagged";
+    const stats = employeeStats.find(s => s.name === empName);
+    if (!stats) return null;
+    return calcEmployeeFlag(stats);
+  };
 
   const getToolAvailableQty = (tool) => {
     const checkedOut = activeCheckouts.filter(c => c.toolId === tool.id).reduce((sum, c) => sum + (c.quantity || 1), 0);
@@ -1938,13 +1998,26 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
     setCheckoutForm({ employeeName: "", quantity: 1, expectedReturn: "" });
   };
 
-  const handleReturn = async (checkout) => {
-    if (!window.confirm(`Mark "${checkout.toolName}" returned from ${checkout.employeeName}?`)) return;
-    await onReturn(checkout.id);
+  const handleReturn = (checkout) => {
+    setReturnModal(checkout);
+  };
+
+  const handleConfirmReturn = async (returnStatus) => {
+    if (!returnModal) return;
+    await onReturn(returnModal.id, returnStatus);
+    setReturnModal(null);
+  };
+
+  const handleSaveFlag = async () => {
+    if (!flagModalEmp || !onSetFlag) return;
+    await onSetFlag(flagModalEmp.name, flagOverride, flagNote.trim());
+    setFlagModalEmp(null);
+    setFlagNote("");
+    setFlagOverride(null);
   };
 
   const tabStyle = (active) => ({
-    padding: "8px 20px", borderRadius: "6px", fontSize: "13px", fontWeight: 600,
+    padding: "8px 16px", borderRadius: "6px", fontSize: "12.5px", fontWeight: 600,
     background: active ? t.accent : "transparent",
     color: active ? "#fff" : t.textMuted,
     border: active ? "none" : "1px solid " + t.border,
@@ -1952,6 +2025,9 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
   });
 
   const cats = ["All", ...TOOL_CATEGORIES.filter(c => tools.some(tl => tl.category === c))];
+
+  // Employee detail checkouts
+  const empDetailHistory = empDetailName ? toolCheckouts.filter(c => c.employeeName === empDetailName).sort((a, b) => new Date(b.checkedOutAt) - new Date(a.checkedOutAt)) : [];
 
   return (
     <div>
@@ -1962,17 +2038,17 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       } />
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
         <button style={tabStyle(tab === "inventory")} onClick={() => setTab("inventory")}>Inventory</button>
         <button style={tabStyle(tab === "checkouts")} onClick={() => setTab("checkouts")}>
           Checkouts {activeCheckouts.length > 0 && <span style={{ background: "#fef3c7", color: "#b45309", borderRadius: 10, padding: "0 6px", fontSize: 11, fontWeight: 700, marginLeft: 4 }}>{activeCheckouts.length}</span>}
         </button>
+        {isOffice && <button style={tabStyle(tab === "report")} onClick={() => setTab("report")}>Employee Report</button>}
       </div>
 
       {/* INVENTORY TAB */}
       {tab === "inventory" && (
         <>
-          {/* Category filter */}
           {cats.length > 2 && (
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 14 }}>
               {cats.map(c => (
@@ -2032,14 +2108,16 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
             ? <EmptyState text="No active checkouts." />
             : activeCheckouts.sort((a, b) => new Date(b.checkedOutAt) - new Date(a.checkedOutAt)).map(co => {
                 const tool = tools.find(t2 => t2.id === co.toolId);
+                const empFlag = getEmpFlag(co.employeeName);
                 return (
                   <Card key={co.id} style={{ borderLeft: "3px solid #b45309" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName}</div>
                         <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                          <span style={{ marginRight: 12 }}><strong>{co.employeeName}</strong></span>
-                          <span style={{ marginRight: 12 }}>Qty: {co.quantity || 1}</span>
+                          <span style={{ marginRight: 6 }}><strong>{co.employeeName}</strong></span>
+                          {isOffice && <EmployeeFlagBadge flag={empFlag} />}
+                          <span style={{ marginLeft: 8, marginRight: 12 }}>Qty: {co.quantity || 1}</span>
                           <span>Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
                           {co.expectedReturn && <span style={{ marginLeft: 8, color: t.accent }}>Return by: {co.expectedReturn}</span>}
                         </div>
@@ -2058,7 +2136,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
           {toolCheckouts.filter(c => c.returnedAt).length === 0
             ? <EmptyState text="No completed checkouts yet." />
             : toolCheckouts.filter(c => c.returnedAt).sort((a, b) => new Date(b.returnedAt) - new Date(a.returnedAt)).slice(0, 30).map(co => (
-                <Card key={co.id} style={{ opacity: 0.8 }}>
+                <Card key={co.id} style={{ opacity: 0.85 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                     <div>
                       <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{co.toolName}</div>
@@ -2069,12 +2147,90 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                         {" → "}Returned: {new Date(co.returnedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
                       </div>
                     </div>
-                    <Badge color="#15803d" bg="#dcfce7">Returned</Badge>
+                    <div style={{ flexShrink: 0 }}>
+                      {co.returnStatus ? getReturnStatusBadge(co.returnStatus) : <Badge color="#15803d" bg="#dcfce7">Returned</Badge>}
+                    </div>
                   </div>
                 </Card>
               ))
           }
         </>
+      )}
+
+      {/* EMPLOYEE REPORT TAB */}
+      {tab === "report" && isOffice && (
+        <>
+          <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
+            Employee accountability — click a row to see full history.
+          </div>
+          {employeeStats.length === 0
+            ? <EmptyState text="No checkout history yet." />
+            : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid " + t.border }}>
+                      {["Employee", "Total", "Good", "Broken", "Lost", "Out Now", "Risk"].map(h => (
+                        <th key={h} style={{ padding: "8px 10px", textAlign: h === "Employee" ? "left" : "center", fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {employeeStats.map(emp => {
+                      const autoFlag = calcEmployeeFlag(emp);
+                      const flagDoc = (employeeFlags || []).find(f => f.employeeName === emp.name);
+                      const effectiveFlag = flagDoc?.override === "clear" ? null : flagDoc?.override || autoFlag;
+                      return (
+                        <tr key={emp.name} onClick={() => setEmpDetailName(emp.name)}
+                          style={{ borderBottom: "1px solid " + t.borderLight, cursor: "pointer", background: "transparent", transition: "background 0.1s" }}
+                          onMouseEnter={e => e.currentTarget.style.background = t.bg}
+                          onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                          <td style={{ padding: "10px 10px", fontWeight: 600, color: t.text }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                              <EmployeeFlagBadge flag={effectiveFlag} />
+                              {emp.name}
+                            </div>
+                          </td>
+                          <td style={{ padding: "10px", textAlign: "center", color: t.textSecondary }}>{emp.total}</td>
+                          <td style={{ padding: "10px", textAlign: "center", color: "#15803d", fontWeight: emp.good > 0 ? 600 : 400 }}>{emp.good}</td>
+                          <td style={{ padding: "10px", textAlign: "center", color: emp.broken > 0 ? "#b45309" : t.textMuted, fontWeight: emp.broken > 0 ? 700 : 400 }}>{emp.broken}</td>
+                          <td style={{ padding: "10px", textAlign: "center", color: emp.lost > 0 ? "#b91c1c" : t.textMuted, fontWeight: emp.lost > 0 ? 700 : 400 }}>{emp.lost}</td>
+                          <td style={{ padding: "10px", textAlign: "center", color: emp.currentOut > 0 ? t.accent : t.textMuted, fontWeight: emp.currentOut > 0 ? 700 : 400 }}>{emp.currentOut}</td>
+                          <td style={{ padding: "10px", textAlign: "center" }}>
+                            {effectiveFlag === "flagged" && <span style={{ fontSize: 16 }}>🚨</span>}
+                            {effectiveFlag === "warning" && <span style={{ fontSize: 16 }}>⚠️</span>}
+                            {!effectiveFlag && <span style={{ fontSize: 11, color: t.textMuted }}>—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )
+          }
+          <div style={{ marginTop: 16, fontSize: 12, color: t.textMuted, background: t.bg, padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.borderLight }}>
+            <strong>Risk scoring:</strong> ⚠️ WARNING — broken + lost &gt; 2, or lost alone &gt; 1 &nbsp;|&nbsp; 🚨 FLAGGED — broken + lost &gt; 4, or lost &gt; 2
+          </div>
+        </>
+      )}
+
+      {/* Return Status Modal */}
+      {returnModal && (
+        <Modal title="Mark Tool Returned" onClose={() => setReturnModal(null)}>
+          <div style={{ fontSize: 14, fontWeight: 600, color: t.text, marginBottom: 4 }}>{returnModal.toolName}</div>
+          <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 20 }}>Checked out by <strong>{returnModal.employeeName}</strong></div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 12 }}>What condition was it returned in?</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {RETURN_STATUSES.map(rs => (
+              <button key={rs.value} onClick={() => handleConfirmReturn(rs.value)}
+                style={{ padding: "14px 18px", borderRadius: 8, border: "2px solid " + rs.color, background: rs.bg, color: rs.color, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                {rs.label}
+              </button>
+            ))}
+          </div>
+          <Button variant="secondary" onClick={() => setReturnModal(null)} style={{ width: "100%", marginTop: 14 }}>Cancel</Button>
+        </Modal>
       )}
 
       {/* Add/Edit Tool Modal */}
@@ -2130,14 +2286,88 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                         {co.returnedAt && <> {" → "} Returned: {new Date(co.returnedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</>}
                       </div>
                     </div>
-                    {co.returnedAt
-                      ? <Badge color="#15803d" bg="#dcfce7">Returned</Badge>
-                      : <Badge color="#b45309" bg="#fef3c7">Out</Badge>
-                    }
+                    <div style={{ flexShrink: 0 }}>
+                      {co.returnedAt
+                        ? (co.returnStatus ? getReturnStatusBadge(co.returnStatus) : <Badge color="#15803d" bg="#dcfce7">Returned</Badge>)
+                        : <Badge color="#b45309" bg="#fef3c7">Out</Badge>
+                      }
+                    </div>
                   </div>
                 </div>
               ))
           }
+        </Modal>
+      )}
+
+      {/* Employee Detail Modal */}
+      {empDetailName && (
+        <Modal title={`History — ${empDetailName}`} onClose={() => setEmpDetailName(null)}>
+          {isOffice && (
+            <div style={{ marginBottom: 16 }}>
+              {(() => {
+                const stats = employeeStats.find(s => s.name === empDetailName);
+                const autoFlag = stats ? calcEmployeeFlag(stats) : null;
+                const flagDoc = (employeeFlags || []).find(f => f.employeeName === empDetailName);
+                const effectiveFlag = flagDoc?.override === "clear" ? null : flagDoc?.override || autoFlag;
+                return (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, background: t.bg, padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.borderLight }}>
+                    <div style={{ flex: 1 }}>
+                      {stats && <div style={{ fontSize: 12, color: t.textMuted }}>Total: {stats.total} · Good: <span style={{ color: "#15803d" }}>{stats.good}</span> · Broken: <span style={{ color: "#b45309" }}>{stats.broken}</span> · Lost: <span style={{ color: "#b91c1c" }}>{stats.lost}</span> · Out: {stats.currentOut}</div>}
+                      {flagDoc?.note && <div style={{ fontSize: 12, color: "#7c3aed", marginTop: 4 }}>Note: {flagDoc.note}</div>}
+                    </div>
+                    {effectiveFlag && <EmployeeFlagBadge flag={effectiveFlag} />}
+                    <Button variant="secondary" onClick={() => { setFlagModalEmp({ name: empDetailName, autoFlag }); setFlagNote(flagDoc?.note || ""); setFlagOverride(flagDoc?.override || null); }} style={{ fontSize: 11, padding: "5px 10px" }}>
+                      {flagDoc?.override ? "Edit Flag" : "Set Flag"}
+                    </Button>
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+          {empDetailHistory.length === 0
+            ? <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic" }}>No checkout history yet.</div>
+            : empDetailHistory.map(co => (
+                <div key={co.id} style={{ padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: t.text }}>{co.toolName}</div>
+                      <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                        Qty: {co.quantity || 1}
+                        {" · "}Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                        {co.returnedAt && <> · Returned: {new Date(co.returnedAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</>}
+                      </div>
+                    </div>
+                    <div style={{ flexShrink: 0 }}>
+                      {co.returnedAt
+                        ? (co.returnStatus ? getReturnStatusBadge(co.returnStatus) : <Badge color="#15803d" bg="#dcfce7">Returned</Badge>)
+                        : <Badge color="#b45309" bg="#fef3c7">Out</Badge>
+                      }
+                    </div>
+                  </div>
+                </div>
+              ))
+          }
+        </Modal>
+      )}
+
+      {/* Flag Override Modal */}
+      {flagModalEmp && (
+        <Modal title={`Flag Override — ${flagModalEmp.name}`} onClose={() => { setFlagModalEmp(null); setFlagNote(""); setFlagOverride(null); }}>
+          <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>Auto-calculated flag: <strong>{flagModalEmp.autoFlag ? (flagModalEmp.autoFlag === "flagged" ? "🚨 FLAGGED" : "⚠️ WARNING") : "None"}</strong></div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 10 }}>Manual override:</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+            {[{ value: null, label: "Use auto-calculated (no override)" }, { value: "clear", label: "✅ Clear flag (mark as OK)" }, { value: "warning", label: "⚠️ Set WARNING" }, { value: "flagged", label: "🚨 Set FLAGGED" }].map(opt => (
+              <button key={String(opt.value)} onClick={() => setFlagOverride(opt.value)}
+                style={{ padding: "10px 14px", borderRadius: 8, border: "2px solid " + (flagOverride === opt.value ? t.accent : t.border), background: flagOverride === opt.value ? t.accentBg : "transparent", color: flagOverride === opt.value ? t.accent : t.text, fontWeight: flagOverride === opt.value ? 700 : 400, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          <TextArea label="Note (optional)" placeholder="Reason for override..." value={flagNote} onChange={e => setFlagNote(e.target.value)} style={{ minHeight: 60 }} />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <Button variant="secondary" onClick={() => { setFlagModalEmp(null); setFlagNote(""); setFlagOverride(null); }} style={{ flex: 1 }}>Cancel</Button>
+            <Button onClick={handleSaveFlag} style={{ flex: 1 }}>Save</Button>
+          </div>
         </Modal>
       )}
     </div>
@@ -2805,7 +3035,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
 }
 
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [showAddJob, setShowAddJob] = useState(false);
@@ -3471,6 +3701,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             onReturn={onReturn}
             adminName={adminName}
             crewMembers={members}
+            employeeFlags={employeeFlags}
+            onSetFlag={onSetFlag}
           />
         )}
 
@@ -4202,6 +4434,7 @@ export default function App() {
   const [truckInventory, setTruckInventory] = useState({});
   const [tools, setTools] = useState([]);
   const [toolCheckouts, setToolCheckouts] = useState([]);
+  const [employeeFlags, setEmployeeFlags] = useState([]);
 
   useEffect(() => {
     const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
@@ -4218,7 +4451,8 @@ export default function App() {
     const unsubJobUpdates = onSnapshot(collection(db, "jobUpdates"), (snap) => { setJobUpdates(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubTools = onSnapshot(collection(db, "tools"), (snap) => { setTools(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); };
+    const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
   }, []);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
@@ -4416,7 +4650,11 @@ export default function App() {
   const handleEditTool = async (id, data) => { await updateDoc(doc(db, "tools", id), data); };
   const handleDeleteTool = async (id) => { await deleteDoc(doc(db, "tools", id)); };
   const handleToolCheckout = async (data) => { await addDoc(collection(db, "toolCheckouts"), { ...data, returnedAt: null }); };
-  const handleToolReturn = async (checkoutId) => { await updateDoc(doc(db, "toolCheckouts", checkoutId), { returnedAt: new Date().toISOString() }); };
+  const handleToolReturn = async (checkoutId, returnStatus) => { await updateDoc(doc(db, "toolCheckouts", checkoutId), { returnedAt: new Date().toISOString(), returnStatus: returnStatus || "good" }); };
+  const handleSetEmployeeFlag = async (employeeName, override, note) => {
+    const flagId = employeeName.toLowerCase().replace(/\s+/g, "_");
+    await setDoc(doc(db, "employeeFlags", flagId), { employeeName, override, note: note || "", updatedAt: new Date().toISOString() }, { merge: true });
+  };
 
   const handleCrewLogin = (member, truck) => {
     setCrewSession({ memberId: member.id, crewName: member.name, truckId: truck?.id || null });
@@ -4485,6 +4723,6 @@ export default function App() {
     </AuthShell>
     </div>
   );
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
   return null;
 }
