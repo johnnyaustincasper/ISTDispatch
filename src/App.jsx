@@ -2276,7 +2276,266 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 }
 
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onLogout }) {
+// ─── Truck Detail Modal ───
+function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, jobs, members, onClose, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onOpenCalendar }) {
+  const [tab, setTab] = useState("info"); // info | loadout | history
+  const [infoForm, setInfoForm] = useState({ description: truck.description || "", year: truck.year || "", make: truck.make || "", model: truck.model || "", notes: truck.notes || "" });
+  const [savingInfo, setSavingInfo] = useState(false);
+  const [loadoutEditMode, setLoadoutEditMode] = useState(false);
+  const [loadoutEdits, setLoadoutEdits] = useState({});
+  const [addItemName, setAddItemName] = useState("");
+  const [addItemQty, setAddItemQty] = useState("");
+  const [addItemUnit, setAddItemUnit] = useState("units");
+  const [showUnloadForm, setShowUnloadForm] = useState(false);
+  const [unloadQtys, setUnloadQtys] = useState({});
+  const [unloadNotes, setUnloadNotes] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  // Build a normalized loadout: merge INVENTORY_ITEMS with custom items stored in ti._custom
+  const inventoryLoadout = INVENTORY_ITEMS.filter(i => !i.isPieces && (ti[i.id] || 0) > 0).map(i => ({ key: i.id, name: i.name, qty: ti[i.id], unit: i.unit, isCustom: false }));
+  const customItems = (ti._custom || []);
+  const allLoadout = [...inventoryLoadout, ...customItems.map(c => ({ key: "custom_" + c.name, name: c.name, qty: c.qty, unit: c.unit, isCustom: true }))];
+
+  const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+  const fmtQty = (key, qty) => {
+    if (isFoamId(key)) return Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(key) ? 50 : 48)) + " gal";
+    const u = INVENTORY_ITEMS.find(i => i.id === key)?.unit || "";
+    return qty + (u ? " " + u : "");
+  };
+
+  // Build history timeline from loadLog + returnLog
+  const toCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  const truckLoads = (loadLog || []).filter(r => r.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  const truckReturns = (returnLog || []).filter(r => r.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+  // Build sorted timeline
+  const timeline = [
+    ...truckLoads.map(r => ({ type: "loaded", date: toCST(r.timestamp), timestamp: r.timestamp, items: r.items || {} })),
+    ...truckReturns.map(r => ({ type: "unloaded", date: toCST(r.timestamp), timestamp: r.timestamp, items: r.items || {} })),
+  ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  const saveInfo = async () => {
+    setSavingInfo(true);
+    await onUpdateTruck(truck.id, infoForm);
+    setSavingInfo(false);
+  };
+
+  const saveLoadoutEdits = async () => {
+    setSaving(true);
+    // Build new truckInventory state
+    const newState = { ...ti };
+    delete newState._custom;
+    // Apply edits to standard items
+    inventoryLoadout.forEach(item => {
+      const edited = parseFloat(loadoutEdits[item.key]);
+      if (!isNaN(edited)) {
+        if (edited <= 0) delete newState[item.key];
+        else newState[item.key] = edited;
+      }
+    });
+    // Custom items
+    const newCustom = customItems.map(c => {
+      const edited = parseFloat(loadoutEdits["custom_" + c.name]);
+      if (!isNaN(edited)) return { ...c, qty: edited };
+      return c;
+    }).filter(c => c.qty > 0);
+    if (newCustom.length > 0) newState._custom = newCustom;
+    await onAdminSetLoadout(truck.id, newState, "adjusted", "Admin manual adjustment");
+    setLoadoutEditMode(false);
+    setLoadoutEdits({});
+    setSaving(false);
+  };
+
+  const addCustomItem = async () => {
+    if (!addItemName || !addItemQty) return;
+    const qty = parseFloat(addItemQty);
+    if (isNaN(qty) || qty <= 0) return;
+    const newState = { ...ti };
+    const custom = [...(ti._custom || [])];
+    const existing = custom.findIndex(c => c.name.toLowerCase() === addItemName.toLowerCase());
+    if (existing >= 0) custom[existing] = { ...custom[existing], qty };
+    else custom.push({ name: addItemName, qty, unit: addItemUnit });
+    newState._custom = custom;
+    await onAdminSetLoadout(truck.id, newState, "adjusted", "Added item: " + addItemName);
+    setAddItemName(""); setAddItemQty(""); setAddItemUnit("units");
+  };
+
+  const doUnload = async () => {
+    if (saving) return;
+    setSaving(true);
+    const itemsToUnload = allLoadout.filter(item => {
+      const q = parseFloat(unloadQtys[item.key]);
+      return !isNaN(q) && q > 0;
+    });
+    if (itemsToUnload.length === 0) { setSaving(false); return; }
+    await onAdminUnload(truck.id, itemsToUnload, unloadQtys, unloadNotes);
+    setShowUnloadForm(false);
+    setUnloadQtys({});
+    setUnloadNotes("");
+    setSaving(false);
+  };
+
+  const tabBtn = (key, label) => (
+    <button onClick={() => setTab(key)} style={{ flex: 1, padding: "8px 4px", borderRadius: 8, border: "none", background: tab === key ? t.accent : "none", color: tab === key ? "#fff" : t.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{label}</button>
+  );
+
+  return (
+    <Modal title={(truck.members || truck.name)} onClose={onClose}>
+      {/* Tabs */}
+      <div style={{ display: "flex", gap: 4, background: t.surface, borderRadius: 10, padding: 4, marginBottom: 16 }}>
+        {tabBtn("info", "🚛 Info")}
+        {tabBtn("loadout", "📦 Loadout")}
+        {tabBtn("history", "📋 History")}
+      </div>
+
+      {/* INFO TAB */}
+      {tab === "info" && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Truck Name</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: t.text, marginBottom: 4 }}>{truck.members || truck.name}</div>
+          {[
+            { key: "description", label: "Description", placeholder: "e.g. 2019 Ford F-350, white, plate XYZ, foam rig", multiline: true },
+            { key: "year", label: "Year", placeholder: "e.g. 2019" },
+            { key: "make", label: "Make", placeholder: "e.g. Ford" },
+            { key: "model", label: "Model", placeholder: "e.g. F-350" },
+            { key: "notes", label: "Notes", placeholder: "Anything else...", multiline: true },
+          ].map(f => (
+            <div key={f.key}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 4 }}>{f.label}</div>
+              {f.multiline
+                ? <textarea value={infoForm[f.key]} onChange={e => setInfoForm(v => ({ ...v, [f.key]: e.target.value }))} placeholder={f.placeholder} rows={2} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box" }} />
+                : <input value={infoForm[f.key]} onChange={e => setInfoForm(v => ({ ...v, [f.key]: e.target.value }))} placeholder={f.placeholder} style={{ width: "100%", padding: "8px 10px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box" }} />
+              }
+            </div>
+          ))}
+          <button onClick={saveInfo} disabled={savingInfo} style={{ marginTop: 4, padding: "10px", borderRadius: 8, background: t.accent, color: "#fff", border: "none", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>{savingInfo ? "Saving…" : "Save Info"}</button>
+          <button onClick={onOpenCalendar} style={{ padding: "9px", borderRadius: 8, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📅 View Calendar History</button>
+        </div>
+      )}
+
+      {/* LOADOUT TAB */}
+      {tab === "loadout" && (
+        <div>
+          {allLoadout.length === 0 && !loadoutEditMode && (
+            <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 12 }}>Nothing loaded on this truck.</div>
+          )}
+          {allLoadout.length > 0 && (
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: "left", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, padding: "4px 6px", borderBottom: "1px solid " + t.border }}>Item</th>
+                  <th style={{ textAlign: "right", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, padding: "4px 6px", borderBottom: "1px solid " + t.border }}>Qty</th>
+                  {loadoutEditMode && <th style={{ width: 80, padding: "4px 6px", borderBottom: "1px solid " + t.border }} />}
+                </tr>
+              </thead>
+              <tbody>
+                {allLoadout.map(item => (
+                  <tr key={item.key}>
+                    <td style={{ padding: "6px 6px", fontSize: 13, color: t.text, borderBottom: "1px solid " + t.borderLight }}>{item.name}</td>
+                    <td style={{ padding: "6px 6px", fontSize: 13, fontWeight: 700, color: t.accent, textAlign: "right", borderBottom: "1px solid " + t.borderLight }}>
+                      {loadoutEditMode
+                        ? <input type="number" value={loadoutEdits[item.key] !== undefined ? loadoutEdits[item.key] : item.qty} onChange={e => setLoadoutEdits(v => ({ ...v, [item.key]: e.target.value }))} style={{ width: 70, padding: "4px 6px", borderRadius: 6, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit", textAlign: "right" }} />
+                        : <span>{isFoamId(item.key) ? fmtQty(item.key, item.qty) : item.qty + " " + item.unit}</span>
+                      }
+                    </td>
+                    {loadoutEditMode && <td style={{ padding: "4px 6px", borderBottom: "1px solid " + t.borderLight, textAlign: "right" }}><button onClick={() => setLoadoutEdits(v => ({ ...v, [item.key]: 0 }))} style={{ background: "#fee2e2", color: "#b91c1c", border: "none", borderRadius: 5, padding: "2px 7px", cursor: "pointer", fontSize: 11, fontFamily: "inherit", fontWeight: 700 }}>✕</button></td>}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+
+          {/* Add custom item */}
+          {loadoutEditMode && (
+            <div style={{ background: t.surface, borderRadius: 8, padding: 10, marginBottom: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Add Custom Item</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                <input value={addItemName} onChange={e => setAddItemName(e.target.value)} placeholder="Item name" style={{ flex: 2, minWidth: 120, padding: "7px 9px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit" }} />
+                <input value={addItemQty} onChange={e => setAddItemQty(e.target.value)} placeholder="Qty" type="number" style={{ width: 70, padding: "7px 9px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit" }} />
+                <input value={addItemUnit} onChange={e => setAddItemUnit(e.target.value)} placeholder="Unit" style={{ width: 70, padding: "7px 9px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, color: t.text, fontSize: 13, fontFamily: "inherit" }} />
+                <button onClick={addCustomItem} style={{ padding: "7px 12px", borderRadius: 7, background: t.accent, color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>+ Add</button>
+              </div>
+            </div>
+          )}
+
+          {/* Edit / Save buttons */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            {!loadoutEditMode
+              ? <button onClick={() => { setLoadoutEditMode(true); setLoadoutEdits({}); }} style={{ flex: 1, padding: "9px", borderRadius: 8, background: "none", border: "1px solid " + t.border, color: t.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>✏️ Edit Loadout</button>
+              : <>
+                  <button onClick={saveLoadoutEdits} disabled={saving} style={{ flex: 1, padding: "9px", borderRadius: 8, background: t.accent, color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{saving ? "Saving…" : "Save Changes"}</button>
+                  <button onClick={() => { setLoadoutEditMode(false); setLoadoutEdits({}); }} style={{ padding: "9px 14px", borderRadius: 8, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                </>
+            }
+          </div>
+
+          {/* Unload to Warehouse */}
+          {allLoadout.length > 0 && !loadoutEditMode && (
+            <>
+              {!showUnloadForm
+                ? <button onClick={() => { setShowUnloadForm(true); const d = {}; allLoadout.forEach(i => { d[i.key] = i.qty; }); setUnloadQtys(d); }} style={{ width: "100%", padding: "10px", borderRadius: 8, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#15803d", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>🏭 Unload to Warehouse</button>
+                : (
+                  <div style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10, padding: 12 }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: "#15803d", marginBottom: 8 }}>Unload quantities to warehouse:</div>
+                    {allLoadout.map(item => (
+                      <div key={item.key} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <div style={{ flex: 1, fontSize: 13, color: t.text }}>{item.name}</div>
+                        <input type="number" value={unloadQtys[item.key] !== undefined ? unloadQtys[item.key] : item.qty} onChange={e => setUnloadQtys(v => ({ ...v, [item.key]: e.target.value }))} style={{ width: 80, padding: "5px 7px", borderRadius: 6, border: "1px solid #86efac", background: "#fff", color: t.text, fontSize: 13, fontFamily: "inherit", textAlign: "right" }} />
+                        <span style={{ fontSize: 12, color: t.textMuted, minWidth: 30 }}>{item.unit}</span>
+                      </div>
+                    ))}
+                    <textarea value={unloadNotes} onChange={e => setUnloadNotes(e.target.value)} placeholder="Notes (optional)" rows={2} style={{ width: "100%", padding: "7px 9px", borderRadius: 7, border: "1px solid #86efac", background: "#fff", color: t.text, fontSize: 12, fontFamily: "inherit", resize: "vertical", boxSizing: "border-box", marginTop: 4, marginBottom: 8 }} />
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={doUnload} disabled={saving} style={{ flex: 1, padding: "9px", borderRadius: 8, background: "#16a34a", color: "#fff", border: "none", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>{saving ? "Unloading…" : "Confirm Unload"}</button>
+                      <button onClick={() => setShowUnloadForm(false)} style={{ padding: "9px 14px", borderRadius: 8, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+                    </div>
+                  </div>
+                )
+              }
+            </>
+          )}
+        </div>
+      )}
+
+      {/* HISTORY TAB */}
+      {tab === "history" && (
+        <div>
+          {timeline.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic" }}>No load/unload history yet.</div>}
+          {timeline.map((entry, idx) => {
+            const isLoad = entry.type === "loaded";
+            const color = isLoad ? "#1d4ed8" : "#15803d";
+            const bg = isLoad ? "#eff6ff" : "#f0fdf4";
+            const border = isLoad ? "#bfdbfe" : "#bbf7d0";
+            const icon = isLoad ? "🔵" : "🟢";
+            const label = isLoad ? "LOADED" : "UNLOADED to warehouse";
+            const dateLabel = new Date(entry.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+            const timeLabel = new Date(entry.timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Chicago" });
+            return (
+              <div key={idx} style={{ display: "flex", gap: 10, marginBottom: 12 }}>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 3 }}>
+                  <div style={{ fontSize: 16 }}>{icon}</div>
+                  {idx < timeline.length - 1 && <div style={{ width: 2, flex: 1, background: t.borderLight, marginTop: 4 }} />}
+                </div>
+                <div style={{ flex: 1, background: bg, border: "1px solid " + border, borderRadius: 8, padding: "9px 11px", marginBottom: 0 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color, marginBottom: 4 }}>{dateLabel} — {label} <span style={{ fontWeight: 400, opacity: 0.7 }}>at {timeLabel}</span></div>
+                  {Object.entries(entry.items).map(([itemId, qty]) => {
+                    const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                    const name = item ? item.name : itemId;
+                    return <div key={itemId} style={{ fontSize: 12, color: t.text, marginBottom: 2 }}>• {name}: <strong>{item ? fmtQty(itemId, qty) : qty}</strong></div>;
+                  })}
+                  {entry.notes && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4, fontStyle: "italic" }}>{entry.notes}</div>}
+                </div>
+              </div>
+            );
+          })}
+          <button onClick={onOpenCalendar} style={{ marginTop: 4, width: "100%", padding: "9px", borderRadius: 8, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📅 Full Calendar View</button>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [showAddJob, setShowAddJob] = useState(false);
@@ -2284,6 +2543,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const toggleJobExpand = (id) => setExpandedJobs(prev => ({ ...prev, [id]: !prev[id] }));
   const [showAddTruck, setShowAddTruck] = useState(false);
   const [truckHistoryView, setTruckHistoryView] = useState(null);
+  const [truckDetailView, setTruckDetailView] = useState(null);
   const [showAdminTicketForm, setShowAdminTicketForm] = useState(false);
   const [adminTicketForm, setAdminTicketForm] = useState({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
   const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "" });
@@ -2873,10 +3133,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       </div>
                       <div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckHistoryView({ truck: tr, calMonth: new Date().getMonth(), calYear: new Date().getFullYear(), selectedDate: null })}>{tr.members || tr.name}</span>
+                          <span style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckDetailView(tr)}>{tr.members || tr.name}</span>
                           {tr.department === "energySeal" && <span style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#d97706", borderRadius: 4, padding: "1px 6px", border: "1px solid #fde68a" }}>⚡ ES</span>}
                         </div>
-                        <div style={{ fontSize: 11, color: t.textMuted }}>View unload history</div>
+                        <div style={{ fontSize: 11, color: t.textMuted }}>Info, loadout &amp; history</div>
                       </div>
                     </div>
                     <div style={{ display: "flex", gap: "6px", alignItems: "center" }}>
@@ -3102,6 +3362,22 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       )}
 
       {/* ── TRUCK UNLOAD HISTORY MODAL ── */}
+      {truckDetailView && (
+        <TruckDetailModal
+          truck={truckDetailView}
+          truckInventory={truckInventory[truckDetailView.id] || {}}
+          loadLog={loadLog}
+          returnLog={returnLog}
+          jobs={jobs}
+          members={members}
+          onClose={() => setTruckDetailView(null)}
+          onUpdateTruck={onUpdateTruck}
+          onAdminSetLoadout={onAdminSetLoadout}
+          onAdminUnload={onAdminUnload}
+          onOpenCalendar={() => { setTruckHistoryView({ truck: truckDetailView, calMonth: new Date().getMonth(), calYear: new Date().getFullYear(), selectedDate: null }); setTruckDetailView(null); }}
+        />
+      )}
+
       {truckHistoryView && (() => {
         const { truck: hTruck, calMonth, calYear, selectedDate } = truckHistoryView;
         const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
@@ -3657,6 +3933,52 @@ export default function App() {
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
   const handleDeleteTruck = async (id) => { await deleteDoc(doc(db, "trucks", id)); };
   const handleReorderTruck = async (id, newOrder) => { await updateDoc(doc(db, "trucks", id), { order: newOrder }); };
+  const handleUpdateTruck = async (id, fields) => { await updateDoc(doc(db, "trucks", id), fields); };
+  const handleAdminSetLoadout = async (truckId, newState, type = "adjusted", notes = "") => {
+    const truckRef = doc(db, "truckInventory", truckId);
+    await setDoc(truckRef, newState);
+    // Log to loadLog or returnLog based on type
+    const logItems = {};
+    Object.entries(newState).forEach(([k, v]) => { if (k !== "_custom" && typeof v === "number" && v > 0) logItems[k] = v; });
+    if (type === "loaded" && Object.keys(logItems).length > 0) {
+      await addDoc(collection(db, "loadLog"), { truckId, items: logItems, notes, timestamp: new Date().toISOString() });
+    }
+  };
+  const handleAdminUnload = async (truckId, itemsToUnload, unloadQtys, notes = "") => {
+    const truckRef = doc(db, "truckInventory", truckId);
+    const snap = await getDoc(truckRef);
+    const state = snap.exists() ? { ...snap.data() } : {};
+    const logItems = {};
+    for (const item of itemsToUnload) {
+      const qty = parseFloat(unloadQtys[item.key]) || 0;
+      if (qty <= 0) continue;
+      if (item.isCustom) {
+        const custom = (state._custom || []).map(c => {
+          if (c.name === item.name) return { ...c, qty: Math.max(0, c.qty - qty) };
+          return c;
+        }).filter(c => c.qty > 0);
+        state._custom = custom;
+        logItems["custom_" + item.name] = qty;
+        // Add to warehouse inventory as a custom item (find or create)
+        const existingInv = inventory.find(r => r.itemId === "custom_" + item.name);
+        const curQty = existingInv?.qty || 0;
+        await handleUpdateInventory("custom_" + item.name, curQty + qty);
+      } else {
+        const cur = state[item.key] || 0;
+        const newQty = Math.max(0, Math.round((cur - qty) * 100) / 100);
+        if (newQty > 0) state[item.key] = newQty; else delete state[item.key];
+        logItems[item.key] = qty;
+        // Add back to warehouse inventory
+        const existingInv = inventory.find(r => r.itemId === item.key);
+        const curQty = existingInv?.qty || 0;
+        await handleUpdateInventory(item.key, Math.round((curQty + qty) * 100) / 100);
+      }
+    }
+    await setDoc(truckRef, state);
+    if (Object.keys(logItems).length > 0) {
+      await addDoc(collection(db, "returnLog"), { truckId, items: logItems, notes, timestamp: new Date().toISOString() });
+    }
+  };
   const handleAddJob = async (data) => { await addDoc(collection(db, "jobs"), data); };
   const handleAddJobUpdate = async (data) => { await addDoc(collection(db, "jobUpdates"), { ...data, createdAt: serverTimestamp() }); };
   const handleDeleteJob = async (id) => {
@@ -3866,6 +4188,6 @@ export default function App() {
     </AuthShell>
     </div>
   );
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
   return null;
 }
