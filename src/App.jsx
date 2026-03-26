@@ -2534,7 +2534,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       <div key={job.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight, gap: 8 }}>
                         <div style={{ minWidth: 0 }}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer"}</div>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>{job.address?.split(",")[0]} · {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} · {crew?.members || crew?.name || "Unassigned"}</div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>{job.address?.split(",")[0]} · {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
                         </div>
                         <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                           <Button onClick={() => onEditJob(job.id, { ...job, onHold: false })} style={{ padding: "5px 10px", fontSize: 11 }}>Resume</Button>
@@ -2563,8 +2563,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 const key = ids.length > 0 ? ids.join(",") : "_unassigned";
                 if (!crewGroupMap[key]) {
                   const names = ids.map(id => members.find(m => m.id === id)?.name).filter(Boolean);
-                  const truck = trucks.find(tr => tr.id === j.truckId);
-                  crewGroupMap[key] = { key, names, truckLabel: truck ? (truck.members || truck.name) : null, jobs: [] };
+                  crewGroupMap[key] = { key, names, jobs: [] };
                 }
                 crewGroupMap[key].jobs.push(j);
               });
@@ -2590,7 +2589,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     return (
                       <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
                         <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{headerName}</div>
-                        {group.truckLabel && <span style={{ fontSize: "12px", color: t.textMuted }}>— {group.truckLabel}</span>}
+
                         <Badge>{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
                       </div>
                     );
