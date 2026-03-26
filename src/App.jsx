@@ -578,37 +578,105 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 }
 
 // ─── Crew Dashboard ───
-function buildDayJobMap(jobs, updates, memberId, memberName, mon, sat) {
+// Compute which crew members were assigned to a job on a specific day.
+// Starts with crewMemberIds at job creation, then applies crew_added/crew_removed
+// events from jobUpdates up to and including that day.
+function computeAssignedCrew(job, jobUpdates, dayStr) {
+  const crew = new Set((job.crewMemberIds || []).filter(Boolean));
+  (jobUpdates || [])
+    .filter(u => u.jobId === job.id && u.date <= dayStr)
+    .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
+    .forEach(u => {
+      if (u.type === "crew_added" && u.addedMemberId) crew.add(u.addedMemberId);
+      if (u.type === "crew_removed" && u.removedMemberId) crew.delete(u.removedMemberId);
+    });
+  return [...crew];
+}
+
+// Build a map: { [dateStr]: [job, ...] } for a specific employee.
+// A job appears for employee on day X only if:
+//   1. They are assigned on that day (via crewMemberIds + crew_added/removed events)
+//   2. The job had an in_progress or completed status update on day X
+//   3. Day X falls within the requested week range
+function buildDayJobMap(jobs, updates, jobUpdates, memberId, mon, sat) {
   const map = {};
 
-  // Build set of jobIds that have ever been in_progress or completed
-  const startedJobIds = new Set(
-    (updates || [])
-      .filter(u => u.status === "in_progress" || u.status === "completed")
-      .map(u => u.jobId)
-  );
+  // Generate set of week days (YYYY-MM-DD) in range
+  const weekDaySet = new Set();
+  for (let d = new Date(mon); d <= sat; d.setDate(d.getDate() + 1)) {
+    weekDaySet.add(d.toLocaleDateString("en-CA"));
+  }
 
-  (jobs || []).forEach(j => {
-    // Rule: job must have in_progress or completed status (via updates)
-    if (!startedJobIds.has(j.id)) return;
+  // Group updates by jobId
+  const updatesByJob = {};
+  (updates || []).forEach(u => {
+    if (!updatesByJob[u.jobId]) updatesByJob[u.jobId] = [];
+    updatesByJob[u.jobId].push(u);
+  });
 
-    // Must have a scheduled date
-    if (!j.date) return;
+  (jobs || []).forEach(job => {
+    if (!job.id) return;
 
-    // Must fall within the selected week
-    const jobDateObj = new Date(j.date + "T12:00:00");
-    if (jobDateObj < mon || jobDateObj > sat) return;
+    const jobUpds = updatesByJob[job.id] || [];
 
-    // Crew member must be in crewMemberIds (source of truth)
-    const crewIds = Array.isArray(j.crewMemberIds) ? j.crewMemberIds.filter(Boolean) : [];
-    if (!crewIds.includes(memberId)) return;
+    // Find which days this job was active (had in_progress or completed update)
+    const activeDays = new Set(
+      jobUpds
+        .filter(u => u.status === "in_progress" || u.status === "completed")
+        .map(u => tsToCST(u.timestamp))
+        .filter(d => weekDaySet.has(d))
+    );
 
-    const dayStr = j.date;
-    if (!map[dayStr]) map[dayStr] = [];
-    if (!map[dayStr].find(x => x.id === j.id)) map[dayStr].push(j);
+    if (activeDays.size === 0) return;
+
+    activeDays.forEach(dayStr => {
+      // Compute who was assigned on this specific day
+      const assignedOnDay = computeAssignedCrew(job, jobUpdates, dayStr);
+      if (!assignedOnDay.includes(memberId)) return;
+
+      if (!map[dayStr]) map[dayStr] = [];
+      if (!map[dayStr].find(x => x.id === job.id)) map[dayStr].push(job);
+    });
   });
 
   return map;
+}
+
+// Build a summary map for all employees: { employeeId: { [dateStr]: [job, ...] } }
+// Used in daily crew summary and roster views.
+function buildAllEmployeeDayJobMap(jobs, updates, jobUpdates, weekDaySet) {
+  const allMap = {};
+
+  const updatesByJob = {};
+  (updates || []).forEach(u => {
+    if (!updatesByJob[u.jobId]) updatesByJob[u.jobId] = [];
+    updatesByJob[u.jobId].push(u);
+  });
+
+  (jobs || []).forEach(job => {
+    if (!job.id) return;
+    const jobUpds = updatesByJob[job.id] || [];
+    const activeDays = new Set(
+      jobUpds
+        .filter(u => u.status === "in_progress" || u.status === "completed")
+        .map(u => tsToCST(u.timestamp))
+        .filter(d => weekDaySet.has(d))
+    );
+    if (activeDays.size === 0) return;
+
+    activeDays.forEach(dayStr => {
+      const assignedOnDay = computeAssignedCrew(job, jobUpdates, dayStr);
+      assignedOnDay.forEach(memberId => {
+        if (!allMap[memberId]) allMap[memberId] = {};
+        if (!allMap[memberId][dayStr]) allMap[memberId][dayStr] = [];
+        if (!allMap[memberId][dayStr].find(x => x.id === job.id)) {
+          allMap[memberId][dayStr].push(job);
+        }
+      });
+    });
+  });
+
+  return allMap;
 }
 
 function buildTimesheetHtml(name, mon, sat, DAYS, dayJobMap, _unused, fmtDate, fmtDay, dayNotes = {}) {
@@ -622,7 +690,7 @@ function buildTimesheetHtml(name, mon, sat, DAYS, dayJobMap, _unused, fmtDate, f
   return `<!DOCTYPE html><html><head><title>Timesheet</title><style>@page{size:letter;margin:0.5in}*{box-sizing:border-box}body{font-family:Arial,sans-serif;font-size:10px;color:#111;margin:0}h2{font-size:13px;margin:0 0 2px}p{font-size:9px;color:#666;margin:0 0 8px}table{width:100%;border-collapse:collapse}th{padding:3px 8px;border:1px solid #ccc;background:#f5f5f5;text-align:left;font-size:10px}.summary{margin-top:8px;border:1px solid #ccc;border-radius:4px;overflow:hidden}.srow{display:flex;justify-content:space-between;align-items:center;padding:3px 8px;border-bottom:1px solid #eee;font-size:10px}.srow:last-child{border:none;font-weight:700}.blank{display:inline-block;width:100px;border-bottom:1px solid #000}@media print{body{-webkit-print-color-adjust:exact}}</style></head><body><h2>Weekly Timesheet — ${name}</h2><p>Week of ${fmtDate(mon)} – ${fmtDate(sat)} &nbsp;|&nbsp; Printed ${new Date().toLocaleDateString()}</p><table><thead><tr><th style="width:90px">Day</th><th>Jobs &amp; Pay</th></tr></thead><tbody>${rows}</tbody></table><div class="summary"><div class="srow"><span>Regular Hours</span><span class="blank">&nbsp;</span></div><div class="srow"><span>Overtime Hours</span><span class="blank">&nbsp;</span></div><div class="srow"><span>Total Job Pay</span><span class="blank">&nbsp;</span></div><div class="srow"><span>Overtime Pay</span><span class="blank">&nbsp;</span></div><div class="srow"><span>Total Pay</span><span class="blank">&nbsp;</span></div></div></body></html>`;
 }
 
-function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, setWeekOffset }) {
+function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, jobUpdates, weekOffset, setWeekOffset }) {
   const getWeekRange = (offsetWeeks = 0) => {
     const now = new Date();
     const day = now.getDay();
@@ -658,7 +726,7 @@ function CrewTimesheetTab({ crewMemberId, crewName, jobs, updates, weekOffset, s
     setNoteDay(null);
   };
 
-  const dayJobMap = buildDayJobMap(jobs, updates, crewMemberId, crewName, mon, sat);
+  const dayJobMap = buildDayJobMap(jobs, updates, jobUpdates || [], crewMemberId, mon, sat);
 
   const handlePrint = () => {
     const html = buildTimesheetHtml(crewName, mon, sat, DAYS, dayJobMap, null, fmtDate, fmtDay, tsNotes);
@@ -747,7 +815,7 @@ function DailyProcedureCard() {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -942,7 +1010,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
             {myJobs.length === 0 ? <EmptyState text="No active jobs assigned to you." sub="Check back or contact the office." /> : myJobs.map((job) => {
               const latestStatus = getLatestStatus(job.id);
               const statusObj = STATUS_OPTIONS.find((s) => s.value === latestStatus);
-              const jobUpdates = getJobUpdates(job.id);
+              const jobStatusList = getJobUpdates(job.id);
               return (
                 <Card key={job.id}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
@@ -985,10 +1053,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
                       ))}
                     </div>
                   )}
-                  {jobUpdates.length > 0 && (
+                  {jobStatusList.length > 0 && (
                     <div style={{ marginBottom: "10px" }}>
                       <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Update Log</div>
-                      {jobUpdates.slice(0, 3).map((u) => {
+                      {jobStatusList.slice(0, 3).map((u) => {
                         const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
                         return (
                           <div key={u.id} style={{ fontSize: "12.5px", color: t.textSecondary, padding: "6px 0", borderBottom: "1px solid " + t.borderLight, display: "flex", gap: "8px" }}>
@@ -1364,7 +1432,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
           );
         })()}
 
-        {crewView === "timesheet" && <CrewTimesheetTab crewMemberId={crewMemberId} crewName={crewName} jobs={jobs} updates={updates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} />}
+        {crewView === "timesheet" && <CrewTimesheetTab crewMemberId={crewMemberId} crewName={crewName} jobs={jobs} updates={updates} jobUpdates={jobUpdates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} />}
         {crewView === "tickets" && (
           <>
             <SectionHeader title="My Tickets" right={<Button onClick={() => setShowTicketForm(true)}>+ Submit Ticket</Button>} />
@@ -1784,7 +1852,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, tickets, 
 
 // ─── Admin Dashboard ───
 // ─── Roster View ─────────────────────────────────────────────────────────────
-function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onClose }) {
+function TimesheetModal({ member, jobs, updates, jobUpdates, weekOffset, setWeekOffset, onClose }) {
   const getWeekRange = (offsetWeeks = 0) => {
     const now = new Date(); const day = now.getDay(); const mon = new Date(now);
     mon.setDate(now.getDate() - (day === 0 ? 6 : day - 1) + offsetWeeks * 7); mon.setHours(0,0,0,0);
@@ -1817,7 +1885,7 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
       } else {
         // Seed from dynamic job assignments — include all assigned jobs, not just completed
         const seeded = {};
-        const dayMap = buildDayJobMap(jobs || [], updates || [], member.id, member.name, mon, sat);
+        const dayMap = buildDayJobMap(jobs || [], updates || [], jobUpdates || [], member.id, mon, sat);
         DAYS.forEach(d => {
           const ds = localDateStr(d);
           const seededJobs = dayMap[ds] || [];
@@ -1977,7 +2045,7 @@ function TimesheetModal({ member, jobs, updates, weekOffset, setWeekOffset, onCl
     </Modal>
   );
 }
-function RosterView({ trucks, jobs, updates }) {
+function RosterView({ trucks, jobs, updates, jobUpdates }) {
   const [members, setMembers] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newName, setNewName] = useState("");
@@ -2008,7 +2076,7 @@ function RosterView({ trucks, jobs, updates }) {
       const tsDocId = `${member.id}_${weekKey}`;
       const snap = await getDoc(doc(db, "timesheets", tsDocId));
       const dayNotes = snap.exists() ? (snap.data().dayNotes || {}) : {};
-      const memberDayMap = buildDayJobMap(allStartedJobs, updates, member.id, member.name, mon, sat);
+      const memberDayMap = buildDayJobMap(allStartedJobs, updates, jobUpdates || [], member.id, mon, sat);
       return buildTimesheetHtml(member.name, mon, sat, DAYS, memberDayMap, null, fmtDate, fmtDay, dayNotes);
     }));
     const combined = `<!DOCTYPE html><html><head><title>All Timesheets</title><style>@page{size:letter;margin:0.5in}.page-break{page-break-after:always}</style></head><body>${pages.map((p,i) => `<div${i < pages.length - 1 ? ' class="page-break"' : ''}>${p.replace(/<!DOCTYPE html>.*?<body>/s,'').replace(/<\/body><\/html>/,'')}</div>`).join('')}</body></html>`;
@@ -2109,7 +2177,7 @@ function RosterView({ trucks, jobs, updates }) {
         ));
       })()}
 
-      {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} updates={updates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
+      {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} updates={updates} jobUpdates={jobUpdates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
 
     </div>
   );
@@ -2208,7 +2276,7 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 }
 
 
-function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onLogout }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onLogout }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [showAddJob, setShowAddJob] = useState(false);
@@ -2218,8 +2286,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
   const [truckHistoryView, setTruckHistoryView] = useState(null);
   const [showAdminTicketForm, setShowAdminTicketForm] = useState(false);
   const [adminTicketForm, setAdminTicketForm] = useState({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
-  const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [null, null, null, null], date: todayStr(), notes: "", jobCategory: "" });
-  const [crewPickerSlot, setCrewPickerSlot] = useState(null); // index 0-3 of slot being picked
+  const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "" });
+  const [addCrewSearch, setAddCrewSearch] = useState("");
   const [truckForm, setTruckForm] = useState({ name: "", members: "" });
   const [activeTicket, setActiveTicket] = useState(null);
   const [ticketStatus, setTicketStatus] = useState("acknowledged");
@@ -2227,8 +2295,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
   const [ticketFilter, setTicketFilter] = useState("active");
   const [ticketTypeTab, setTicketTypeTab] = useState("equipment");
   const [editingJob, setEditingJob] = useState(null);
-  const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", crewMemberIds: [null,null,null,null], date: "", notes: "", jobCategory: "" });
-  const [editCrewPickerSlot, setEditCrewPickerSlot] = useState(null);
+  const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", crewMemberIds: [], date: "", notes: "", jobCategory: "" });
+  const [editCrewSearch, setEditCrewSearch] = useState("");
   const [truckFilter, setTruckFilter] = useState(null);
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
   const [showOngoing, setShowOngoing] = useState(false);
@@ -2273,7 +2341,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
   const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
-  const handleAddJob = () => { onAddJob({ ...jobForm }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ")"); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [null, null, null, null], date: todayStr(), notes: "", jobCategory: "" }); setCrewPickerSlot(null); setShowAddJob(false); };
+  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); onAddJob({ ...jobForm, crewMemberIds: cleanCrew }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "" }); setAddCrewSearch(""); setShowAddJob(false); };
   const handleAddTruck = () => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, order: maxOrder + 1 }); onLogAction("Added crew: " + truckForm.name); setTruckForm({ name: "", members: "" }); setShowAddTruck(false); };
   const handleMoveTruck = (truckId, direction) => {
     const idx = sortedTrucks.findIndex((tr) => tr.id === truckId);
@@ -2285,8 +2353,32 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
     onReorderTruck(b.id, a.order ?? idx);
   };
   const handleTicketUpdate = () => { onUpdateTicket(activeTicket.id, { status: ticketStatus, adminNote: ticketNote }); onLogAction("Updated ticket for " + activeTicket.truckName + " to " + ticketStatus); setActiveTicket(null); setTicketStatus("acknowledged"); setTicketNote(""); };
-  const openEditJob = (job) => { setEditingJob(job); setEditCrewPickerSlot(null); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", crewMemberIds: job.crewMemberIds?.length === 4 ? job.crewMemberIds : [null,null,null,null], date: job.date, notes: job.notes || "", jobCategory: job.jobCategory || "" }); };
-  const handleSaveEdit = () => { onEditJob(editingJob.id, { ...editForm }); onLogAction("Edited job: " + editForm.address); setEditingJob(null); };
+  const openEditJob = (job) => { setEditingJob(job); setEditCrewSearch(""); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", crewMemberIds: (job.crewMemberIds || []).filter(Boolean), date: job.date, notes: job.notes || "", jobCategory: job.jobCategory || "" }); };
+  const handleSaveEdit = async () => {
+    const cleanCrew = (editForm.crewMemberIds || []).filter(Boolean);
+    const oldCrew = (editingJob.crewMemberIds || []).filter(Boolean);
+    const todayDate = todayCST();
+    // Check if job is currently in_progress
+    const latestUpd = updates.filter(u => u.jobId === editingJob.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+    const isInProgress = latestUpd && (latestUpd.status === "in_progress" || latestUpd.status === "completed");
+    if (isInProgress && onAddJobUpdate) {
+      // Log crew_added for new members
+      for (const id of cleanCrew) {
+        if (!oldCrew.includes(id)) {
+          await onAddJobUpdate({ jobId: editingJob.id, type: "crew_added", addedMemberId: id, date: todayDate, timestamp: new Date().toISOString() });
+        }
+      }
+      // Log crew_removed for removed members
+      for (const id of oldCrew) {
+        if (!cleanCrew.includes(id)) {
+          await onAddJobUpdate({ jobId: editingJob.id, type: "crew_removed", removedMemberId: id, date: todayDate, timestamp: new Date().toISOString() });
+        }
+      }
+    }
+    await onEditJob(editingJob.id, { ...editForm, crewMemberIds: cleanCrew });
+    onLogAction("Edited job: " + editForm.address);
+    setEditingJob(null);
+  };
   const handleRemoveJob = (job) => { onDeleteJob(job.id); onLogAction("Removed job: " + job.address + " (" + job.type + ")"); };
   const handlePmSubmit = () => {
     const jobLabel = pmJob.builder || pmJob.address;
@@ -2341,12 +2433,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
     const todayStr = todayCST();
     return jobs.filter((j) => {
       if (j.onHold) return false;
-      const jobUpdates = updates.filter(u => u.jobId === j.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+      const jobStatusUpds = updates.filter(u => u.jobId === j.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
       // Must have at least one in_progress or completed update to appear on calendar
-      const startedUpdate = jobUpdates.find(u => u.status === "in_progress" || u.status === "completed");
+      const startedUpdate = jobStatusUpds.find(u => u.status === "in_progress" || u.status === "completed");
       if (!startedUpdate) return false;
       const startedDate = tsToCST(startedUpdate.timestamp);
-      const completedUpdate = jobUpdates.find(u => u.status === "completed");
+      const completedUpdate = jobStatusUpds.find(u => u.status === "completed");
       const completedDate = completedUpdate ? tsToCST(completedUpdate.timestamp) : null;
       if (ds < startedDate) return false;
       if (completedDate) return ds <= completedDate;
@@ -2463,7 +2555,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
             {(() => {
               const displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
               if (displayJobs.length === 0) return <EmptyState text={showUncheckedOnly ? "All jobs have been checked." : "No active jobs."} />;
-              const unassigned = displayJobs.filter((j) => !j.truckId);
+              const unassignedCrew = displayJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
               // Group jobs by their assigned crew member combo (sorted IDs joined as key)
               const crewGroupMap = {};
               displayJobs.forEach((j) => {
@@ -2481,7 +2573,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                 if (b.key === "_unassigned") return -1;
                 return (a.names[0] || "").localeCompare(b.names[0] || "");
               }).filter((g) => !truckFilter || g.jobs.some(j => j.truckId === truckFilter));
-              return crewGroups.map((group) => (
+              return <>
+                {unassignedCrew.length > 0 && (
+                  <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "18px" }}>⚠️</span>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#92400e" }}>{unassignedCrew.length} job{unassignedCrew.length !== 1 ? "s" : ""} with no employees assigned</div>
+                      <div style={{ fontSize: "11px", color: "#78350f", marginTop: "2px" }}>{unassignedCrew.map(j => j.builder || j.address).join(", ")}</div>
+                    </div>
+                  </div>
+                )}
+                {crewGroups.map((group) => (
                 <div key={group.key} style={{ marginBottom: "20px" }}>
                   {(() => {
                     const headerName = group.names.length > 0 ? group.names.join(" and ") : "Unassigned";
@@ -2496,8 +2598,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                   {group.jobs.map((job) => {
                     const latest = getLatestUpdate(job.id);
                     const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
-                    const jobUpdates = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                    const jobPmUpdates = pmUpdates.filter((p) => p.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const jobStatusUpdates = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const jobPmUpds = pmUpdates.filter((p) => p.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     const isChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
                     const partialCheck = job.jobCheckedAM === "Yes" || job.jobCheckedPM === "Yes";
                     const isExpanded = !!expandedJobs[job.id];
@@ -2537,7 +2639,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                             <div style={{ display: "flex", gap: "16px", marginTop: "12px", flexWrap: "wrap" }}>
                               <div style={{ flex: "1 1 45%", minWidth: "200px" }}>
                                 <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>Crew Updates</div>
-                                {jobUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobUpdates.map((u) => {
+                                {jobStatusUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobStatusUpdates.map((u) => {
                                   const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
                                   return (
                                     <div key={u.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
@@ -2557,7 +2659,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                                   <span>PM Updates</span>
                                   <span style={{ fontSize: "10px", color: t.textMuted, fontWeight: 500, textTransform: "none" }}>Tap to update</span>
                                 </div>
-                                {jobPmUpdates.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobPmUpdates.map((p) => (
+                                {jobPmUpds.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>Nothing.</div> : jobPmUpds.map((p) => (
                                   <div key={p.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
                                     <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
                                       <span style={{ color: t.textMuted }}>{p.timeStr}</span>
@@ -2569,6 +2671,39 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                               </div>
                             </div>
 
+                            {/* Quick crew assignment */}
+                            {(() => {
+                              const assignedIds = (job.crewMemberIds || []).filter(Boolean);
+                              const latestUpd = jobStatusUpdates[0];
+                              const isActive = latestUpd && (latestUpd.status === "in_progress" || latestUpd.status === "completed");
+                              return (
+                                <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                                  <div style={{ fontSize: "11px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Assigned Crew</div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                                    {assignedIds.map(id => {
+                                      const m = members.find(mb => mb.id === id);
+                                      return m ? (
+                                        <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "4px", fontSize: "11px", fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 8px", borderRadius: "14px", border: "1px solid #bfdbfe" }}>
+                                          {m.name}
+                                          <button onClick={async () => {
+                                            const newIds = assignedIds.filter(i => i !== id);
+                                            if (isActive && onAddJobUpdate) await onAddJobUpdate({ jobId: job.id, type: "crew_removed", removedMemberId: id, date: todayCST(), timestamp: new Date().toISOString() });
+                                            await onEditJob(job.id, { ...job, crewMemberIds: newIds });
+                                          }} style={{ background: "none", border: "none", cursor: "pointer", color: "#93c5fd", fontSize: "12px", lineHeight: 1, padding: 0, fontFamily: "inherit" }} title="Remove from job">×</button>
+                                        </span>
+                                      ) : null;
+                                    })}
+                                    {members.filter(m => !assignedIds.includes(m.id)).map(m => (
+                                      <button key={m.id} onClick={async () => {
+                                        const newIds = [...assignedIds, m.id];
+                                        if (isActive && onAddJobUpdate) await onAddJobUpdate({ jobId: job.id, type: "crew_added", addedMemberId: m.id, date: todayCST(), timestamp: new Date().toISOString() });
+                                        await onEditJob(job.id, { ...job, crewMemberIds: newIds });
+                                      }} style={{ fontSize: "11px", fontWeight: 500, background: "transparent", color: t.textMuted, padding: "3px 8px", borderRadius: "14px", border: "1px dashed " + t.border, cursor: "pointer", fontFamily: "inherit" }} title={"Add " + m.name}>+ {m.name.split(" ")[0]}</button>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                             {/* Action row */}
                             <div style={{ display: "flex", gap: "8px", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid " + t.borderLight }}>
                               <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>PM Note</Button>
@@ -2582,7 +2717,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
                     );
                   })}
                 </div>
-              ));
+              ))}</>
             })()}
           </>
         )}
@@ -2790,7 +2925,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
         )}
 
         {view === "roster" && (
-          <RosterView trucks={trucks} jobs={jobs} updates={updates} />
+          <RosterView trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} />
         )}
 
         {view === "inventory" && (() => {
@@ -2908,56 +3043,43 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
           <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} />
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign Technician" value={jobForm.truckId} onChange={(e) => { const tid = e.target.value; const truckMembers = members.filter(m => m.truckId === tid).slice(0, 4).map(m => m.id); const slots = [truckMembers[0]||null, truckMembers[1]||null, truckMembers[2]||null, truckMembers[3]||null]; setJobForm({ ...jobForm, truckId: tid, crewMemberIds: tid ? slots : [null,null,null,null] }); }} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
-          {/* Assign Crew Members — 4 slots */}
+          <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          {/* Employee multi-select — source of truth for timesheet */}
           <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "10px" }}>Assign Crew Members</label>
-            <div style={{ display: "flex", gap: "8px" }}>
-              {[0, 1, 2, 3].map((slot) => {
-                const memberId = jobForm.crewMemberIds[slot];
-                const member = memberId ? members.find(m => m.id === memberId) : null;
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "6px" }}>Assign Employees <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span></label>
+            {jobForm.crewMemberIds.filter(Boolean).length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                {jobForm.crewMemberIds.filter(Boolean).map(id => {
+                  const m = members.find(mb => mb.id === id);
+                  return m ? (
+                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: t.accentBg, color: t.accent, fontSize: "12px", fontWeight: 600, padding: "4px 10px", borderRadius: "20px", border: "1px solid #bfdbfe" }}>
+                      {m.name}
+                      <button onClick={() => setJobForm({ ...jobForm, crewMemberIds: jobForm.crewMemberIds.filter(i => i !== id) })} style={{ background: "none", border: "none", cursor: "pointer", color: t.accent, fontSize: "14px", lineHeight: 1, padding: 0, fontFamily: "inherit" }}>×</button>
+                    </span>
+                  ) : null;
+                })}
+              </div>
+            )}
+            <input type="text" placeholder="Search employees..." value={addCrewSearch} onChange={e => setAddCrewSearch(e.target.value)} style={{ width: "100%", padding: "7px 10px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "13px", fontFamily: "inherit", marginBottom: "4px", boxSizing: "border-box" }} />
+            <div style={{ maxHeight: "180px", overflowY: "auto", border: "1px solid " + t.border, borderRadius: "6px" }}>
+              {members.filter(m => m.name.toLowerCase().includes(addCrewSearch.toLowerCase())).map(m => {
+                const selected = (jobForm.crewMemberIds || []).includes(m.id);
                 return (
-                  <button key={slot} onClick={() => setCrewPickerSlot(slot)} style={{ flex: 1, aspectRatio: "1", borderRadius: "10px", border: member ? "2px solid " + t.accent : "2px dashed " + t.border, background: member ? t.accentBg : t.bg, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px", fontFamily: "inherit", padding: "6px 2px" }}>
-                    {member ? (
-                      <>
-                        <div style={{ width: 28, height: 28, borderRadius: "50%", background: t.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>{member.name[0]}</div>
-                        <div style={{ fontSize: 9, fontWeight: 700, color: t.accent, textAlign: "center", lineHeight: 1.2, wordBreak: "break-word" }}>{member.name.split(" ")[0]}</div>
-                      </>
-                    ) : (
-                      <div style={{ fontSize: 22, color: t.border, fontWeight: 300, lineHeight: 1 }}>+</div>
-                    )}
-                  </button>
+                  <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", cursor: "pointer", background: selected ? t.accentBg : "transparent", borderBottom: "1px solid " + t.borderLight }}>
+                    <input type="checkbox" checked={selected} onChange={() => {
+                      if (selected) setJobForm({ ...jobForm, crewMemberIds: jobForm.crewMemberIds.filter(i => i !== m.id) });
+                      else setJobForm({ ...jobForm, crewMemberIds: [...(jobForm.crewMemberIds || []), m.id] });
+                    }} style={{ accentColor: t.accent, width: "16px", height: "16px" }} />
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: selected ? t.accent : t.accentBg, color: selected ? "#fff" : t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{m.name[0]}</div>
+                    <span style={{ fontSize: "13px", fontWeight: selected ? 600 : 400, color: t.text }}>{m.name}</span>
+                  </label>
                 );
               })}
+              {members.filter(m => m.name.toLowerCase().includes(addCrewSearch.toLowerCase())).length === 0 && (
+                <div style={{ padding: "12px", fontSize: "12px", color: t.textMuted, textAlign: "center" }}>No employees found</div>
+              )}
             </div>
           </div>
-          {/* Crew picker — full-screen overlay rendered outside the form flow */}
-          {crewPickerSlot !== null && (
-            <div onClick={() => setCrewPickerSlot(null)} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "20px", width: "100%", maxWidth: "340px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <span style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>Slot {crewPickerSlot + 1} — Pick Crew</span>
-                  <button onClick={() => setCrewPickerSlot(null)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: t.textMuted, padding: "0 4px" }}>✕</button>
-                </div>
-                {jobForm.crewMemberIds[crewPickerSlot] && (
-                  <button onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[crewPickerSlot] = null; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px", borderRadius: "8px", background: "#fef2f2", border: "1px solid #fecaca", cursor: "pointer", fontSize: 13, color: "#dc2626", fontWeight: 700, fontFamily: "inherit", marginBottom: "12px" }}>
-                    ✕ Remove {members.find(m => m.id === jobForm.crewMemberIds[crewPickerSlot])?.name}
-                  </button>
-                )}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  {members.filter(m => !jobForm.crewMemberIds.includes(m.id)).map(m => (
-                    <button key={m.id} onClick={() => { const ids = [...jobForm.crewMemberIds]; ids[crewPickerSlot] = m.id; setJobForm({ ...jobForm, crewMemberIds: ids }); setCrewPickerSlot(null); }} style={{ padding: "14px 10px", borderRadius: "10px", border: "1px solid " + t.border, background: t.bg, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{m.name[0]}</div>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>{m.name}</span>
-                    </button>
-                  ))}
-                </div>
-                {members.filter(m => !jobForm.crewMemberIds.includes(m.id)).length === 0 && (
-                  <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", padding: "12px 0" }}>All crew members assigned</div>
-                )}
-              </div>
-            </div>
-          )}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
             <input type="date" value={jobForm.date} onChange={(e) => setJobForm({ ...jobForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
@@ -3170,45 +3292,46 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Assign Truck" value={editForm.truckId} onChange={(e) => { const tid = e.target.value; const truckMembers = members.filter(m => m.truckId === tid).slice(0, 4).map(m => m.id); const slots = [truckMembers[0]||null, truckMembers[1]||null, truckMembers[2]||null, truckMembers[3]||null]; setEditForm({ ...editForm, truckId: tid, crewMemberIds: tid ? slots : [null,null,null,null] }); }} options={[{ value: "", label: "— Unassigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          {/* Employee multi-select for edit form */}
           <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "10px" }}>Assign Crew Members</label>
-            <div style={{ display: "flex", gap: "8px" }}>
-              {[0,1,2,3].map((slot) => {
-                const memberId = editForm.crewMemberIds[slot];
-                const member = memberId ? members.find(m => m.id === memberId) : null;
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "6px" }}>
+              Assign Employees <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span>
+              {(() => { const latUpd = updates.filter(u => u.jobId === editingJob?.id).sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0]; return latUpd?.status === "in_progress" ? <span style={{ marginLeft: 8, color: "#b45309", background: "#fef3c7", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, border: "1px solid #fde68a" }}>In Progress — changes will be logged</span> : null; })()}
+            </label>
+            {editForm.crewMemberIds.filter(Boolean).length > 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
+                {editForm.crewMemberIds.filter(Boolean).map(id => {
+                  const m = members.find(mb => mb.id === id);
+                  return m ? (
+                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: t.accentBg, color: t.accent, fontSize: "12px", fontWeight: 600, padding: "4px 10px", borderRadius: "20px", border: "1px solid #bfdbfe" }}>
+                      {m.name}
+                      <button onClick={() => setEditForm({ ...editForm, crewMemberIds: editForm.crewMemberIds.filter(i => i !== id) })} style={{ background: "none", border: "none", cursor: "pointer", color: t.accent, fontSize: "14px", lineHeight: 1, padding: 0, fontFamily: "inherit" }}>×</button>
+                    </span>
+                  ) : null;
+                })}
+              </div>
+            )}
+            <input type="text" placeholder="Search employees..." value={editCrewSearch} onChange={e => setEditCrewSearch(e.target.value)} style={{ width: "100%", padding: "7px 10px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "13px", fontFamily: "inherit", marginBottom: "4px", boxSizing: "border-box" }} />
+            <div style={{ maxHeight: "180px", overflowY: "auto", border: "1px solid " + t.border, borderRadius: "6px" }}>
+              {members.filter(m => m.name.toLowerCase().includes(editCrewSearch.toLowerCase())).map(m => {
+                const selected = (editForm.crewMemberIds || []).includes(m.id);
                 return (
-                  <button key={slot} onClick={() => setEditCrewPickerSlot(slot)} style={{ flex: 1, aspectRatio: "1", borderRadius: "10px", border: member ? "2px solid " + t.accent : "2px dashed " + t.border, background: member ? t.accentBg : t.bg, cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "4px", fontFamily: "inherit", padding: "6px 2px" }}>
-                    {member ? (<><div style={{ width: 28, height: 28, borderRadius: "50%", background: t.accent, color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 13 }}>{member.name[0]}</div><div style={{ fontSize: 9, fontWeight: 700, color: t.accent, textAlign: "center", lineHeight: 1.2, wordBreak: "break-word" }}>{member.name.split(" ")[0]}</div></>) : (<div style={{ fontSize: 22, color: t.border, fontWeight: 300, lineHeight: 1 }}>+</div>)}
-                  </button>
+                  <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", cursor: "pointer", background: selected ? t.accentBg : "transparent", borderBottom: "1px solid " + t.borderLight }}>
+                    <input type="checkbox" checked={selected} onChange={() => {
+                      if (selected) setEditForm({ ...editForm, crewMemberIds: editForm.crewMemberIds.filter(i => i !== m.id) });
+                      else setEditForm({ ...editForm, crewMemberIds: [...(editForm.crewMemberIds || []), m.id] });
+                    }} style={{ accentColor: t.accent, width: "16px", height: "16px" }} />
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: selected ? t.accent : t.accentBg, color: selected ? "#fff" : t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{m.name[0]}</div>
+                    <span style={{ fontSize: "13px", fontWeight: selected ? 600 : 400, color: t.text }}>{m.name}</span>
+                  </label>
                 );
               })}
+              {members.filter(m => m.name.toLowerCase().includes(editCrewSearch.toLowerCase())).length === 0 && (
+                <div style={{ padding: "12px", fontSize: "12px", color: t.textMuted, textAlign: "center" }}>No employees found</div>
+              )}
             </div>
           </div>
-          {editCrewPickerSlot !== null && (
-            <div onClick={() => setEditCrewPickerSlot(null)} style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(0,0,0,0.5)", display: "flex", alignItems: "center", justifyContent: "center", padding: "20px" }}>
-              <div onClick={e => e.stopPropagation()} style={{ background: "#fff", borderRadius: "16px", padding: "20px", width: "100%", maxWidth: "340px", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <span style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>Slot {editCrewPickerSlot + 1} — Pick Crew</span>
-                  <button onClick={() => setEditCrewPickerSlot(null)} style={{ background: "none", border: "none", fontSize: "20px", cursor: "pointer", color: t.textMuted, padding: "0 4px" }}>✕</button>
-                </div>
-                {editForm.crewMemberIds[editCrewPickerSlot] && (
-                  <button onClick={() => { const ids = [...editForm.crewMemberIds]; ids[editCrewPickerSlot] = null; setEditForm({ ...editForm, crewMemberIds: ids }); setEditCrewPickerSlot(null); }} style={{ width: "100%", padding: "10px", borderRadius: "8px", background: "#fef2f2", border: "1px solid #fecaca", cursor: "pointer", fontSize: 13, color: "#dc2626", fontWeight: 700, fontFamily: "inherit", marginBottom: "12px" }}>
-                    ✕ Remove {members.find(m => m.id === editForm.crewMemberIds[editCrewPickerSlot])?.name}
-                  </button>
-                )}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "10px" }}>
-                  {members.filter(m => !editForm.crewMemberIds.includes(m.id)).map(m => (
-                    <button key={m.id} onClick={() => { const ids = [...editForm.crewMemberIds]; ids[editCrewPickerSlot] = m.id; setEditForm({ ...editForm, crewMemberIds: ids }); setEditCrewPickerSlot(null); }} style={{ padding: "14px 10px", borderRadius: "10px", border: "1px solid " + t.border, background: t.bg, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: "10px" }}>
-                      <div style={{ width: 32, height: 32, borderRadius: "50%", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 14, flexShrink: 0 }}>{m.name[0]}</div>
-                      <span style={{ fontSize: 14, fontWeight: 600, color: t.text }}>{m.name}</span>
-                    </button>
-                  ))}
-                </div>
-                {members.filter(m => !editForm.crewMemberIds.includes(m.id)).length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", padding: "12px 0" }}>All crew members assigned</div>}
-              </div>
-            </div>
-          )}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
             <input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
@@ -3390,6 +3513,30 @@ function AdminDashboard({  adminName, trucks, jobs, updates, tickets, activityLo
               })}
             </div>
 
+            {/* Crew Change Log — shows crew_added/crew_removed events */}
+            {(() => {
+              const crewChangeLog = (jobUpdates || []).filter(u => u.jobId === calViewJob.id && (u.type === "crew_added" || u.type === "crew_removed")).sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+              if (crewChangeLog.length === 0) return null;
+              return (
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 600, color: "#b45309", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Crew Change Log</div>
+                  {crewChangeLog.map((u, idx) => {
+                    const memberId = u.addedMemberId || u.removedMemberId;
+                    const memberName = members.find(m => m.id === memberId)?.name || memberId;
+                    const isAdd = u.type === "crew_added";
+                    return (
+                      <div key={idx} style={{ fontSize: "12px", padding: "5px 0", borderBottom: "1px solid " + t.borderLight, display: "flex", gap: "8px", alignItems: "center" }}>
+                        <span style={{ color: t.textMuted, fontSize: "11px" }}>{u.date}</span>
+                        <span style={{ fontSize: "14px" }}>{isAdd ? "➕" : "➖"}</span>
+                        <span style={{ fontWeight: 600, color: isAdd ? "#15803d" : "#dc2626" }}>{memberName}</span>
+                        <span style={{ fontSize: "11px", color: t.textMuted }}>{isAdd ? "added to job" : "removed from job"}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             {((calViewJob.dailyMaterialLogs || []).length > 0 || Object.keys(calViewJob.materialsUsed || {}).length > 0) && (
               <div style={{ marginBottom: "16px" }}>
                 <div style={{ fontSize: "12px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Materials Logged</div>
@@ -3482,6 +3629,7 @@ export default function App() {
   const [trucks, setTrucks] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [updates, setUpdates] = useState([]);
+  const [jobUpdates, setJobUpdates] = useState([]);
   const [tickets, setTickets] = useState([]);
   const [activityLog, setActivityLog] = useState([]);
   const [returnLog, setReturnLog] = useState([]);
@@ -3503,13 +3651,15 @@ export default function App() {
     const unsubTruckInv = onSnapshot(collection(db, "truckInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckInventory(m); });
     const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubLoadLog = onSnapshot(collection(db, "loadLog"), (snap) => { setLoadLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); };
+    const unsubJobUpdates = onSnapshot(collection(db, "jobUpdates"), (snap) => { setJobUpdates(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); unsubJobUpdates(); };
   }, []);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
   const handleDeleteTruck = async (id) => { await deleteDoc(doc(db, "trucks", id)); };
   const handleReorderTruck = async (id, newOrder) => { await updateDoc(doc(db, "trucks", id), { order: newOrder }); };
   const handleAddJob = async (data) => { await addDoc(collection(db, "jobs"), data); };
+  const handleAddJobUpdate = async (data) => { await addDoc(collection(db, "jobUpdates"), { ...data, createdAt: serverTimestamp() }); };
   const handleDeleteJob = async (id) => {
     await deleteDoc(doc(db, "jobs", id));
     const updatesSnap = await getDocs(query(collection(db, "updates"), where("jobId", "==", id)));
@@ -3686,7 +3836,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
@@ -3717,6 +3867,6 @@ export default function App() {
     </AuthShell>
     </div>
   );
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
   return null;
 }
