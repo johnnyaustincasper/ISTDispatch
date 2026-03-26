@@ -3169,6 +3169,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [calDayView, setCalDayView] = useState(null); // { dateStr, jobs }
   const [editMatLogIdx, setEditMatLogIdx] = useState(null); // index into dailyMaterialLogs
   const [editMatLogQtys, setEditMatLogQtys] = useState({});
+  const [invSearch, setInvSearch] = useState("");
 
   const deptTruckIds = new Set(
     trucks.filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : (tr.department !== "energySeal"))
@@ -3808,88 +3809,111 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         {view === "inventory" && (() => {
           const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
-          const isFgTube = (item) => item.hasPieces;
-          const isFgPcs = (item) => item.isPieces;
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48));
-          const S = {
-            tbl: { width: "100%", borderCollapse: "collapse" },
-            catRow: { background: "#1e293b", color: "#fff" },
-            catTd: { padding: "5px 12px", fontSize: 10, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1 },
-            th: { padding: "6px 8px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, background: t.surface, borderBottom: "1px solid " + t.border, textAlign: "left" },
-            thR: { padding: "6px 8px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, background: t.surface, borderBottom: "1px solid " + t.border, textAlign: "right" },
-            td: { padding: "5px 8px", fontSize: 13, color: t.text, borderBottom: "1px solid " + t.borderLight },
-            tdR: { padding: "5px 8px", fontSize: 13, fontWeight: 700, textAlign: "right", borderBottom: "1px solid " + t.borderLight },
-            btn: { height: 36, minWidth: 36, padding: "0 8px", borderRadius: 7, border: "1px solid " + t.border, background: t.bg, fontSize: 13, cursor: "pointer", fontFamily: "inherit", lineHeight: 1 },
-          };
+          const searchLower = invSearch.toLowerCase();
+          const sortItems = (arr) => arr.sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
+          // stock status helpers
+          const stockStatus = (qty) => qty === 0 ? "out" : qty <= 2 ? "low" : "ok";
+          const stockColors = { out: { row: "rgba(239,68,68,0.10)", badge: "#ef4444", text: "#ef4444", label: "OUT" }, low: { row: "rgba(217,119,6,0.10)", badge: "#d97706", text: "#d97706", label: "LOW" }, ok: { row: "transparent", badge: "#22c55e", text: t.text, label: null } };
           return (
-            <div style={{ padding: "0 0 24px" }}>
-              <div style={{ padding: "10px 14px 6px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <div style={{ fontSize: 16, fontWeight: 800, color: t.text }}>Warehouse Inventory</div>
-                <span style={{ fontSize: 10, color: t.textMuted }}>Live</span>
+            <div style={{ padding: "0 0 32px" }}>
+              {/* Header + search */}
+              <div style={{ padding: "12px 14px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div style={{ fontSize: 17, fontWeight: 800, color: t.text }}>Warehouse Inventory</div>
+                  <span style={{ fontSize: 10, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5 }}>● LIVE</span>
+                </div>
+                <div style={{ position: "relative" }}>
+                  <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.4 }} width="15" height="15" fill="none" stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input
+                    type="text"
+                    placeholder="Search materials…"
+                    value={invSearch}
+                    onChange={e => setInvSearch(e.target.value)}
+                    style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 32px", fontSize: 13, borderRadius: 8, border: "1px solid " + t.border, background: t.surface, color: t.text, fontFamily: "inherit", outline: "none" }}
+                  />
+                  {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>}
+                </div>
               </div>
+
               {categories.map(cat => {
-                const catItems = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
+                const catItems = sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(i => !searchLower || i.name.toLowerCase().includes(searchLower)));
+                if (catItems.length === 0) return null;
+                // summary counts for category header
+                const outCount = catItems.filter(i => getQty(i.id) === 0).length;
+                const lowCount = catItems.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; }).length;
                 return (
-                <details key={cat} open style={{ marginBottom: 8, borderRadius: 8, overflow: "hidden", border: "1px solid " + t.border }}>
-                  <summary style={{ background: "#1e293b", color: "#fff", padding: "8px 14px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, cursor: "pointer", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span>{cat}</span><span style={{ fontSize: 10, opacity: 0.6 }}>▾</span>
-                  </summary>
-                <table style={S.tbl}>
-                <thead>
-                  <tr>
-                    <th style={S.th}>Material</th>
-                    <th style={{ ...S.thR, width: 60 }}>Qty</th>
-                    <th style={{ ...S.thR, width: 70 }}>±</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {[cat].map(() => (
-                    <>
-                      {INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); }).map(item => {
-                        const qty = getQty(item.id);
-                        const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
-                        const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
-                        const low = qty === 0 ? "#ef4444" : qty <= 2 ? "#d97706" : t.text;
-                        return (
-                          <tr key={item.id} style={{ background: qty === 0 ? "#fff5f5" : qty <= 2 ? "#fffbeb" : "#fff" }}>
-                            <td style={S.td}>
-                              <div>{item.name} <span style={{ fontSize: 10, color: t.textMuted }}>({item.unit})</span></div>
-                              {item.sqftPerTube && <div style={{ fontSize: 10, color: t.textMuted }}>{item.sqftPerTube} sqft/tube</div>}
-                            </td>
-                            <td style={{ ...S.tdR, fontSize: 15 }}>
-                              <div style={{ color: low, fontWeight: 700 }}>{isFoam(item.id) ? qty.toFixed(2) : qty}{isFoam(item.id) && <span style={{ fontSize: 9, color: t.textMuted, fontWeight: 500, marginLeft: 3 }}>{bblToGals(qty, item.id)} gal</span>}</div>
-                              {item.sqftPerTube && qty > 0 && <div style={{ fontSize: 9, color: t.textMuted }}>{(item.sqftPerTube * qty).toFixed(0)} sqft</div>}
-                              {qty === 0 && <div style={{ fontSize: 8, fontWeight: 800, color: "#ef4444" }}>OUT</div>}
-                              {!isFoam(item.id) && qty > 0 && qty <= 2 && <div style={{ fontSize: 8, fontWeight: 800, color: "#d97706" }}>LOW</div>}
-                              {pcsItem && <div style={{ marginTop: 4, paddingTop: 4, borderTop: "1px dashed #e5e7eb" }}>
-                                <div style={{ fontSize: 10, fontWeight: 600, color: "#6b7280", textTransform: "uppercase", letterSpacing: 0.4 }}>Pieces</div>
-                                <div style={{ fontSize: 16, fontWeight: 800, color: pcsQty > 0 ? "#1e40af" : "#9ca3af" }}>{pcsQty}</div>
-                                {item.sqftPerTube && item.pcsPerTube && pcsQty > 0 && <div style={{ fontSize: 9, color: t.textMuted }}>{((item.sqftPerTube / item.pcsPerTube) * pcsQty).toFixed(1)} sqft</div>}
-                              </div>}
-                            </td>
-                            <td style={{ ...S.tdR, verticalAlign: "top", paddingTop: 8 }}>
-                              <InventoryEditCell
-                                itemId={item.id}
-                                qty={qty}
-                                isFoam={isFoam(item.id)}
-                                bblToGals={bblToGals}
-                                galsToBbl={galsToBbl}
-                                pcsItem={pcsItem}
-                                pcsQty={pcsQty}
-                                onUpdateInventory={onUpdateInventory}
-                              />
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </>
-                  ))}
-                </tbody>
-              </table>
-              </details>
+                  <details key={cat} open style={{ marginBottom: 10, borderRadius: 10, overflow: "hidden", border: "1px solid " + t.border }}>
+                    <summary style={{ background: "#1e293b", color: "#fff", padding: "9px 14px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, cursor: "pointer", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none" }}>
+                      <span>{cat}</span>
+                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {outCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "#ef4444", color: "#fff", borderRadius: 4, padding: "2px 5px" }}>{outCount} OUT</span>}
+                        {lowCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "#d97706", color: "#fff", borderRadius: 4, padding: "2px 5px" }}>{lowCount} LOW</span>}
+                        <span style={{ fontSize: 10, opacity: 0.5 }}>▾</span>
+                      </span>
+                    </summary>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr>
+                          <th style={{ padding: "5px 10px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, background: t.surface, borderBottom: "1px solid " + t.border, textAlign: "left" }}>Material</th>
+                          <th style={{ padding: "5px 8px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, background: t.surface, borderBottom: "1px solid " + t.border, textAlign: "right", width: 80 }}>Stock</th>
+                          <th style={{ padding: "5px 8px", fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, background: t.surface, borderBottom: "1px solid " + t.border, textAlign: "right", width: 72 }}>Adjust</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {catItems.map(item => {
+                          const qty = getQty(item.id);
+                          const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
+                          const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
+                          const status = stockStatus(qty);
+                          const sc = stockColors[status];
+                          return (
+                            <tr key={item.id} style={{ background: sc.row, borderLeft: status !== "ok" ? "3px solid " + sc.badge : "3px solid transparent" }}>
+                              <td style={{ padding: "6px 10px", fontSize: 13, color: t.text, borderBottom: "1px solid " + t.borderLight, verticalAlign: "middle" }}>
+                                <div style={{ fontWeight: 500, lineHeight: 1.3 }}>{item.name}</div>
+                                <div style={{ fontSize: 10, color: t.textMuted, marginTop: 1 }}>
+                                  {item.unit}{item.sqftPerTube ? <span> · {item.sqftPerTube} sqft/tube</span> : null}
+                                  {isFoam(item.id) && qty > 0 ? <span> · {bblToGals(qty, item.id)} gal</span> : null}
+                                </div>
+                                {pcsItem && pcsQty > 0 && (
+                                  <div style={{ fontSize: 10, marginTop: 2, color: "#818cf8", fontWeight: 600 }}>{pcsQty} pcs loose</div>
+                                )}
+                              </td>
+                              <td style={{ padding: "6px 8px", textAlign: "right", borderBottom: "1px solid " + t.borderLight, verticalAlign: "middle", whiteSpace: "nowrap" }}>
+                                <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                                  <span style={{ fontSize: 16, fontWeight: 800, color: sc.text, lineHeight: 1 }}>{isFoam(item.id) ? qty.toFixed(2) : qty}</span>
+                                  {sc.label && (
+                                    <span style={{ fontSize: 9, fontWeight: 800, background: sc.badge, color: "#fff", borderRadius: 4, padding: "1px 5px", letterSpacing: 0.5 }}>{sc.label}</span>
+                                  )}
+                                  {status === "ok" && item.sqftPerTube && qty > 0 && (
+                                    <span style={{ fontSize: 9, color: t.textMuted }}>{(item.sqftPerTube * qty).toFixed(0)} sqft</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td style={{ padding: "5px 8px", textAlign: "right", borderBottom: "1px solid " + t.borderLight, verticalAlign: "middle" }}>
+                                <InventoryEditCell
+                                  itemId={item.id}
+                                  qty={qty}
+                                  isFoam={isFoam(item.id)}
+                                  bblToGals={bblToGals}
+                                  galsToBbl={galsToBbl}
+                                  pcsItem={pcsItem}
+                                  pcsQty={pcsQty}
+                                  onUpdateInventory={onUpdateInventory}
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </details>
                 );
               })}
+              {invSearch && categories.every(cat => sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(i => i.name.toLowerCase().includes(searchLower))).length === 0) && (
+                <div style={{ textAlign: "center", padding: "32px 16px", color: t.textMuted, fontSize: 13 }}>No items match "{invSearch}"</div>
+              )}
             </div>
           );
         })()}
