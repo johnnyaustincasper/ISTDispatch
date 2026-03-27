@@ -3406,6 +3406,35 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               ))}
             </div>
 
+            {/* ─── MOBILE: Needs Check at top ─── */}
+            {!showCheckHistory && needsCheckJobs.length > 0 && window.innerWidth < 768 && (() => {
+              return (
+                <div style={{ marginBottom: 12 }}>
+                  <button onClick={() => setNeedsCheckExpanded(p => !p)}
+                    style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#fff1f2", border: "2px solid #f87171", borderRadius: needsCheckExpanded ? "12px 12px 0 0" : 12, padding: "12px 16px", cursor: "pointer", fontFamily: "inherit" }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color: "#b91c1c" }}>⚠️ {needsCheckJobs.length} Job{needsCheckJobs.length !== 1 ? "s" : ""} Need Checking</span>
+                    <span style={{ fontSize: 18, color: "#b91c1c" }}>{needsCheckExpanded ? "▲" : "▼"}</span>
+                  </button>
+                  {needsCheckExpanded && (
+                    <div style={{ border: "2px solid #f87171", borderTop: "none", borderRadius: "0 0 12px 12px", background: "#fff" }}>
+                      {needsCheckJobs.map((job) => {
+                        const completedAt = job.completedAt ? new Date(job.completedAt) : null;
+                        const hoursAgo = completedAt ? Math.floor((Date.now() - completedAt) / 3600000) : null;
+                        return (
+                          <div key={job.id} style={{ padding: "12px 14px", borderBottom: "1px solid #fecaca" }}>
+                            <div style={{ fontWeight: 700, fontSize: 14, color: "#111" }}>{job.builder || job.address}</div>
+                            {job.address && job.builder && <div style={{ fontSize: 12, color: "#6b7280" }}>{job.address}</div>}
+                            {hoursAgo !== null && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 2 }}>Completed {hoursAgo}h ago</div>}
+                            <button onClick={() => { setShowPMCheck(job); }} style={{ marginTop: 8, width: "100%", padding: "10px", background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ Mark as Checked</button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+
             {/* ─── TWO-COLUMN LAYOUT WRAPPER (desktop/iPad: schedule + needs-check side by side) ─── */}
             <div style={{ display: "grid", gridTemplateColumns: (!showCheckHistory && needsCheckJobs.length > 0 && window.innerWidth >= 768) ? "1fr 320px" : "1fr", gap: 20, alignItems: "start" }}>
               {/* ─── LEFT COLUMN: everything except Needs Check ─── */}
@@ -3658,8 +3687,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             })()}
               </div>{/* end left column */}
 
-              {/* ─── RIGHT COLUMN: Needs Check panel ─── */}
-              {!showCheckHistory && needsCheckJobs.length > 0 && (() => {
+              {/* ─── RIGHT COLUMN: Needs Check panel (desktop/iPad only) ─── */}
+              {!showCheckHistory && needsCheckJobs.length > 0 && window.innerWidth >= 768 && (() => {
                 const isMobile = window.innerWidth < 768;
                 return (
                   <div style={{ position: isMobile ? "static" : "sticky", top: 80 }}>
