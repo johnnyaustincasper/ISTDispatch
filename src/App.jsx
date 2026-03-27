@@ -944,6 +944,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   });
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("home");
+  const [truckTab, setTruckTab] = useState("truck"); // "truck" | "loadHistory"
   const [tsWeekOffset, setTsWeekOffset] = useState(0);
   const [activeJob, setActiveJob] = useState(null);
   const [materialCountJob, setMaterialCountJob] = useState(null);
@@ -1143,7 +1144,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               ← Home
             </button>
             <span style={{ fontSize: "14px", fontWeight: 700, color: t.text }}>
-              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : crewView === "loadHistory" ? "Load History" : ""}
+              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : ""}
             </span>
           </div>
         )}
@@ -1194,13 +1195,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
               </svg>
             ),
-            loadHistory: (
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/>
-                <polyline points="12 6 12 12 8 14"/>
-                <path d="M2 12h3M12 2v3"/>
-              </svg>
-            ),
           };
           const navItems = [
             { key: "jobs",        label: "Jobs",          sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs" },
@@ -1209,7 +1203,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             { key: "timesheet",   label: "Timesheet",     sub: "Track your time" },
             { key: "tickets",     label: "Tickets",       sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
             { key: "tools",       label: "Tools",         sub: "Checkout & return" },
-            { key: "loadHistory", label: "Load History",  sub: "Loads & unloads" },
           ];
           return (
             <div className="tab-view-enter">
@@ -1605,7 +1598,74 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           };
           return (
             <div className="tab-view-enter" style={{ padding: "0" }}>
-              <SectionHeader title="Truck Inventory" />
+              {/* Sub-tab switcher */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 20, background: t.surface, borderRadius: 12, padding: 4 }}>
+                {[{ key: "truck", label: "My Truck" }, { key: "loadHistory", label: "Load History" }].map(tab => (
+                  <button key={tab.key} onClick={() => setTruckTab(tab.key)} style={{ flex: 1, padding: "10px 0", borderRadius: 9, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 700, transition: "all 0.15s", background: truckTab === tab.key ? t.accent : "transparent", color: truckTab === tab.key ? "#fff" : t.textMuted }}>
+                    {tab.label}
+                  </button>
+                ))}
+              </div>
+              {truckTab === "loadHistory" && (() => {
+                const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+                const truckLoads = (loadLog || []).filter(r => r.truckId === truck.id);
+                const truckReturns = (returnLog || []).filter(r => r.truckId === truck.id);
+                const allEntries = [
+                  ...truckLoads.map(r => ({ ...r, actionType: "load" })),
+                  ...truckReturns.map(r => ({ ...r, actionType: "return" })),
+                ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                if (allEntries.length === 0) {
+                  return (
+                    <div style={{ textAlign: "center", padding: "48px 24px", borderRadius: "12px", border: "2px dashed " + t.border, background: t.surface }}>
+                      <div style={{ fontSize: "32px", marginBottom: "12px", opacity: 0.4 }}>📦</div>
+                      <div style={{ color: t.textSecondary, fontSize: "15px", fontWeight: 600 }}>No load history yet</div>
+                      <div style={{ color: t.textMuted, fontSize: "13px", marginTop: "6px" }}>Your loads and warehouse returns will appear here.</div>
+                    </div>
+                  );
+                }
+                return allEntries.map((entry, idx) => {
+                  const isLoad = entry.actionType === "load";
+                  const labelColor = isLoad ? "#1e40af" : "#15803d";
+                  const labelBg = isLoad ? "#dbeafe" : "#dcfce7";
+                  const labelText = isLoad ? "Loaded to Truck" : "Returned to Warehouse";
+                  const items = entry.items || {};
+                  const itemEntries = Object.entries(items).filter(([, qty]) => qty > 0);
+                  const fmtTimestamp = (ts) => {
+                    try {
+                      return new Date(ts).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+                    } catch { return ts; }
+                  };
+                  return (
+                    <Card key={entry.id || idx} style={{ borderLeft: "4px solid " + labelColor }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                        <div>
+                          <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: "99px", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.3px", color: labelColor, background: labelBg }}>{labelText}</span>
+                          <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px" }}>{fmtTimestamp(entry.timestamp)}</div>
+                        </div>
+                      </div>
+                      {itemEntries.length === 0 ? (
+                        <div style={{ fontSize: "13px", color: t.textMuted, fontStyle: "italic" }}>No items recorded</div>
+                      ) : (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                          {itemEntries.map(([itemId, qty]) => {
+                            const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                            const name = item ? item.name : itemId;
+                            const display = isFoam(itemId)
+                              ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+                              : qty + " " + (item ? item.unit : "");
+                            return (
+                              <span key={itemId} style={{ fontSize: "12px", background: t.bg, border: "1px solid " + t.border, color: t.text, padding: "3px 10px", borderRadius: "6px", fontWeight: 600 }}>
+                                {name}: {display}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </Card>
+                  );
+                });
+              })()}
+              {truckTab === "truck" && <><SectionHeader title="Truck Inventory" />
               {/* Current truck load */}
               <Card style={{ marginBottom: 16 }}>
                 <div style={{ fontWeight: 700, fontSize: 13, color: t.textMuted, marginBottom: loadedItems.length ? 10 : 0 }}>Currently Loaded</div>
@@ -1659,6 +1719,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   </button>
                 </div>
               ) : renderTruckForm(loadTruckMode)}
+              </>}
             </div>
           );
         })()}
@@ -1679,76 +1740,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           />
         )}
 
-        {crewView === "loadHistory" && (
-          <div className="tab-view-enter">
-            <SectionHeader title="Load History" />
-            {(() => {
-              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
-              const truckLoads = (loadLog || []).filter(r => r.truckId === truck.id);
-              const truckReturns = (returnLog || []).filter(r => r.truckId === truck.id);
 
-              // Merge loads and returns into one timeline
-              const allEntries = [
-                ...truckLoads.map(r => ({ ...r, actionType: "load" })),
-                ...truckReturns.map(r => ({ ...r, actionType: "return" })),
-              ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-              if (allEntries.length === 0) {
-                return (
-                  <div style={{ textAlign: "center", padding: "48px 24px", borderRadius: "12px", border: "2px dashed " + t.border, background: t.surface }}>
-                    <div style={{ fontSize: "32px", marginBottom: "12px", opacity: 0.4 }}>📦</div>
-                    <div style={{ color: t.textSecondary, fontSize: "15px", fontWeight: 600 }}>No load history yet</div>
-                    <div style={{ color: t.textMuted, fontSize: "13px", marginTop: "6px" }}>Your loads and warehouse returns will appear here.</div>
-                  </div>
-                );
-              }
-
-              return allEntries.map((entry, idx) => {
-                const isLoad = entry.actionType === "load";
-                const labelColor = isLoad ? "#1e40af" : "#15803d";
-                const labelBg = isLoad ? "#dbeafe" : "#dcfce7";
-                const labelText = isLoad ? "Loaded to Truck" : "Returned to Warehouse";
-                const items = entry.items || {};
-                const itemEntries = Object.entries(items).filter(([, qty]) => qty > 0);
-
-                const fmtTimestamp = (ts) => {
-                  try {
-                    return new Date(ts).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
-                  } catch { return ts; }
-                };
-
-                return (
-                  <Card key={entry.id || idx} style={{ borderLeft: "4px solid " + labelColor }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-                      <div>
-                        <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: "99px", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.3px", color: labelColor, background: labelBg }}>{labelText}</span>
-                        <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px" }}>{fmtTimestamp(entry.timestamp)}</div>
-                      </div>
-                    </div>
-                    {itemEntries.length === 0 ? (
-                      <div style={{ fontSize: "13px", color: t.textMuted, fontStyle: "italic" }}>No items recorded</div>
-                    ) : (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
-                        {itemEntries.map(([itemId, qty]) => {
-                          const item = INVENTORY_ITEMS.find(i => i.id === itemId);
-                          const name = item ? item.name : itemId;
-                          const display = isFoam(itemId)
-                            ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
-                            : qty + " " + (item ? item.unit : "");
-                          return (
-                            <span key={itemId} style={{ fontSize: "12px", background: t.bg, border: "1px solid " + t.border, color: t.text, padding: "3px 10px", borderRadius: "6px", fontWeight: 600 }}>
-                              {name}: {display}
-                            </span>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </Card>
-                );
-              });
-            })()}
-          </div>
-        )}
 
         {crewView === "tickets" && (
           <>
