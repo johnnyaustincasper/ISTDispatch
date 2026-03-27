@@ -3159,6 +3159,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [truckFilter, setTruckFilter] = useState(null);
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
   const [showOngoing, setShowOngoing] = useState(false);
+  const [showCheckHistory, setShowCheckHistory] = useState(false);
   const [pmJob, setPmJob] = useState(null);
   const [pmNote, setPmNote] = useState("");
   const [pmCheckedAM, setPmCheckedAM] = useState("No");
@@ -3184,6 +3185,29 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     return !isCompleted && truckMatch && deptMatch;
   });
   const onHoldJobs = jobs.filter((j) => j.onHold);
+
+  // Jobs completed in last 48h that haven't been fully checked — shown even after completion
+  const now48h = Date.now() - 48 * 60 * 60 * 1000;
+  const needsCheckJobs = jobs.filter((j) => {
+    if (j.onHold) return false;
+    const completedUpd = updates.filter((u) => u.jobId === j.id && u.status === "completed").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+    if (!completedUpd) return false;
+    if (new Date(completedUpd.timestamp).getTime() < now48h) return false;
+    const isFullyChecked = j.jobCheckedAM === "Yes" && j.jobCheckedPM === "Yes";
+    return !isFullyChecked;
+  });
+
+  // All jobs completed in last 7 days — for check history
+  const now7d = Date.now() - 7 * 24 * 60 * 60 * 1000;
+  const checkHistoryJobs = jobs.filter((j) => {
+    const completedUpd = updates.filter((u) => u.jobId === j.id && u.status === "completed").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+    if (!completedUpd) return false;
+    return new Date(completedUpd.timestamp).getTime() >= now7d;
+  }).sort((a, b) => {
+    const aUpd = updates.filter(u => u.jobId === a.id && u.status === "completed").sort((x,y) => new Date(y.timestamp)-new Date(x.timestamp))[0];
+    const bUpd = updates.filter(u => u.jobId === b.id && u.status === "completed").sort((x,y) => new Date(y.timestamp)-new Date(x.timestamp))[0];
+    return new Date(bUpd?.timestamp || 0) - new Date(aUpd?.timestamp || 0);
+  });
   const openTicketCount = tickets.filter((tk) => tk.status === "open").length;
   const STATUS_SORT_ORDER = { open: 0, acknowledged: 1, in_progress: 2, resolved: 3 };
   const filteredTickets = tickets
@@ -3248,6 +3272,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     const changes = {};
     if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; changes.amCheckedAt = new Date().toISOString(); onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
     if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; changes.pmCheckedAt = new Date().toISOString(); onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
+    // When both are checked, record who checked and when
+    if (pmCheckedAM === "Yes" && pmCheckedPM === "Yes") { changes.checkedAt = new Date().toISOString(); changes.checkedBy = adminName || "Admin"; }
     if (pmNote.trim()) { onSubmitPmUpdate({ jobId, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr() }); onLogAction("PM note on " + jobLabel + ": \"" + pmNote.trim().slice(0, 80) + (pmNote.trim().length > 80 ? "..." : "") + "\""); }
     // Submit immediately — no waiting on GPS
     onEditJob(jobId, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
@@ -3322,7 +3348,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     tools: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>,
   };
   const NAV_ITEMS = [
-    { key: "schedule", label: "Schedule" },
+    { key: "schedule", label: "Schedule", badge: needsCheckJobs.length },
     { key: "calendar", label: "Calendar" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
@@ -3378,6 +3404,96 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 <button key={key} onClick={() => { setScheduleView(key); setTruckFilter(null); }} style={{ padding: "9px 20px", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: scheduleView === key ? 700 : 500, background: scheduleView === key ? t.accent : t.surface, color: scheduleView === key ? "#fff" : t.textMuted, transition: "all 0.15s" }}>{label}</button>
               ))}
             </div>
+            {/* ─── NEEDS CHECK ALERT ─── */}
+            {!showCheckHistory && needsCheckJobs.length > 0 && (
+              <div style={{ background: "#fff1f2", border: "2px solid #f87171", borderRadius: 12, padding: "16px", marginBottom: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 22 }}>🔴</span>
+                    <div>
+                      <div style={{ fontSize: 16, fontWeight: 800, color: "#b91c1c" }}>Needs Check — {needsCheckJobs.length} Job{needsCheckJobs.length !== 1 ? "s" : ""}</div>
+                      <div style={{ fontSize: 12, color: "#ef4444", marginTop: 2 }}>Completed jobs waiting for your review</div>
+                    </div>
+                  </div>
+                  <button onClick={() => setShowCheckHistory(true)} style={{ fontSize: 12, color: "#b91c1c", background: "none", border: "1px solid #f87171", borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>View History</button>
+                </div>
+                {needsCheckJobs.map((job) => {
+                  const completedUpd = updates.filter(u => u.jobId === job.id && u.status === "completed").sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0];
+                  const completedTime = completedUpd ? new Date(completedUpd.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Unknown";
+                  const completedBy = completedUpd?.crewName || "Unknown";
+                  const isFullyChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
+                  return (
+                    <div key={job.id} style={{ background: "#fff", border: "1px solid #fca5a5", borderRadius: 10, padding: "14px 16px", marginBottom: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: t.text, marginBottom: 2 }}>{job.builder || "No Customer"}</div>
+                          <div style={{ fontSize: 12.5, color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.address}</div>
+                          <div style={{ fontSize: 12, color: "#b91c1c", marginTop: 4 }}>✅ Completed by <strong>{completedBy}</strong> on {completedTime}</div>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
+                        <span style={{ fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
+                        <button
+                          onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }}
+                          style={{ marginLeft: "auto", background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}
+                        >✓ Mark as Checked</button>
+                        {!isFullyChecked && (
+                          <button
+                            onClick={() => { const now = new Date().toISOString(); onEditJob(job.id, { jobCheckedAM: "Yes", jobCheckedPM: "Yes", amCheckedAt: now, pmCheckedAt: now, checkedAt: now, checkedBy: adminName }); onLogAction("Quick check on " + (job.builder || job.address)); }}
+                            style={{ background: "#15803d", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", gap: 6 }}
+                          >⚡ Quick Check Both</button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* ─── CHECK HISTORY VIEW ─── */}
+            {showCheckHistory && (
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
+                  <button onClick={() => setShowCheckHistory(false)} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: t.text, fontSize: 13, fontFamily: "inherit", fontWeight: 600 }}>← Back</button>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: t.text }}>Check History — Last 7 Days</div>
+                </div>
+                {checkHistoryJobs.length === 0
+                  ? <div style={{ fontSize: 14, color: t.textMuted, padding: "20px 0" }}>No completed jobs in the last 7 days.</div>
+                  : (
+                    <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, overflow: "hidden" }}>
+                      {/* Header row */}
+                      <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.2fr 1fr 1.5fr", gap: 8, padding: "10px 14px", background: t.bg, fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, borderBottom: "1px solid " + t.border }}>
+                        <div>Job</div><div>Address</div><div>Completed</div><div>Checked?</div><div>Checked By</div>
+                      </div>
+                      {checkHistoryJobs.map((job) => {
+                        const completedUpd = updates.filter(u => u.jobId === job.id && u.status === "completed").sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0];
+                        const completedDate = completedUpd ? new Date(completedUpd.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—";
+                        const isChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
+                        const checkedAt = job.checkedAt ? new Date(job.checkedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : (job.amCheckedAt || job.pmCheckedAt) ? new Date(job.pmCheckedAt || job.amCheckedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "";
+                        return (
+                          <div key={job.id} style={{ display: "grid", gridTemplateColumns: "2fr 2fr 1.2fr 1fr 1.5fr", gap: 8, padding: "12px 14px", fontSize: 13, color: t.text, borderBottom: "1px solid " + t.borderLight, alignItems: "center", background: isChecked ? "#f0fdf4" : "#fff9f9" }}>
+                            <div style={{ fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.builder || "No Customer"}</div>
+                            <div style={{ color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>{job.address?.split(",")[0]}</div>
+                            <div style={{ color: t.textMuted, fontSize: 12 }}>{completedDate}</div>
+                            <div>
+                              {isChecked
+                                ? <span style={{ color: "#15803d", fontWeight: 700, fontSize: 15 }}>✅</span>
+                                : <span style={{ color: "#dc2626", fontWeight: 700, fontSize: 13 }}>⚠️ No</span>}
+                            </div>
+                            <div style={{ color: t.textMuted, fontSize: 12 }}>
+                              {isChecked ? (job.checkedBy || "—") : "—"}
+                              {isChecked && checkedAt && <div style={{ fontSize: 10, color: t.textMuted }}>{checkedAt}</div>}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )
+                }
+              </div>
+            )}
+
             {(() => { const uncheckedCount = activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes").length; return (
             <SectionHeader title={scheduleView === "energySeal" ? "Energy Seal Schedule" : "Schedule"} right={<>
               {uncheckedCount > 0 && <button onClick={() => setShowUncheckedOnly(!showUncheckedOnly)} style={{ padding: "6px 12px", border: "1px solid " + (showUncheckedOnly ? t.danger : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showUncheckedOnly ? t.dangerBg : "#fff", color: showUncheckedOnly ? t.danger : t.textMuted }}>{showUncheckedOnly ? "Show All" : uncheckedCount + " Unchecked"}</button>}
