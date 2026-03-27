@@ -3138,7 +3138,7 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 
   if (!editing) {
     return (
-      <button onClick={open} style={{ fontSize: 10, fontWeight: 600, color: t.accent, background: t.accentBg, border: "1px solid " + t.accent, borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+      <button onClick={open} style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", background: "rgba(37,99,235,0.12)", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", letterSpacing: "0.3px" }}>
         Edit
       </button>
     );
@@ -4376,7 +4376,28 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           const searchLower = invSearch.toLowerCase();
           const sortItems = (arr) => [...arr].sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
           const stockStatus = (qty) => qty === 0 ? "out" : qty <= 2 ? "low" : "ok";
-          const stockColors = { out: { border: "#ef4444", text: "#ef4444", badge: "#ef4444", label: "OUT" }, low: { border: "#d97706", text: "#d97706", badge: "#d97706", label: "LOW" }, ok: { border: "#22c55e", text: t.text, badge: "#22c55e", label: null } };
+          const stockColors = {
+            out: { text: "#ef4444", bar: "#ef4444", label: "OUT", badgeBg: "rgba(239,68,68,0.15)", badgeColor: "#ef4444" },
+            low: { text: "#f59e0b", bar: "#f59e0b", label: "LOW", badgeBg: "rgba(245,158,11,0.15)", badgeColor: "#f59e0b" },
+            ok:  { text: "#22c55e", bar: "#22c55e", label: null, badgeBg: "rgba(34,197,94,0.15)", badgeColor: "#22c55e" },
+          };
+
+          // Compute stats for summary bar
+          const allMainItems = INVENTORY_ITEMS.filter(i => !i.isPieces);
+          const totalSKUs = allMainItems.length;
+          const outItems = allMainItems.filter(i => getQty(i.id) === 0);
+          const lowItems = allMainItems.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; });
+          const inStockItems = allMainItems.filter(i => getQty(i.id) > 2);
+          const lastUpdatedTs = inventory.reduce((best, r) => r.updatedAt && r.updatedAt > best ? r.updatedAt : best, "");
+          const lastUpdatedStr = lastUpdatedTs ? new Date(lastUpdatedTs).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Chicago" }) : "—";
+
+          // Max qty per unit for stock bar
+          const getMax = (item) => {
+            if (item.unit === "bags") return 30;
+            if (item.unit === "bbl") return 20;
+            if (item.unit === "tubes") return 40;
+            return 20;
+          };
 
           // Compute which categories match search / filter
           const visibleCats = categories.filter(cat => {
@@ -4385,47 +4406,86 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             return !searchLower || items.some(i => i.name.toLowerCase().includes(searchLower));
           });
 
+          // Dashboard color constants
+          const dk = {
+            bg: "#0f172a",
+            surface: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
+            border: "rgba(255,255,255,0.08)",
+            borderHover: "rgba(37,99,235,0.4)",
+            text: "#f1f5f9",
+            textMuted: "rgba(255,255,255,0.4)",
+            textDim: "rgba(255,255,255,0.6)",
+            accent: "#2563eb",
+            accentBg: "rgba(37,99,235,0.15)",
+            separator: "rgba(255,255,255,0.06)",
+            inputBg: "rgba(255,255,255,0.05)",
+            inputBorder: "rgba(255,255,255,0.1)",
+          };
+
+          const StatPill = ({ label, value, color }) => (
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap" }}>
+              <span style={{ fontSize: 10, color: dk.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</span>
+              <span style={{ fontSize: 12, fontWeight: 800, color: color || dk.text }}>{value}</span>
+            </div>
+          );
+
           return (
-            <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 80px)", overflow: "hidden", margin: "-20px", padding: 0 }}>
-              {/* Compact header bar */}
-              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid " + t.border, background: t.bg }}>
-                <div style={{ fontSize: 14, fontWeight: 800, color: t.text, whiteSpace: "nowrap" }}>Warehouse</div>
-                <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5, whiteSpace: "nowrap" }}>● LIVE</span>
+            <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 56px)", overflow: "hidden", margin: "-20px", padding: 0, background: dk.bg }}>
+
+              {/* ── Top control row: search + filter pills ── */}
+              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid " + dk.border, background: "rgba(15,23,42,0.95)" }}>
                 {/* Search */}
-                <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
-                  <svg style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", opacity: 0.4, pointerEvents: "none" }} width="13" height="13" fill="none" stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <div style={{ position: "relative", width: 180, flexShrink: 0 }}>
+                  <svg style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", opacity: 0.35, pointerEvents: "none" }} width="12" height="12" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   <input type="text" placeholder="Search…" value={invSearch} onChange={e => setInvSearch(e.target.value)}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "5px 24px 5px 26px", fontSize: 12, borderRadius: 6, border: "1px solid " + t.border, background: t.surface, color: t.text, fontFamily: "inherit", outline: "none" }} />
-                  {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>}
+                    style={{ width: "100%", boxSizing: "border-box", padding: "5px 22px 5px 24px", fontSize: 11, borderRadius: 8, border: "1px solid " + dk.inputBorder, background: dk.inputBg, color: dk.text, fontFamily: "inherit", outline: "none" }} />
+                  {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: dk.textMuted, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>}
                 </div>
                 {/* Category filter pills */}
-                <div style={{ display: "flex", gap: 4, overflowX: "auto", flexShrink: 0 }}>
-                  <button onClick={() => setInvCatFilter(null)} style={{ padding: "3px 8px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (invCatFilter === null ? t.accent : t.border), background: invCatFilter === null ? t.accentBg : "none", color: invCatFilter === null ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>All</button>
+                <div style={{ display: "flex", gap: 4, overflowX: "auto", flex: 1, minWidth: 0, alignItems: "center" }}>
+                  <button onClick={() => setInvCatFilter(null)}
+                    style={{ padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (invCatFilter === null ? dk.accent : dk.inputBorder), background: invCatFilter === null ? dk.accent : "rgba(255,255,255,0.04)", color: invCatFilter === null ? "#fff" : dk.textDim, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", letterSpacing: "0.3px" }}>All</button>
                   {categories.map(cat => {
                     const allItems = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces);
                     const hasOut = allItems.some(i => getQty(i.id) === 0);
                     const hasLow = allItems.some(i => { const q = getQty(i.id); return q > 0 && q <= 2; });
-                    const dotColor = hasOut ? "#ef4444" : hasLow ? "#d97706" : "#22c55e";
+                    const dotColor = hasOut ? "#ef4444" : hasLow ? "#f59e0b" : "#22c55e";
+                    const isActive = invCatFilter === cat;
                     return (
-                      <button key={cat} onClick={() => setInvCatFilter(invCatFilter === cat ? null : cat)}
-                        style={{ padding: "3px 8px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (invCatFilter === cat ? t.accent : t.border), background: invCatFilter === cat ? t.accentBg : "none", color: invCatFilter === cat ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 3 }}>
+                      <button key={cat} onClick={() => setInvCatFilter(isActive ? null : cat)}
+                        style={{ padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (isActive ? dk.accent : dk.inputBorder), background: isActive ? dk.accent : "rgba(255,255,255,0.04)", color: isActive ? "#fff" : dk.textDim, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, letterSpacing: "0.3px" }}>
                         <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor, display: "inline-block", flexShrink: 0 }} />
                         {cat}
                       </button>
                     );
                   })}
                 </div>
+                {/* Live indicator */}
+                <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>● LIVE</span>
               </div>
 
-              {/* Category grid — fills remaining height */}
+              {/* ── Summary stat pills ── */}
+              <div style={{ flexShrink: 0, padding: "6px 12px", display: "flex", gap: 6, alignItems: "center", borderBottom: "1px solid " + dk.border, background: "rgba(15,23,42,0.7)", overflowX: "auto" }}>
+                <StatPill label="SKUs" value={totalSKUs} />
+                <StatPill label="In Stock" value={inStockItems.length} color="#22c55e" />
+                <StatPill label="Out of Stock" value={outItems.length} color={outItems.length > 0 ? "#ef4444" : dk.textMuted} />
+                <StatPill label="Low Stock" value={lowItems.length} color={lowItems.length > 0 ? "#f59e0b" : dk.textMuted} />
+                <div style={{ flex: 1 }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                  <span style={{ fontSize: 9, color: dk.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Updated</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: dk.textDim }}>{lastUpdatedStr}</span>
+                </div>
+              </div>
+
+              {/* ── Category grid — fills remaining height ── */}
               <div style={{
                 flex: 1,
-                overflow: "hidden",
+                overflow: "auto",
                 display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
                 gridAutoRows: "1fr",
                 gap: 8,
-                padding: 8,
+                padding: 10,
                 alignItems: "stretch",
               }}>
                 {visibleCats.map(cat => {
@@ -4433,19 +4493,25 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   const catItems = allCatItems.filter(i => !searchLower || i.name.toLowerCase().includes(searchLower));
                   const outCount = allCatItems.filter(i => getQty(i.id) === 0).length;
                   const lowCount = allCatItems.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; }).length;
-                  const borderColor = outCount > 0 ? "#ef4444" : lowCount > 0 ? "#d97706" : "#22c55e";
+                  const badgeStatus = outCount > 0 ? "out" : lowCount > 0 ? "low" : null;
                   return (
-                    <div key={cat} style={{ display: "flex", flexDirection: "column", borderRadius: 8, overflow: "hidden", border: "1px solid " + t.border, borderLeft: "3px solid " + borderColor, background: t.surface, minHeight: 0 }}>
+                    <div key={cat}
+                      style={{ display: "flex", flexDirection: "column", borderRadius: 14, overflow: "hidden", border: "1px solid " + dk.border, background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)", minHeight: 0, transition: "box-shadow 0.15s ease" }}
+                      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 0 0 1px rgba(37,99,235,0.4)"}
+                      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+                    >
                       {/* Card header */}
-                      <div style={{ flexShrink: 0, padding: "5px 8px", background: "#1e293b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</span>
-                        <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
-                          {outCount > 0 && <span style={{ fontSize: 8, fontWeight: 800, background: "#ef4444", color: "#fff", borderRadius: 3, padding: "1px 4px" }}>{outCount} OUT</span>}
-                          {lowCount > 0 && <span style={{ fontSize: 8, fontWeight: 800, background: "#d97706", color: "#fff", borderRadius: 3, padding: "1px 4px" }}>{lowCount} LOW</span>}
+                      <div style={{ flexShrink: 0, padding: "8px 10px 7px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</span>
+                        <span style={{ display: "flex", gap: 3, flexShrink: 0, marginLeft: 6 }}>
+                          {outCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(239,68,68,0.18)", color: "#ef4444", borderRadius: 99, padding: "2px 6px", border: "1px solid rgba(239,68,68,0.3)", letterSpacing: "0.3px" }}>{outCount} OUT</span>}
+                          {lowCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(245,158,11,0.18)", color: "#f59e0b", borderRadius: 99, padding: "2px 6px", border: "1px solid rgba(245,158,11,0.3)", letterSpacing: "0.3px" }}>{lowCount} LOW</span>}
                         </span>
                       </div>
+                      {/* Separator */}
+                      <div style={{ height: 1, background: dk.separator, flexShrink: 0 }} />
                       {/* Items list — scrolls within card */}
-                      <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
+                      <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
                         {catItems.map(item => {
                           const qty = getQty(item.id);
                           const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
@@ -4454,42 +4520,49 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                           const sc = stockColors[status];
                           const displayQty = isFoam(item.id) ? qty.toFixed(2) : qty;
                           const subInfo = isFoam(item.id) && qty > 0 ? `${bblToGals(qty, item.id)}g` : (item.sqftPerTube && qty > 0 ? `${(item.sqftPerTube * qty).toFixed(0)} sqft` : "");
+                          const maxQty = getMax(item);
+                          const barPct = Math.min(100, maxQty > 0 ? (qty / maxQty) * 100 : 0);
                           return (
-                            <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 6px", borderBottom: "1px solid " + t.border + "44", minHeight: 28 }}>
-                              {/* Name */}
-                              <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, color: t.text }} title={item.name}>{item.name}</div>
-                              {/* Sub info */}
-                              {subInfo ? <span style={{ fontSize: 9, color: t.textMuted, whiteSpace: "nowrap", flexShrink: 0 }}>{subInfo}</span> : null}
-                              {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, color: "#818cf8", whiteSpace: "nowrap", flexShrink: 0 }}>{pcsQty}p</span> : null}
-                              {/* Qty */}
-                              <span style={{ fontSize: 12, fontWeight: 800, color: sc.text, whiteSpace: "nowrap", flexShrink: 0, minWidth: 24, textAlign: "right" }}>{displayQty}</span>
-                              {/* Status badge */}
-                              {sc.label && <span style={{ fontSize: 7, fontWeight: 800, background: sc.badge, color: "#fff", borderRadius: 3, padding: "1px 3px", flexShrink: 0 }}>{sc.label}</span>}
-                              {/* Edit control */}
-                              <div style={{ flexShrink: 0 }}>
-                                <InventoryEditCell
-                                  itemId={item.id}
-                                  qty={qty}
-                                  isFoam={isFoam(item.id)}
-                                  bblToGals={bblToGals}
-                                  galsToBbl={galsToBbl}
-                                  pcsItem={pcsItem}
-                                  pcsQty={pcsQty}
-                                  onUpdateInventory={onUpdateInventory}
-                                />
+                            <div key={item.id} style={{ padding: "5px 10px 6px 10px", borderBottom: "1px solid " + dk.separator }}>
+                              {/* Row: name + sub info + qty + edit */}
+                              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+                                {/* Name */}
+                                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 500, color: dk.text }} title={item.name}>{item.name}</div>
+                                {/* Sub info */}
+                                {subInfo ? <span style={{ fontSize: 9, color: dk.textMuted, whiteSpace: "nowrap", flexShrink: 0 }}>{subInfo}</span> : null}
+                                {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, color: "#818cf8", whiteSpace: "nowrap", flexShrink: 0 }}>{pcsQty}p</span> : null}
+                                {/* Qty */}
+                                <span style={{ fontSize: 13, fontWeight: 700, color: sc.text, whiteSpace: "nowrap", flexShrink: 0, minWidth: 22, textAlign: "right" }}>{displayQty}</span>
+                                {/* Edit control */}
+                                <div style={{ flexShrink: 0 }}>
+                                  <InventoryEditCell
+                                    itemId={item.id}
+                                    qty={qty}
+                                    isFoam={isFoam(item.id)}
+                                    bblToGals={bblToGals}
+                                    galsToBbl={galsToBbl}
+                                    pcsItem={pcsItem}
+                                    pcsQty={pcsQty}
+                                    onUpdateInventory={onUpdateInventory}
+                                  />
+                                </div>
+                              </div>
+                              {/* Mini stock bar */}
+                              <div style={{ height: 4, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: barPct + "%", borderRadius: 99, background: sc.bar, transition: "width 0.3s ease" }} />
                               </div>
                             </div>
                           );
                         })}
                         {catItems.length === 0 && searchLower && (
-                          <div style={{ fontSize: 11, color: t.textMuted, padding: "8px 6px", fontStyle: "italic" }}>No match</div>
+                          <div style={{ fontSize: 11, color: dk.textMuted, padding: "10px", fontStyle: "italic" }}>No match</div>
                         )}
                       </div>
                     </div>
                   );
                 })}
                 {visibleCats.length === 0 && (
-                  <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "32px 16px", color: t.textMuted, fontSize: 13 }}>No items match "{invSearch}"</div>
+                  <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "48px 16px", color: dk.textMuted, fontSize: 13 }}>No items match "{invSearch}"</div>
                 )}
               </div>
             </div>
