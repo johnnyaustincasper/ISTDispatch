@@ -496,7 +496,7 @@ function AdminLogin({ onLogin, onBack }) {
   }
 
   return (
-    <AuthShell wide>
+    <AuthShell wide centered>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
@@ -3464,6 +3464,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [showOngoing, setShowOngoing] = useState(false);
   const [showCheckHistory, setShowCheckHistory] = useState(false);
   const [needsCheckExpanded, setNeedsCheckExpanded] = useState(false);
+  const [checkPanelTab, setCheckPanelTab] = useState("needs"); // "needs" | "recent"
+  const [recentlyCheckedExpanded, setRecentlyCheckedExpanded] = useState(false);
   const [pmJob, setPmJob] = useState(null);
   const [pmNote, setPmNote] = useState("");
   const [pmCheckToast, setPmCheckToast] = useState("");
@@ -3501,6 +3503,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     const isFullyChecked = j.jobCheckedAM === "Yes" && j.jobCheckedPM === "Yes";
     return !isFullyChecked;
   });
+
+  // Jobs checked (fully) in last 48h — "Recently Checked" tab
+  const recentlyCheckedJobs = jobs.filter((j) => {
+    if (!j.checkedAt) return false;
+    return new Date(j.checkedAt).getTime() >= now48h;
+  }).sort((a, b) => new Date(b.checkedAt) - new Date(a.checkedAt));
 
   // All jobs completed in last 7 days — for check history
   const now7d = Date.now() - 7 * 24 * 60 * 60 * 1000;
