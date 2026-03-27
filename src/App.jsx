@@ -3697,7 +3697,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       </div>
 
       {/* Bottom nav */}
-      <div className="glass-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, display: "flex", flexDirection: "column", boxShadow: "0 -4px 20px rgba(0,0,0,0.18)" }}>
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, display: "flex", flexDirection: "column", background: t.surface, borderTop: "1px solid " + t.border, boxShadow: "0 -4px 20px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", padding: "4px 4px 0" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
