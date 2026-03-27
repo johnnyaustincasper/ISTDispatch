@@ -4494,36 +4494,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 </div>
               </div>
 
-              {/* ── Top control row: search + sort + category pills ── */}
-              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg }}>
-                {/* Search */}
-                <div style={{ position: "relative", width: 180, flexShrink: 0 }}>
-                  <svg style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", opacity: 0.35, pointerEvents: "none" }} width="12" height="12" fill="none" stroke="#1e293b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                  <input type="text" placeholder="Search…" value={invSearch} onChange={e => setInvSearch(e.target.value)}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "5px 22px 5px 24px", fontSize: 11, borderRadius: 8, border: "1px solid " + lk.inputBorder, background: lk.inputBg, color: lk.text, fontFamily: "inherit", outline: "none" }} />
-                  {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: lk.textMuted, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>}
-                </div>
 
-                {/* Category filter pills */}
-                <div style={{ display: "flex", gap: 4, overflowX: "auto", flex: 1, minWidth: 0, alignItems: "center" }}>
-                  <button onClick={() => setInvCatFilter(null)}
-                    style={{ padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (invCatFilter === null ? lk.accent : lk.inputBorder), background: invCatFilter === null ? lk.accent : "#ffffff", color: invCatFilter === null ? "#fff" : lk.textMuted, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", letterSpacing: "0.3px" }}>All</button>
-                  {categories.map(cat => {
-                    const allItems = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces);
-                    const hasOut = allItems.some(i => getQty(i.id) === 0);
-                    const hasLow = allItems.some(i => { const q = getQty(i.id); return q > 0 && q <= 2; });
-                    const dotColor = hasOut ? "#ef4444" : hasLow ? "#f59e0b" : "#22c55e";
-                    const isActive = invCatFilter === cat;
-                    return (
-                      <button key={cat} onClick={() => setInvCatFilter(isActive ? null : cat)}
-                        style={{ padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (isActive ? lk.accent : lk.inputBorder), background: isActive ? lk.accent : "#ffffff", color: isActive ? "#fff" : lk.textMuted, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, letterSpacing: "0.3px" }}>
-                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor, display: "inline-block", flexShrink: 0 }} />
-                        {cat}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
 
               {/* ── Category grid — fills remaining height ── */}
               <div style={{
