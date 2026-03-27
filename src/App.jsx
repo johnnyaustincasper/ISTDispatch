@@ -209,7 +209,7 @@ function Card({ children, style: s, onClick }) {
 function Modal({ title, onClose, children }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }} onClick={onClose}>
-      <div style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "16px", padding: "28px", maxWidth: "480px", width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: t.shadowMd }} onClick={(e) => e.stopPropagation()}>
+      <div style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "16px", padding: "16px", maxWidth: "480px", width: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: t.shadowMd }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "22px", paddingBottom: "14px", borderBottom: "1px solid " + t.border }}>
           <h2 style={{ fontSize: "17px", fontWeight: 600, color: t.text, margin: 0 }}>{title}</h2>
           <button onClick={onClose} style={{ background: t.surface, border: "1px solid " + t.border, color: t.textMuted, width: "28px", height: "28px", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px" }}>✕</button>
@@ -339,6 +339,9 @@ const kbStyles = `
   .glass-card:hover { background: rgba(255,255,255,0.12) !important; border-color: rgba(255,255,255,0.22) !important; }
   .glass-header { background: rgba(15,23,42,0.7) !important; -webkit-backdrop-filter: blur(20px) !important; backdrop-filter: blur(20px) !important; border-bottom: 1px solid rgba(255,255,255,0.08) !important; }
   .glass-nav { background: rgba(15,23,42,0.8) !important; -webkit-backdrop-filter: blur(16px) !important; backdrop-filter: blur(16px) !important; border-top: 1px solid rgba(255,255,255,0.08) !important; }
+  .compact-form > div { margin-bottom: 10px !important; }
+  .compact-form label { font-size: 11px !important; margin-bottom: 3px !important; }
+  .compact-form input, .compact-form select, .compact-form textarea { padding: 6px 10px !important; font-size: 13px !important; }
   .auth-glow { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(37,99,235,0.18) 0%, transparent 70%); pointer-events: none; z-index: 0; }
   .avatar-btn:hover > div { transform: scale(1.08); box-shadow: 0 6px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.4), 0 0 32px rgba(255,255,255,0.25)!important; }
   .avatar-btn:active > div { transform: scale(0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.3)!important; }
@@ -4625,6 +4628,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
       {showAddJob && (
         <Modal title="Add Job" onClose={() => setShowAddJob(false)}>
+          <div className="compact-form">
           <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} />
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
@@ -4646,7 +4650,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
             <input type="text" placeholder="Search employees..." value={addCrewSearch} onChange={e => setAddCrewSearch(e.target.value)} style={{ width: "100%", padding: "7px 10px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "13px", fontFamily: "inherit", marginBottom: "4px", boxSizing: "border-box" }} />
-            <div style={{ maxHeight: "180px", overflowY: "auto", border: "1px solid " + t.border, borderRadius: "6px" }}>
+            <div style={{ maxHeight: "110px", overflowY: "auto", border: "1px solid " + t.border, borderRadius: "6px" }}>
               {members.filter(m => m.name.toLowerCase().includes(addCrewSearch.toLowerCase())).map(m => {
                 const selected = (jobForm.crewMemberIds || []).includes(m.id);
                 return (
@@ -4684,6 +4688,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
           </div>
           <Button onClick={handleAddJob} disabled={!jobForm.address.trim()} style={{ width: "100%" }}>Add Job to Schedule</Button>
+          </div>
         </Modal>
       )}
 
