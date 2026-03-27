@@ -1015,11 +1015,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     <div style={{ minHeight: "100dvh", background: t.bg }}>
       <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-          <div>
-            <div style={{ fontSize: "16px", fontWeight: 800, color: t.text, letterSpacing: "-0.3px" }}>IST Dispatch</div>
-            <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "1px" }}>{truck.name} — {crewName}</div>
+          <svg width="130" height="36" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+            <rect width="360" height="100" fill="#0f172a" rx="8"/>
+            <rect x="18" y="14" width="4" height="72" fill="#2563eb" rx="2"/>
+            <text x="32" y="80" fontFamily="Arial Black,sans-serif" fontSize="72" fontWeight="900" fill="white" letterSpacing="-3">IST</text>
+            <line x1="168" y1="16" x2="168" y2="84" stroke="#1e3a5f" strokeWidth="1.5"/>
+            <text x="180" y="38" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">INSULATION</text>
+            <text x="180" y="56" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">SERVICES</text>
+            <text x="180" y="74" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">OF TULSA</text>
+          </svg>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: t.text, lineHeight: 1.2 }}>{crewName}</div>
+              <div style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px" }}>{truck.name}</div>
+            </div>
+            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
           </div>
-          <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
         </div>
         <div style={{ display: "flex", gap: "4px", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "2px", scrollbarWidth: "none", background: t.bg, borderRadius: "10px", padding: "4px" }}>
           <button className="crew-tab-btn" style={crewTabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
@@ -3393,8 +3404,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Top header — title + logout only */}
       <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "900px", margin: "0 auto" }}>
-          <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg">
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
             <rect width="360" height="100" fill="#0f172a" rx="8"/>
             <rect x="18" y="14" width="4" height="72" fill="#2563eb" rx="2"/>
             <text x="32" y="80" fontFamily="Arial Black,sans-serif" fontSize="72" fontWeight="900" fill="white" letterSpacing="-3">IST</text>
@@ -3437,8 +3448,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 margin: "0 1px",
                 minHeight: "56px",
               }}>
-              <span style={{ lineHeight: 1, color: isActive ? t.accent : "#94a3b8", transform: isActive ? "scale(1.08)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
+              <span style={{ lineHeight: 1, color: isActive ? t.accent : "#94a3b8", transform: isActive ? "scale(1.15)" : "scale(1)", display: "block", transition: "all 0.15s ease", filter: isActive ? "drop-shadow(0 0 4px #2563eb)" : "none" }}>{NAV_ICONS[item.key]}</span>
               <span style={{ fontSize: "10px", fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : "#94a3b8", transition: "all 0.15s", letterSpacing: isActive ? "-0.2px" : "0" }}>{item.label}</span>
+              <span style={{ display: "block", width: "4px", height: "4px", borderRadius: "50%", background: isActive ? t.accent : "transparent", marginTop: "1px", transition: "background 0.15s", boxShadow: isActive ? "0 0 4px #2563eb" : "none" }} />
               {item.badge > 0 && <span style={{ position: "absolute", top: "5px", right: "calc(50% - 18px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
             </button>
           );
