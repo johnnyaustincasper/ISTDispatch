@@ -940,7 +940,7 @@ function DailyProcedureCard() {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -1740,9 +1740,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             onEditTool={() => {}}
             onDeleteTool={() => {}}
             onCheckout={onToolCheckout}
-            onReturn={() => {}}
+            onReturn={onToolReturn || (() => {})}
             adminName={crewName}
             crewMembers={[]}
+            crewMemberId={crewMemberId}
+            crewMemberName={crewName}
           />
         )}
 
@@ -2199,7 +2201,7 @@ function EmployeeFlagBadge({ flag }) {
   return null;
 }
 
-function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag }) {
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName }) {
   const [tab, setTab] = useState("inventory");
   const [showAddTool, setShowAddTool] = useState(false);
   const [editingTool, setEditingTool] = useState(null);
@@ -2504,32 +2506,45 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       {tab === "checkouts" && (
         <>
           <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 12 }}>Active Checkouts</div>
-          {activeCheckouts.length === 0
-            ? <EmptyState text="No active checkouts." />
-            : activeCheckouts.sort((a, b) => new Date(b.checkedOutAt) - new Date(a.checkedOutAt)).map(co => {
-                const tool = tools.find(t2 => t2.id === co.toolId);
-                const empFlag = getEmpFlag(co.employeeName);
-                return (
-                  <Card key={co.id} style={{ borderLeft: "3px solid #b45309" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName}</div>
-                        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                          <span style={{ marginRight: 6 }}><strong>{co.employeeName}</strong></span>
-                          {isOffice && <EmployeeFlagBadge flag={empFlag} />}
-                          <span style={{ marginLeft: 8, marginRight: 12 }}>Qty: {co.quantity || 1}</span>
-                          <span>Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+          {(() => {
+            // Crew sees only their own checkouts; office sees all
+            const visibleCheckouts = isOffice
+              ? activeCheckouts
+              : activeCheckouts.filter(c => c.employeeName === crewMemberName);
+            return visibleCheckouts.length === 0
+              ? <EmptyState text="No active checkouts." />
+              : visibleCheckouts.sort((a, b) => new Date(b.checkedOutAt) - new Date(a.checkedOutAt)).map(co => {
+                  const tool = tools.find(t2 => t2.id === co.toolId);
+                  const empFlag = getEmpFlag(co.employeeName);
+                  return (
+                    <Card key={co.id} style={{ borderLeft: "3px solid #b45309" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                            <span style={{ marginRight: 6 }}><strong>{co.employeeName}</strong></span>
+                            {isOffice && <EmployeeFlagBadge flag={empFlag} />}
+                            <span style={{ marginLeft: 8, marginRight: 12 }}>Qty: {co.quantity || 1}</span>
+                            <span>Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                          </div>
+                          {tool?.category && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{tool.category}</div>}
                         </div>
-                        {tool?.category && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{tool.category}</div>}
+                        {isOffice && (
+                          <Button variant="secondary" onClick={() => handleReturn(co)} style={{ fontSize: 12, padding: "6px 10px", color: "#15803d", borderColor: "#86efac" }}>Mark Returned</Button>
+                        )}
+                        {!isOffice && (
+                          <button
+                            onClick={() => handleReturn(co)}
+                            style={{ flexShrink: 0, padding: "8px 12px", background: "#1e293b", border: "1px solid #475569", borderRadius: 8, color: "#f8fafc", fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
+                          >
+                            Return / Report
+                          </button>
+                        )}
                       </div>
-                      {isOffice && (
-                        <Button variant="secondary" onClick={() => handleReturn(co)} style={{ fontSize: 12, padding: "6px 10px", color: "#15803d", borderColor: "#86efac" }}>Mark Returned</Button>
-                      )}
-                    </div>
-                  </Card>
-                );
-              })
-          }
+                    </Card>
+                  );
+                });
+          })()}
 
           <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginTop: 24, marginBottom: 12 }}>Return History</div>
           {toolCheckouts.filter(c => c.returnedAt).length === 0
@@ -2616,10 +2631,10 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* Return Status Modal */}
       {returnModal && (
-        <Modal title="Mark Tool Returned" onClose={() => setReturnModal(null)}>
+        <Modal title={isOffice ? "Mark Tool Returned" : "Return / Report Tool"} onClose={() => setReturnModal(null)}>
           <div style={{ fontSize: 14, fontWeight: 600, color: t.text, marginBottom: 4 }}>{returnModal.toolName}</div>
-          <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 20 }}>Checked out by <strong>{returnModal.employeeName}</strong></div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 12 }}>What condition was it returned in?</div>
+          {isOffice && <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 20 }}>Checked out by <strong>{returnModal.employeeName}</strong></div>}
+          <div style={{ fontSize: 13, fontWeight: 600, color: t.text, marginBottom: 12 }}>{isOffice ? "What condition was it returned in?" : "What happened with this tool?"}</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {RETURN_STATUSES.map(rs => (
               <button key={rs.value} onClick={() => handleConfirmReturn(rs.value)}
@@ -5530,7 +5545,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
