@@ -3138,7 +3138,7 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 
   if (!editing) {
     return (
-      <button onClick={open} style={{ fontSize: 11, fontWeight: 600, color: t.accent, background: t.accentBg, border: "1px solid " + t.accent, borderRadius: 6, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+      <button onClick={open} style={{ fontSize: 10, fontWeight: 600, color: t.accent, background: t.accentBg, border: "1px solid " + t.accent, borderRadius: 4, padding: "2px 7px", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
         Edit
       </button>
     );
@@ -3470,6 +3470,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [editMatLogIdx, setEditMatLogIdx] = useState(null); // index into dailyMaterialLogs
   const [editMatLogQtys, setEditMatLogQtys] = useState({});
   const [invSearch, setInvSearch] = useState("");
+  const [invCatFilter, setInvCatFilter] = useState(null);
 
   const deptTruckIds = new Set(
     trucks.filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : (tr.department !== "energySeal"))
@@ -4373,100 +4374,124 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48));
           const searchLower = invSearch.toLowerCase();
-          const sortItems = (arr) => arr.sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
-          // stock status helpers
+          const sortItems = (arr) => [...arr].sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
           const stockStatus = (qty) => qty === 0 ? "out" : qty <= 2 ? "low" : "ok";
-          const stockColors = { out: { row: "rgba(239,68,68,0.10)", badge: "#ef4444", text: "#ef4444", label: "OUT" }, low: { row: "rgba(217,119,6,0.10)", badge: "#d97706", text: "#d97706", label: "LOW" }, ok: { row: "transparent", badge: "#22c55e", text: t.text, label: null } };
+          const stockColors = { out: { border: "#ef4444", text: "#ef4444", badge: "#ef4444", label: "OUT" }, low: { border: "#d97706", text: "#d97706", badge: "#d97706", label: "LOW" }, ok: { border: "#22c55e", text: t.text, badge: "#22c55e", label: null } };
+
+          // Compute which categories match search / filter
+          const visibleCats = categories.filter(cat => {
+            if (invCatFilter && invCatFilter !== cat) return false;
+            const items = sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces));
+            return !searchLower || items.some(i => i.name.toLowerCase().includes(searchLower));
+          });
+
           return (
-            <div style={{ padding: "0 0 32px" }}>
-              {/* Header + search */}
-              <div style={{ padding: "12px 14px 10px", display: "flex", flexDirection: "column", gap: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <div style={{ fontSize: 17, fontWeight: 800, color: t.text }}>Warehouse Inventory</div>
-                  <span style={{ fontSize: 10, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5 }}>● LIVE</span>
+            <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 80px)", overflow: "hidden", margin: "-20px", padding: 0 }}>
+              {/* Compact header bar */}
+              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid " + t.border, background: t.bg }}>
+                <div style={{ fontSize: 14, fontWeight: 800, color: t.text, whiteSpace: "nowrap" }}>Warehouse</div>
+                <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5, whiteSpace: "nowrap" }}>● LIVE</span>
+                {/* Search */}
+                <div style={{ position: "relative", flex: 1, minWidth: 0 }}>
+                  <svg style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", opacity: 0.4, pointerEvents: "none" }} width="13" height="13" fill="none" stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input type="text" placeholder="Search…" value={invSearch} onChange={e => setInvSearch(e.target.value)}
+                    style={{ width: "100%", boxSizing: "border-box", padding: "5px 24px 5px 26px", fontSize: 12, borderRadius: 6, border: "1px solid " + t.border, background: t.surface, color: t.text, fontFamily: "inherit", outline: "none" }} />
+                  {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>}
                 </div>
-                <div style={{ position: "relative" }}>
-                  <svg style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", opacity: 0.4 }} width="15" height="15" fill="none" stroke={t.text} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                  <input
-                    type="text"
-                    placeholder="Search materials…"
-                    value={invSearch}
-                    onChange={e => setInvSearch(e.target.value)}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px 8px 32px", fontSize: 13, borderRadius: 8, border: "1px solid " + t.border, background: t.surface, color: t.text, fontFamily: "inherit", outline: "none" }}
-                  />
-                  {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: t.textMuted, fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>}
+                {/* Category filter pills */}
+                <div style={{ display: "flex", gap: 4, overflowX: "auto", flexShrink: 0 }}>
+                  <button onClick={() => setInvCatFilter(null)} style={{ padding: "3px 8px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (invCatFilter === null ? t.accent : t.border), background: invCatFilter === null ? t.accentBg : "none", color: invCatFilter === null ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>All</button>
+                  {categories.map(cat => {
+                    const allItems = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces);
+                    const hasOut = allItems.some(i => getQty(i.id) === 0);
+                    const hasLow = allItems.some(i => { const q = getQty(i.id); return q > 0 && q <= 2; });
+                    const dotColor = hasOut ? "#ef4444" : hasLow ? "#d97706" : "#22c55e";
+                    return (
+                      <button key={cat} onClick={() => setInvCatFilter(invCatFilter === cat ? null : cat)}
+                        style={{ padding: "3px 8px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (invCatFilter === cat ? t.accent : t.border), background: invCatFilter === cat ? t.accentBg : "none", color: invCatFilter === cat ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 3 }}>
+                        <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor, display: "inline-block", flexShrink: 0 }} />
+                        {cat}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12, padding: "0 14px 8px" }}>
-              {categories.map(cat => {
-                const catItems = sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(i => !searchLower || i.name.toLowerCase().includes(searchLower)));
-                if (catItems.length === 0) return null;
-                // summary counts for category header
-                const outCount = catItems.filter(i => getQty(i.id) === 0).length;
-                const lowCount = catItems.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; }).length;
-                return (
-                  <details key={cat} open style={{ borderRadius: 10, overflow: "hidden", border: "1px solid " + t.border, alignSelf: "start" }}>
-                    <summary style={{ background: "#1e293b", color: "#fff", padding: "9px 14px", fontSize: 11, fontWeight: 800, textTransform: "uppercase", letterSpacing: 1, cursor: "pointer", listStyle: "none", display: "flex", justifyContent: "space-between", alignItems: "center", userSelect: "none" }}>
-                      <span>{cat}</span>
-                      <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {outCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "#ef4444", color: "#fff", borderRadius: 4, padding: "2px 5px" }}>{outCount} OUT</span>}
-                        {lowCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "#d97706", color: "#fff", borderRadius: 4, padding: "2px 5px" }}>{lowCount} LOW</span>}
-                        <span style={{ fontSize: 10, opacity: 0.5 }}>▾</span>
-                      </span>
-                    </summary>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8, padding: 8 }}>
-                      {catItems.map(item => {
-                        const qty = getQty(item.id);
-                        const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
-                        const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
-                        const status = stockStatus(qty);
-                        const sc = stockColors[status];
-                        return (
-                          <div key={item.id} style={{ background: t.surface, border: "1px solid " + (status !== "ok" ? sc.badge : t.border), borderTop: "3px solid " + sc.badge, borderRadius: 8, padding: "8px 10px", display: "flex", flexDirection: "column", gap: 4, minWidth: 0 }}>
-                            {/* Name + unit */}
-                            <div style={{ fontSize: 11, fontWeight: 600, color: t.text, lineHeight: 1.3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.name}>{item.name}</div>
-                            <div style={{ fontSize: 9, color: t.textMuted, lineHeight: 1 }}>
-                              {item.unit}{item.sqftPerTube ? ` · ${item.sqftPerTube} sqft/tube` : ""}
-                              {isFoam(item.id) && qty > 0 ? ` · ${bblToGals(qty, item.id)} gal` : ""}
+              {/* Category grid — fills remaining height */}
+              <div style={{
+                flex: 1,
+                overflow: "hidden",
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))",
+                gridAutoRows: "1fr",
+                gap: 8,
+                padding: 8,
+                alignItems: "stretch",
+              }}>
+                {visibleCats.map(cat => {
+                  const allCatItems = sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces));
+                  const catItems = allCatItems.filter(i => !searchLower || i.name.toLowerCase().includes(searchLower));
+                  const outCount = allCatItems.filter(i => getQty(i.id) === 0).length;
+                  const lowCount = allCatItems.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; }).length;
+                  const borderColor = outCount > 0 ? "#ef4444" : lowCount > 0 ? "#d97706" : "#22c55e";
+                  return (
+                    <div key={cat} style={{ display: "flex", flexDirection: "column", borderRadius: 8, overflow: "hidden", border: "1px solid " + t.border, borderLeft: "3px solid " + borderColor, background: t.surface, minHeight: 0 }}>
+                      {/* Card header */}
+                      <div style={{ flexShrink: 0, padding: "5px 8px", background: "#1e293b", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", textTransform: "uppercase", letterSpacing: 0.8, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</span>
+                        <span style={{ display: "flex", gap: 4, flexShrink: 0 }}>
+                          {outCount > 0 && <span style={{ fontSize: 8, fontWeight: 800, background: "#ef4444", color: "#fff", borderRadius: 3, padding: "1px 4px" }}>{outCount} OUT</span>}
+                          {lowCount > 0 && <span style={{ fontSize: 8, fontWeight: 800, background: "#d97706", color: "#fff", borderRadius: 3, padding: "1px 4px" }}>{lowCount} LOW</span>}
+                        </span>
+                      </div>
+                      {/* Items list — scrolls within card */}
+                      <div style={{ flex: 1, overflowY: "auto", padding: "2px 0" }}>
+                        {catItems.map(item => {
+                          const qty = getQty(item.id);
+                          const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
+                          const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
+                          const status = stockStatus(qty);
+                          const sc = stockColors[status];
+                          const displayQty = isFoam(item.id) ? qty.toFixed(2) : qty;
+                          const subInfo = isFoam(item.id) && qty > 0 ? `${bblToGals(qty, item.id)}g` : (item.sqftPerTube && qty > 0 ? `${(item.sqftPerTube * qty).toFixed(0)} sqft` : "");
+                          return (
+                            <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 4, padding: "3px 6px", borderBottom: "1px solid " + t.border + "44", minHeight: 28 }}>
+                              {/* Name */}
+                              <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 11, color: t.text }} title={item.name}>{item.name}</div>
+                              {/* Sub info */}
+                              {subInfo ? <span style={{ fontSize: 9, color: t.textMuted, whiteSpace: "nowrap", flexShrink: 0 }}>{subInfo}</span> : null}
+                              {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, color: "#818cf8", whiteSpace: "nowrap", flexShrink: 0 }}>{pcsQty}p</span> : null}
+                              {/* Qty */}
+                              <span style={{ fontSize: 12, fontWeight: 800, color: sc.text, whiteSpace: "nowrap", flexShrink: 0, minWidth: 24, textAlign: "right" }}>{displayQty}</span>
+                              {/* Status badge */}
+                              {sc.label && <span style={{ fontSize: 7, fontWeight: 800, background: sc.badge, color: "#fff", borderRadius: 3, padding: "1px 3px", flexShrink: 0 }}>{sc.label}</span>}
+                              {/* Edit control */}
+                              <div style={{ flexShrink: 0 }}>
+                                <InventoryEditCell
+                                  itemId={item.id}
+                                  qty={qty}
+                                  isFoam={isFoam(item.id)}
+                                  bblToGals={bblToGals}
+                                  galsToBbl={galsToBbl}
+                                  pcsItem={pcsItem}
+                                  pcsQty={pcsQty}
+                                  onUpdateInventory={onUpdateInventory}
+                                />
+                              </div>
                             </div>
-                            {/* Qty + badge */}
-                            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
-                              <span style={{ fontSize: 20, fontWeight: 800, color: sc.text, lineHeight: 1 }}>{isFoam(item.id) ? qty.toFixed(2) : qty}</span>
-                              {sc.label && (
-                                <span style={{ fontSize: 8, fontWeight: 800, background: sc.badge, color: "#fff", borderRadius: 4, padding: "2px 5px", letterSpacing: 0.5 }}>{sc.label}</span>
-                              )}
-                            </div>
-                            {status === "ok" && item.sqftPerTube && qty > 0 && (
-                              <div style={{ fontSize: 9, color: t.textMuted }}>{(item.sqftPerTube * qty).toFixed(0)} sqft</div>
-                            )}
-                            {pcsItem && pcsQty > 0 && (
-                              <div style={{ fontSize: 9, color: "#818cf8", fontWeight: 600 }}>{pcsQty} pcs loose</div>
-                            )}
-                            {/* Adjust controls */}
-                            <div style={{ marginTop: 4 }}>
-                              <InventoryEditCell
-                                itemId={item.id}
-                                qty={qty}
-                                isFoam={isFoam(item.id)}
-                                bblToGals={bblToGals}
-                                galsToBbl={galsToBbl}
-                                pcsItem={pcsItem}
-                                pcsQty={pcsQty}
-                                onUpdateInventory={onUpdateInventory}
-                              />
-                            </div>
-                          </div>
-                        );
-                      })}
+                          );
+                        })}
+                        {catItems.length === 0 && searchLower && (
+                          <div style={{ fontSize: 11, color: t.textMuted, padding: "8px 6px", fontStyle: "italic" }}>No match</div>
+                        )}
+                      </div>
                     </div>
-                  </details>
-                );
-              })}
+                  );
+                })}
+                {visibleCats.length === 0 && (
+                  <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "32px 16px", color: t.textMuted, fontSize: 13 }}>No items match "{invSearch}"</div>
+                )}
               </div>
-              {invSearch && categories.every(cat => sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(i => i.name.toLowerCase().includes(searchLower))).length === 0) && (
-                <div style={{ textAlign: "center", padding: "32px 16px", color: t.textMuted, fontSize: 13 }}>No items match "{invSearch}"</div>
-              )}
             </div>
           );
         })()}
