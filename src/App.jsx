@@ -153,16 +153,16 @@ const t = {
 
 // ─── Reusable Components ───
 function Badge({ children, color, bg }) {
-  return <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: "4px", fontSize: "10.5px", fontWeight: 600, letterSpacing: "0.4px", textTransform: "uppercase", color: color || t.accent, background: bg || t.accentBg, whiteSpace: "nowrap" }}>{children}</span>;
+  return <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: "99px", fontSize: "11px", fontWeight: 700, letterSpacing: "0.3px", textTransform: "uppercase", color: color || t.accent, background: bg || t.accentBg, whiteSpace: "nowrap" }}>{children}</span>;
 }
 
 function Button({ children, onClick, variant = "primary", style: s, disabled }) {
-  const base = { padding: "9px 18px", border: "none", borderRadius: "6px", fontWeight: 500, fontSize: "13.5px", cursor: disabled ? "not-allowed" : "pointer", transition: "all 0.15s ease", opacity: disabled ? 0.45 : 1, fontFamily: "inherit" };
+  const base = { padding: "11px 20px", border: "none", borderRadius: "9px", fontWeight: 600, fontSize: "14px", cursor: disabled ? "not-allowed" : "pointer", transition: "all 0.15s ease", opacity: disabled ? 0.45 : 1, fontFamily: "inherit", minHeight: "44px", display: "inline-flex", alignItems: "center", justifyContent: "center" };
   const v = {
-    primary: { background: t.accent, color: "#fff" },
+    primary: { background: t.accent, color: "#fff", boxShadow: "0 1px 4px rgba(26,86,219,0.3)" },
     secondary: { background: t.bg, color: t.textSecondary, border: "1px solid " + t.border },
     danger: { background: t.dangerBg, color: t.danger, border: "1px solid #fecaca" },
-    ghost: { background: "transparent", color: t.textMuted, padding: "6px 10px" },
+    ghost: { background: "transparent", color: t.textMuted, padding: "8px 12px", minHeight: "36px" },
   };
   return <button onClick={onClick} disabled={disabled} style={{ ...base, ...v[variant], ...s }}>{children}</button>;
 }
@@ -198,7 +198,7 @@ function TextArea({ label, ...props }) {
 
 function Card({ children, style: s, onClick }) {
   return (
-    <div onClick={onClick} style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "8px", padding: "16px", marginBottom: "10px", cursor: onClick ? "pointer" : "default", transition: "all 0.15s ease", boxShadow: t.shadow, ...s }}
+    <div onClick={onClick} style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "12px", padding: "16px 18px", marginBottom: "12px", cursor: onClick ? "pointer" : "default", transition: "all 0.15s ease", boxShadow: t.shadow, ...s }}
       onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.accent; e.currentTarget.style.boxShadow = t.shadowMd; } }}
       onMouseLeave={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.border; e.currentTarget.style.boxShadow = t.shadow; } }}>
       {children}
@@ -222,8 +222,8 @@ function Modal({ title, onClose, children }) {
 
 function SectionHeader({ title, right }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", flexWrap: "wrap", gap: "10px" }}>
-      <h2 style={{ fontSize: "18px", fontWeight: 600, color: t.text, margin: 0 }}>{title}</h2>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px", flexWrap: "wrap", gap: "10px" }}>
+      <h2 style={{ fontSize: "20px", fontWeight: 800, color: t.text, margin: 0, letterSpacing: "-0.3px" }}>{title}</h2>
       {right && <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>{right}</div>}
     </div>
   );
@@ -231,10 +231,11 @@ function SectionHeader({ title, right }) {
 
 function EmptyState({ text, sub }) {
   return (
-    <Card style={{ textAlign: "center", padding: "52px 24px", borderStyle: "dashed" }}>
-      <div style={{ color: t.textSecondary, fontSize: "14px" }}>{text}</div>
-      {sub && <div style={{ color: t.textMuted, fontSize: "13px", marginTop: "4px" }}>{sub}</div>}
-    </Card>
+    <div style={{ textAlign: "center", padding: "48px 24px", borderRadius: "12px", border: "2px dashed " + t.border, background: t.surface, marginBottom: "12px" }}>
+      <div style={{ fontSize: "32px", marginBottom: "12px", opacity: 0.4 }}>📋</div>
+      <div style={{ color: t.textSecondary, fontSize: "15px", fontWeight: 600 }}>{text}</div>
+      {sub && <div style={{ color: t.textMuted, fontSize: "13px", marginTop: "6px", lineHeight: 1.5 }}>{sub}</div>}
+    </div>
   );
 }
 
@@ -250,6 +251,14 @@ const kbStyles = `
     from { opacity: 0; transform: translateY(16px); }
     to   { opacity: 1; transform: translateY(0); }
   }
+  @keyframes tabFadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes badgePulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.15); }
+  }
   .kb-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center; }
   .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
   .kb-content { animation: authFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) both; }
@@ -259,6 +268,10 @@ const kbStyles = `
   .kb-input { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.25)!important;color:#fff!important; }
   .kb-input::placeholder { color:rgba(255,255,255,0.4)!important; }
   .kb-input:focus { border-color:rgba(255,255,255,0.6)!important; }
+  .tab-view-enter { animation: tabFadeIn 0.18s cubic-bezier(0.16,1,0.3,1) both; }
+  .nav-tab-btn:active { transform: scale(0.94); }
+  .crew-tab-btn:active { opacity: 0.75; transform: scale(0.96); }
+  * { -webkit-tap-highlight-color: transparent; }
 `;
 
 function AuthShell({ children, centered = false }) {
@@ -979,35 +992,51 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     setTicketDesc(""); setTicketPriority("medium"); setTicketType("equipment"); setToStart(null); setToEnd(null); setShowTicketForm(false);
   };
 
-  const tabStyle = (active) => ({ padding: "8px 16px", background: active ? t.accent : "transparent", color: active ? "#fff" : t.textMuted, border: active ? "none" : "1px solid " + t.border, borderRadius: "6px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", position: "relative" });
+  const crewTabStyle = (active) => ({
+    padding: "9px 14px",
+    background: active ? t.accent : "transparent",
+    color: active ? "#fff" : t.textSecondary,
+    border: "none",
+    borderRadius: "8px",
+    fontSize: "13px",
+    fontWeight: active ? 700 : 500,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    position: "relative",
+    flexShrink: 0,
+    minHeight: "38px",
+    transition: "all 0.15s ease",
+    letterSpacing: active ? "-0.2px" : "0",
+    boxShadow: active ? "0 2px 8px rgba(26,86,219,0.25)" : "none",
+  });
   const openTicketCount = myTickets.filter((tk) => tk.status !== "resolved").length;
 
   return (
     <div style={{ minHeight: "100dvh", background: t.bg }}>
-      <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
           <div>
-            <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>IST Dispatch</div>
-            <div style={{ fontSize: "12px", color: t.textMuted }}>{truck.name} — {crewName}</div>
+            <div style={{ fontSize: "16px", fontWeight: 800, color: t.text, letterSpacing: "-0.3px" }}>IST Dispatch</div>
+            <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "1px" }}>{truck.name} — {crewName}</div>
           </div>
           <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
         </div>
-        <div style={{ display: "flex", gap: "6px", marginTop: "10px" }}>
-          <button style={tabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
-          <button style={tabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>Truck</button>
-          <button style={tabStyle(crewView === "history")} onClick={() => setCrewView("history")}>Calendar</button>
-          <button style={tabStyle(crewView === "timesheet")} onClick={() => setCrewView("timesheet")}>Timesheet</button>
-          <button style={tabStyle(crewView === "tickets")} onClick={() => setCrewView("tickets")}>
+        <div style={{ display: "flex", gap: "4px", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "2px", scrollbarWidth: "none", background: t.bg, borderRadius: "10px", padding: "4px" }}>
+          <button className="crew-tab-btn" style={crewTabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
+          <button className="crew-tab-btn" style={crewTabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>Truck</button>
+          <button className="crew-tab-btn" style={crewTabStyle(crewView === "history")} onClick={() => setCrewView("history")}>Calendar</button>
+          <button className="crew-tab-btn" style={crewTabStyle(crewView === "timesheet")} onClick={() => setCrewView("timesheet")}>Timesheet</button>
+          <button className="crew-tab-btn" style={{ ...crewTabStyle(crewView === "tickets") }} onClick={() => setCrewView("tickets")}>
             Tickets
-            {openTicketCount > 0 && <span style={{ position: "absolute", top: "-5px", right: "-5px", background: t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "50%", width: "17px", height: "17px", display: "flex", alignItems: "center", justifyContent: "center" }}>{openTicketCount}</span>}
+            {openTicketCount > 0 && <span style={{ marginLeft: "5px", background: crewView === "tickets" ? "rgba(255,255,255,0.3)" : t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "99px", padding: "1px 5px", display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: "18px" }}>{openTicketCount}</span>}
           </button>
-          <button style={tabStyle(crewView === "tools")} onClick={() => setCrewView("tools")}>Tools</button>
+          <button className="crew-tab-btn" style={crewTabStyle(crewView === "tools")} onClick={() => setCrewView("tools")}>Tools</button>
         </div>
       </div>
 
-      <div style={{ padding: "20px", maxWidth: "600px", margin: "0 auto" }}>
+      <div style={{ padding: "16px 16px 32px", maxWidth: "600px", margin: "0 auto" }}>
         {crewView === "jobs" && (
-          <>
+          <div className="tab-view-enter">
             <SectionHeader title="Your Jobs" />
             {myJobs.length === 0 ? <EmptyState text="No active jobs assigned to you." sub="Check back or contact the office." /> : myJobs.map((job) => {
               const latestStatus = getLatestStatus(job.id);
@@ -1101,13 +1130,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 </Card>
               );
             })}
-
-
-          </>
+          </div>
         )}
 
         {/* ── LOAD TRUCK MODAL ── */}
-        {crewView === "history" && (() => {
+        {crewView === "history" && (() => { // eslint-disable-line no-extra-parens
           const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
           const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
           const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -1132,7 +1159,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           for (let d = 1; d <= daysInMonth; d++) cells.push(d);
           const ds = (d) => histCalYear + "-" + String(histCalMonth+1).padStart(2,"0") + "-" + String(d).padStart(2,"0");
           return (
-            <div>
+            <div className="tab-view-enter">
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                 <button onClick={() => { if (histCalMonth === 0) { setHistCalMonth(11); setHistCalYear(histCalYear-1); } else setHistCalMonth(histCalMonth-1); }} style={{ background: "none", border: "1px solid "+t.border, borderRadius: 6, padding: "6px 12px", cursor: "pointer", color: t.text, fontSize: 16 }}>{"<"}</button>
                 <div style={{ fontWeight: 700, fontSize: 16, color: t.text }}>{monthNames[histCalMonth]} {histCalYear}</div>
@@ -1375,7 +1402,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             );
           };
           return (
-            <div style={{ padding: "0 16px 32px" }}>
+            <div className="tab-view-enter" style={{ padding: "0" }}>
               <SectionHeader title="Truck Inventory" />
               {/* Current truck load */}
               <Card style={{ marginBottom: 16 }}>
@@ -1434,7 +1461,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           );
         })()}
 
-        {crewView === "timesheet" && <CrewTimesheetTab crewMemberId={crewMemberId} crewName={crewName} jobs={jobs} updates={updates} jobUpdates={jobUpdates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} />}
+        {crewView === "timesheet" && <div className="tab-view-enter"><CrewTimesheetTab crewMemberId={crewMemberId} crewName={crewName} jobs={jobs} updates={updates} jobUpdates={jobUpdates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} /></div>}
         {crewView === "tools" && (
           <ToolsView
             isOffice={false}
@@ -2019,11 +2046,14 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
   };
 
   const tabStyle = (active) => ({
-    padding: "8px 16px", borderRadius: "6px", fontSize: "12.5px", fontWeight: 600,
+    padding: "9px 18px", borderRadius: "8px", fontSize: "13px", fontWeight: active ? 700 : 500,
     background: active ? t.accent : "transparent",
-    color: active ? "#fff" : t.textMuted,
-    border: active ? "none" : "1px solid " + t.border,
+    color: active ? "#fff" : t.textSecondary,
+    border: "none",
     cursor: "pointer", fontFamily: "inherit",
+    boxShadow: active ? "0 2px 8px rgba(26,86,219,0.25)" : "none",
+    transition: "all 0.15s ease",
+    minHeight: "40px",
   });
 
   const cats = ["All", ...TOOL_CATEGORIES.filter(c => tools.some(tl => tl.category === c))];
@@ -2040,10 +2070,10 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       } />
 
       {/* Tabs */}
-      <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 2, marginBottom: 16, flexWrap: "wrap", background: t.bg, borderRadius: "10px", padding: "4px" }}>
         <button style={tabStyle(tab === "inventory")} onClick={() => setTab("inventory")}>Inventory</button>
         <button style={tabStyle(tab === "checkouts")} onClick={() => setTab("checkouts")}>
-          Checkouts {activeCheckouts.length > 0 && <span style={{ background: "#fef3c7", color: "#b45309", borderRadius: 10, padding: "0 6px", fontSize: 11, fontWeight: 700, marginLeft: 4 }}>{activeCheckouts.length}</span>}
+          Checkouts {activeCheckouts.length > 0 && <span style={{ background: tab === "checkouts" ? "rgba(255,255,255,0.3)" : "#fef3c7", color: tab === "checkouts" ? "#fff" : "#b45309", borderRadius: 99, padding: "1px 6px", fontSize: 11, fontWeight: 700, marginLeft: 5 }}>{activeCheckouts.length}</span>}
         </button>
         {isOffice && <button style={tabStyle(tab === "report")} onClick={() => setTab("report")}>Employee Report</button>}
       </div>
@@ -3360,7 +3390,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   ];
 
   return (
-    <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(72px + env(safe-area-inset-bottom, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Top header — title + logout only */}
       <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: "900px", margin: "0 auto" }}>
@@ -3381,16 +3411,38 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: t.surface, borderTop: "1px solid " + t.border, display: "flex", flexDirection: "column" }}>
-        <div style={{ display: "flex" }}>
-        {NAV_ITEMS.map(item => (
-          <button key={item.key} onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "8px 4px", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", position: "relative", gap: "2px" }}>
-            <span style={{ lineHeight: 1, color: view === item.key ? t.accent : "rgba(100,116,139,0.7)" }}>{NAV_ICONS[item.key]}</span>
-            <span style={{ fontSize: "10px", fontWeight: view === item.key ? 700 : 400, color: view === item.key ? t.accent : t.textMuted }}>{item.label}</span>
-            {item.badge > 0 && <span style={{ position: "absolute", top: "4px", right: "calc(50% - 16px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "50%", width: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
-            {view === item.key && <div style={{ position: "absolute", top: 0, left: "15%", right: "15%", height: "2px", background: t.accent, borderRadius: "0 0 2px 2px" }} />}
-          </button>
-        ))}
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: t.surface, borderTop: "2px solid " + t.border, display: "flex", flexDirection: "column", boxShadow: "0 -4px 16px rgba(0,0,0,0.08)" }}>
+        <div style={{ display: "flex", padding: "4px 4px 0" }}>
+        {NAV_ITEMS.map(item => {
+          const isActive = view === item.key;
+          return (
+            <button key={item.key}
+              className="nav-tab-btn"
+              onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }}
+              style={{
+                flex: 1,
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: isActive ? "7px 2px 8px" : "8px 2px 8px",
+                background: isActive ? t.accentBg : "none",
+                border: "none",
+                borderRadius: "10px",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                position: "relative",
+                gap: "3px",
+                transition: "all 0.15s ease",
+                margin: "0 1px",
+                minHeight: "56px",
+              }}>
+              <span style={{ lineHeight: 1, color: isActive ? t.accent : "#94a3b8", transform: isActive ? "scale(1.08)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
+              <span style={{ fontSize: "10px", fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : "#94a3b8", transition: "all 0.15s", letterSpacing: isActive ? "-0.2px" : "0" }}>{item.label}</span>
+              {item.badge > 0 && <span style={{ position: "absolute", top: "5px", right: "calc(50% - 18px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
+            </button>
+          );
+        })}
         </div>
         <div style={{ height: "env(safe-area-inset-bottom, 0px)", background: t.surface }} />
       </div>
