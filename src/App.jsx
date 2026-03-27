@@ -1146,8 +1146,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         </div>
         {crewView !== "home" && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
-            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.85)", borderRadius: "8px", padding: "7px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease" }}>
-              ← Home
+            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "4px", background: "none", border: "none", color: "#fff", padding: "10px 14px 10px 8px", fontSize: "15px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s ease", minHeight: "44px", minWidth: "44px", opacity: 0.9 }}>
+              ← Back
             </button>
             <span style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>
               {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : ""}
