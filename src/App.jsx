@@ -3726,7 +3726,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                   <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
                                 </div>
                                 <button onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>✓ Mark as Checked</button>
-                                {!isFullyChecked && <button onClick={() => { const now = new Date().toISOString(); onEditJob(job.id, { jobCheckedAM: "Yes", jobCheckedPM: "Yes", amCheckedAt: now, pmCheckedAt: now, checkedAt: now, checkedBy: adminName }); onLogAction("Quick check on " + (job.builder || job.address)); }} style={{ background: "#15803d", color: "#fff", border: "none", borderRadius: 8, padding: "8px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>⚡ Quick Check Both</button>}
+
                               </div>
                             );
                           })}
