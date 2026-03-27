@@ -838,7 +838,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     return !latest || latest.status !== "completed";
   });
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-  const [crewView, setCrewView] = useState("jobs");
+  const [crewView, setCrewView] = useState("home");
   const [tsWeekOffset, setTsWeekOffset] = useState(0);
   const [activeJob, setActiveJob] = useState(null);
   const [materialCountJob, setMaterialCountJob] = useState(null);
@@ -1032,20 +1032,57 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
           </div>
         </div>
-        <div style={{ display: "flex", gap: "4px", overflowX: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "2px", scrollbarWidth: "none", background: t.bg, borderRadius: "10px", padding: "4px" }}>
-          <button className="crew-tab-btn" style={crewTabStyle(crewView === "jobs")} onClick={() => setCrewView("jobs")}>Jobs</button>
-          <button className="crew-tab-btn" style={crewTabStyle(crewView === "truck")} onClick={() => setCrewView("truck")}>Truck</button>
-          <button className="crew-tab-btn" style={crewTabStyle(crewView === "history")} onClick={() => setCrewView("history")}>Calendar</button>
-          <button className="crew-tab-btn" style={crewTabStyle(crewView === "timesheet")} onClick={() => setCrewView("timesheet")}>Timesheet</button>
-          <button className="crew-tab-btn" style={{ ...crewTabStyle(crewView === "tickets") }} onClick={() => setCrewView("tickets")}>
-            Tickets
-            {openTicketCount > 0 && <span style={{ marginLeft: "5px", background: crewView === "tickets" ? "rgba(255,255,255,0.3)" : t.danger, color: "#fff", fontSize: "10px", fontWeight: 700, borderRadius: "99px", padding: "1px 5px", display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: "18px" }}>{openTicketCount}</span>}
-          </button>
-          <button className="crew-tab-btn" style={crewTabStyle(crewView === "tools")} onClick={() => setCrewView("tools")}>Tools</button>
-        </div>
+        {crewView !== "home" && (
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
+            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "6px", background: t.bg, border: "1px solid " + t.border, color: t.textSecondary, borderRadius: "8px", padding: "7px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease" }}>
+              ← Home
+            </button>
+            <span style={{ fontSize: "14px", fontWeight: 700, color: t.text }}>
+              {crewView === "jobs" ? "📋 Jobs" : crewView === "truck" ? "🚛 My Truck" : crewView === "history" ? "📅 Calendar" : crewView === "timesheet" ? "⏱️ Timesheet" : crewView === "tickets" ? "🎫 Tickets" : crewView === "tools" ? "🔧 Tools" : ""}
+            </span>
+          </div>
+        )}
       </div>
 
       <div style={{ padding: "16px 16px 32px", maxWidth: "600px", margin: "0 auto" }}>
+        {crewView === "home" && (() => {
+          const now = new Date();
+          const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+          const firstName = crewName ? crewName.split(" ")[0] : crewName;
+          const navItems = [
+            { key: "jobs",      icon: "📋", label: "Jobs",       sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs" },
+            { key: "truck",     icon: "🚛", label: "My Truck",   sub: "Inventory & load" },
+            { key: "history",   icon: "📅", label: "Calendar",   sub: "Job history" },
+            { key: "timesheet", icon: "⏱️", label: "Timesheet",  sub: "Track your time" },
+            { key: "tickets",   icon: "🎫", label: "Tickets",    sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
+            { key: "tools",     icon: "🔧", label: "Tools",      sub: "Checkout & return" },
+          ];
+          return (
+            <div className="tab-view-enter">
+              <div style={{ marginBottom: "24px", paddingTop: "4px" }}>
+                <div style={{ fontSize: "22px", fontWeight: 800, color: t.text, letterSpacing: "-0.3px" }}>Hey {firstName} 👋</div>
+                <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>{dateStr}</div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
+                {navItems.map(item => (
+                  <button key={item.key} onClick={() => setCrewView(item.key)}
+                    style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", padding: "24px 16px 20px", background: t.card, border: "1px solid " + t.border, borderRadius: "16px", cursor: "pointer", fontFamily: "inherit", boxShadow: t.shadow, transition: "all 0.15s ease", textAlign: "center", minHeight: "120px" }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.boxShadow = t.shadowMd; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.boxShadow = t.shadow; e.currentTarget.style.transform = ""; }}
+                    onTouchStart={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.boxShadow = t.shadowMd; }}
+                    onTouchEnd={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.boxShadow = t.shadow; }}>
+                    {item.badge && (
+                      <span style={{ position: "absolute", top: "12px", right: "12px", background: t.danger, color: "#fff", fontSize: "11px", fontWeight: 700, borderRadius: "99px", padding: "2px 7px", minWidth: "20px", textAlign: "center" }}>{item.badge}</span>
+                    )}
+                    <span style={{ fontSize: "36px", lineHeight: 1 }}>{item.icon}</span>
+                    <span style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>{item.label}</span>
+                    <span style={{ fontSize: "12px", color: t.textMuted, lineHeight: 1.3 }}>{item.sub}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
         {crewView === "jobs" && (
           <div className="tab-view-enter">
             <SectionHeader title="Your Jobs" />
