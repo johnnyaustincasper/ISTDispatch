@@ -299,7 +299,7 @@ function AvatarButton({ name, onClick, disabled, badge }) {
           }}>{badge}</span>
         )}
       </div>
-      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", textAlign: "center", lineHeight: 1.3, maxWidth: 80, wordBreak: "break-word" }}>{name}</span>
+      <span style={{ fontSize: 12, color: "#0f172a", textAlign: "center", lineHeight: 1.3, maxWidth: 80, wordBreak: "break-word" }}>{name}</span>
     </button>
   );
 }
@@ -325,7 +325,7 @@ const kbStyles = `
   .kb-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center; }
   .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
   .kb-content { animation: authFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) both; }
-  .kb-back-btn { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.2)!important;color:#fff!important;backdrop-filter:blur(8px); }
+  .kb-back-btn { background:rgba(255,255,255,0.35)!important;border:1px solid rgba(255,255,255,0.4)!important;color:#0f172a!important;backdrop-filter:blur(8px); }
   .kb-card { background:rgba(255,255,255,0.1)!important;-webkit-backdrop-filter:blur(16px)!important;backdrop-filter:blur(16px)!important;border:1px solid rgba(255,255,255,0.22)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 24px rgba(0,0,0,0.35)!important;transition:background 0.2s,transform 0.2s!important; }
   .kb-card:hover { background:rgba(255,255,255,0.18)!important;transform:translateY(-2px);border-color:rgba(255,255,255,0.35)!important; }
   .kb-input { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.25)!important;color:#fff!important; }
@@ -439,7 +439,7 @@ function AdminLogin({ onLogin, onBack }) {
   if (selected && mode === "enter") {
     return (
       <AuthShell>
-          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: "#0f172a", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
             <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
             <div>
@@ -467,12 +467,12 @@ function AdminLogin({ onLogin, onBack }) {
   if (selected && mode === "create") {
     return (
       <AuthShell>
-          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: "#0f172a", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
             <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
             <div style={{ fontSize: "18px", fontWeight: 600, color: t.text }}>{selected}</div>
           </div>
-          <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", margin: "0 0 20px" }}>First time? Set up a 4-digit PIN.</p>
+          <p style={{ color: "rgba(0,0,0,0.5)", fontSize: "13.5px", margin: "0 0 20px" }}>First time? Set up a 4-digit PIN.</p>
           <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Create PIN</label>
           <input
             type="password"
@@ -503,10 +503,10 @@ function AdminLogin({ onLogin, onBack }) {
 
   return (
     <AuthShell wide kiosk>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "#0f172a", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
-          <div style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", marginTop: "6px" }}>Select your name to log in</div>
+          <div style={{ color: "rgba(0,0,0,0.5)", fontSize: "13.5px", marginTop: "6px" }}>Select your name to log in</div>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", justifyContent: "center", width: "100%" }}>
           {[...OFFICE_PROFILES].map((name) => (
@@ -616,16 +616,16 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 
   return (
     <AuthShell wide kiosk>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: "#0f172a", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         {step === "pick" ? (
           <div style={{ textAlign: "center", marginBottom: "24px" }}>
             <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
-            <div style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", marginTop: "6px" }}>Tap your name to get started</div>
+            <div style={{ color: "rgba(0,0,0,0.5)", fontSize: "13.5px", marginTop: "6px" }}>Tap your name to get started</div>
           </div>
         ) : (
           <>
             <h1 style={{ fontSize: "22px", fontWeight: 600, color: "#fff", margin: "0 0 6px" }}>{title}</h1>
-            <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
+            <p style={{ color: "rgba(0,0,0,0.5)", fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
           </>
         )}
 
