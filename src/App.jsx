@@ -2206,7 +2206,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
   const [showCheckoutModal, setShowCheckoutModal] = useState(null);
   const [returnModal, setReturnModal] = useState(null); // checkout record awaiting return status
   const [toolForm, setToolForm] = useState({ name: "", category: TOOL_CATEGORIES[0], quantity: 1, conditionNotes: "", status: "available" });
-  const [checkoutForm, setCheckoutForm] = useState({ employeeName: "", quantity: 1, expectedReturn: "" });
+  const [checkoutForm, setCheckoutForm] = useState({ employeeName: "", quantity: 1 });
   const [filterCat, setFilterCat] = useState("All");
   const [toolSearch, setToolSearch] = useState("");
   const [collapsedCats, setCollapsedCats] = useState({});
@@ -2290,12 +2290,12 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       toolName: showCheckoutModal.name,
       employeeName: checkoutForm.employeeName.trim(),
       quantity: checkoutForm.quantity || 1,
-      expectedReturn: checkoutForm.expectedReturn || null,
+      
       checkedOutAt: new Date().toISOString(),
       checkedOutBy: adminName || checkoutForm.employeeName,
     });
     setShowCheckoutModal(null);
-    setCheckoutForm({ employeeName: "", quantity: 1, expectedReturn: "" });
+    setCheckoutForm({ employeeName: "", quantity: 1 });
   };
 
   const handleReturn = (checkout) => {
@@ -2457,7 +2457,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                             <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: "auto" }}>
                               {avail > 0 && status !== "maintenance" && (
                                 <button
-                                  onClick={() => { setShowCheckoutModal(tool); setCheckoutForm({ employeeName: "", quantity: 1, expectedReturn: "" }); }}
+                                  onClick={() => { setShowCheckoutModal(tool); setCheckoutForm({ employeeName: "", quantity: 1 }); }}
                                   style={{ width: "100%", padding: "5px 0", background: t.accent, border: "none", borderRadius: 5, color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}
                                 >
                                   Check Out
@@ -2519,7 +2519,6 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                           {isOffice && <EmployeeFlagBadge flag={empFlag} />}
                           <span style={{ marginLeft: 8, marginRight: 12 }}>Qty: {co.quantity || 1}</span>
                           <span>Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
-                          {co.expectedReturn && <span style={{ marginLeft: 8, color: t.accent }}>Return by: {co.expectedReturn}</span>}
                         </div>
                         {tool?.category && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{tool.category}</div>}
                       </div>
@@ -2662,7 +2661,6 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Quantity</label>
             <input type="number" min="1" max={getToolAvailableQty(showCheckoutModal)} value={checkoutForm.quantity} onChange={e => setCheckoutForm(f => ({ ...f, quantity: Math.max(1, Math.min(getToolAvailableQty(showCheckoutModal), parseInt(e.target.value) || 1)) }))} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
           </div>
-          <Input label="Expected Return Date (optional)" type="date" value={checkoutForm.expectedReturn} onChange={e => setCheckoutForm({ ...checkoutForm, expectedReturn: e.target.value })} />
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <Button variant="secondary" onClick={() => setShowCheckoutModal(null)} style={{ flex: 1 }}>Cancel</Button>
             <Button onClick={handleCheckout} disabled={!checkoutForm.employeeName.trim()} style={{ flex: 1 }}>Check Out</Button>
