@@ -3676,9 +3676,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   ];
 
   return (
-    <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
-      {/* Top header — title + logout only */}
-      <div className="glass-header" style={{ padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
+    <div style={{ position: "fixed", inset: 0, display: "flex", flexDirection: "column", background: t.bg, overflow: "hidden" }}>
+      {/* Top header — pinned, never scrolls */}
+      <div className="glass-header" style={{ padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", flexShrink: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
             <rect width="360" height="100" fill="#0f172a" rx="8"/>
@@ -3696,8 +3696,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         </div>
       </div>
 
+      {/* Scrollable content area */}
+      <div style={{ flex: 1, overflowY: "auto", overflowX: "hidden", WebkitOverflowScrolling: "touch" }}>
+      <div style={{ padding: "20px 20px calc(84px + env(safe-area-inset-bottom, 0px))" }}>
+
       {/* Bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, display: "flex", flexDirection: "column", background: t.surface, borderTop: "1px solid " + t.border, boxShadow: "0 -4px 20px rgba(0,0,0,0.18)" }}>
+      </div></div><div style={{ flexShrink: 0, zIndex: 200, display: "flex", flexDirection: "column", background: t.surface, borderTop: "1px solid " + t.border, boxShadow: "0 -4px 20px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", padding: "4px 4px 0" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
