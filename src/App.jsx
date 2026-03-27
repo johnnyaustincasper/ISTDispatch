@@ -502,7 +502,7 @@ function AdminLogin({ onLogin, onBack }) {
           <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
           <div style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", marginTop: "6px" }}>Select your name to log in</div>
         </div>
-        <div className="avatar-grid">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", justifyContent: "center", width: "100%" }}>
           {[...OFFICE_PROFILES].map((name) => (
             <AvatarButton
               key={name}
@@ -3578,7 +3578,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; changes.amCheckedAt = new Date().toISOString(); onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
     if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; changes.pmCheckedAt = new Date().toISOString(); onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
     // When both are checked, record who checked and when
-    if (pmCheckedAM === "Yes" && pmCheckedPM === "Yes") { changes.checkedAt = new Date().toISOString(); changes.checkedBy = adminName || "Admin"; }
+    const bothChecked = pmCheckedAM === "Yes" && pmCheckedPM === "Yes";
+    if (bothChecked) { changes.checkedAt = new Date().toISOString(); changes.checkedBy = adminName || "Admin"; changes.checkedLat = null; changes.checkedLng = null; changes.checkedGeoAccuracy = null; }
     if (pmNote.trim()) { onSubmitPmUpdate({ jobId, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr() }); onLogAction("PM note on " + jobLabel + ": \"" + pmNote.trim().slice(0, 80) + (pmNote.trim().length > 80 ? "..." : "") + "\""); }
     // Submit immediately — no waiting on GPS
     onEditJob(jobId, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
@@ -3592,6 +3593,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           const patch = {};
           if (pmCheckedAM !== prevAM) patch.amGeoTag = geoTag;
           if (pmCheckedPM !== prevPM) patch.pmGeoTag = geoTag;
+          if (bothChecked) { patch.checkedLat = pos.coords.latitude; patch.checkedLng = pos.coords.longitude; patch.checkedGeoAccuracy = Math.round(pos.coords.accuracy); }
           if (Object.keys(patch).length > 0) onEditJob(jobId, patch);
         },
         () => {}, // silently ignore if denied
@@ -3785,6 +3787,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               {job.builder && <div style={{ fontWeight: 700, fontSize: 15, color: "#14532d", marginBottom: 2 }}>{job.builder}</div>}
                               {job.address && <div style={{ fontSize: 14, fontWeight: 600, color: "#15803d", marginBottom: 3 }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
                               <div style={{ fontSize: 11, color: "#166534", marginTop: 2 }}>✅ Checked by <strong>{job.checkedBy || "—"}</strong> · {checkedTime}</div>
+                              {job.checkedLat && job.checkedLng
+                                ? <div style={{ fontSize: 11, marginTop: 3 }}><a href={`https://www.google.com/maps?q=${job.checkedLat},${job.checkedLng}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>📍 View Check Location</a></div>
+                                : <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>📍 Location not recorded</div>
+                              }
                               <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
                                 <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
                                 <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
@@ -4865,6 +4871,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               style={{ width: "100%", boxSizing: "border-box", minHeight: 72, fontSize: 14, padding: "10px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontFamily: "inherit", resize: "vertical", outline: "none" }}
             />
           </div>
+
+          {/* Geo note */}
+          {pmCheckedAM === "Yes" && pmCheckedPM === "Yes" && (
+            <div style={{ fontSize: 12, color: "#6b7280", textAlign: "center", marginBottom: 12 }}>📍 Your location will be recorded when you save</div>
+          )}
 
           {/* Buttons */}
           <div style={{ display: "flex", gap: 10 }}>
