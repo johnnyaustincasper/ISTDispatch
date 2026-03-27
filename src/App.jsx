@@ -276,12 +276,17 @@ function AvatarButton({ name, onClick, disabled, badge }) {
       }}
     >
       <div style={{
-        width: 68, height: 68, borderRadius: "50%", background: color,
+        width: 68, height: 68, borderRadius: "50%",
+        background: "rgba(255,255,255,0.15)",
+        backdropFilter: "blur(12px)",
+        WebkitBackdropFilter: "blur(12px)",
+        border: "1px solid rgba(255,255,255,0.3)",
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 22, fontWeight: 800, color: "#fff",
-        boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+        boxShadow: `0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 20px ${color}66`,
         position: "relative",
-        transition: "box-shadow 0.15s, transform 0.15s",
+        transition: "box-shadow 0.2s, transform 0.2s",
+        textShadow: "0 1px 4px rgba(0,0,0,0.4)",
       }}>
         {initials}
         {badge && (
@@ -330,17 +335,18 @@ const kbStyles = `
   .nav-tab-btn:active { transform: scale(0.94); }
   .crew-tab-btn:active { opacity: 0.75; transform: scale(0.96); }
   * { -webkit-tap-highlight-color: transparent; }
-  .avatar-btn:active > div { box-shadow: 0 0 0 4px rgba(255,255,255,0.35), 0 2px 8px rgba(0,0,0,0.25)!important; transform: scale(0.93); }
-  .avatar-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:16px; }
+  .avatar-btn:hover > div { transform: scale(1.08); box-shadow: 0 6px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.4), 0 0 32px rgba(255,255,255,0.25)!important; }
+  .avatar-btn:active > div { transform: scale(0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.3)!important; }
+  .avatar-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:16px; width:100%; box-sizing:border-box; }
   .avatar-search { width:100%; padding:10px 14px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); border-radius:10px; color:#fff; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; margin-bottom:16px; }
   .avatar-search::placeholder { color:rgba(255,255,255,0.4); }
   .avatar-search:focus { border-color:rgba(255,255,255,0.6); }
 `;
 
-function AuthShell({ children, centered = false }) {
+function AuthShell({ children, centered = false, wide = false }) {
   return (
-    <div style={{ minHeight: "100dvh", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : "calc(env(safe-area-inset-top,0px) + 10vh) 20px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto" }}>
-      <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: "420px", width: "100%" }}>
+    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto" }}>
+      <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: wide ? "680px" : "420px", width: "100%", boxSizing: "border-box" }}>
         {children}
       </div>
     </div>
@@ -490,14 +496,14 @@ function AdminLogin({ onLogin, onBack }) {
   }
 
   return (
-    <AuthShell>
+    <AuthShell wide>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
           <div style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", marginTop: "6px" }}>Select your name to log in</div>
         </div>
         <div className="avatar-grid">
-          {[...OFFICE_PROFILES].sort().map((name) => (
+          {[...OFFICE_PROFILES].map((name) => (
             <AvatarButton
               key={name}
               name={name}
@@ -603,7 +609,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "email" ? "Add your email for job alerts (optional)" : "Enter your PIN";
 
   return (
-    <AuthShell>
+    <AuthShell wide>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         {step === "pick" ? (
           <div style={{ textAlign: "center", marginBottom: "24px" }}>
@@ -632,7 +638,16 @@ function CrewLogin({ trucks, onLogin, onBack }) {
             {(() => {
               const filtered = members
                 .filter(m => !crewSearch.trim() || m.name.toLowerCase().includes(crewSearch.toLowerCase()))
-                .sort((a, b) => a.name.localeCompare(b.name));
+                .sort((a, b) => {
+                  // Sort by createdAt ascending (older first, newer at bottom)
+                  // Members with no createdAt or no jobs go to the bottom
+                  const aDate = a.createdAt || null;
+                  const bDate = b.createdAt || null;
+                  if (!aDate && !bDate) return a.name.localeCompare(b.name);
+                  if (!aDate) return 1;
+                  if (!bDate) return -1;
+                  return aDate.localeCompare(bDate);
+                });
               if (filtered.length === 0) return <div style={{ textAlign: "center", color: "rgba(255,255,255,0.55)", fontSize: 13, padding: "24px 0" }}>No match for "{crewSearch}"</div>;
               return (
                 <div className="avatar-grid">
