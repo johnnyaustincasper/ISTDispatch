@@ -5064,6 +5064,13 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </Modal>
         );
       })()}
+
+      {/* ─── PM Check Toast ─── */}
+      {pmCheckToast && (
+        <div style={{ position: "fixed", bottom: 32, left: "50%", transform: "translateX(-50%)", background: "#16a34a", color: "#fff", padding: "14px 28px", borderRadius: 12, fontSize: 18, fontWeight: 800, zIndex: 9999, boxShadow: "0 4px 24px rgba(0,0,0,0.25)", pointerEvents: "none", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+          {pmCheckToast}
+        </div>
+      )}
     </div>
   );
 }
