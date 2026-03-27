@@ -241,6 +241,64 @@ function EmptyState({ text, sub }) {
 
 // ─── Screens ───
 
+// ─── Avatar helpers ───
+const AVATAR_COLORS = [
+  "#e11d48","#7c3aed","#2563eb","#0891b2","#059669",
+  "#d97706","#dc2626","#db2777","#16a34a","#9333ea"
+];
+const nameToColor = (name) => {
+  let h = 0;
+  const s = (name || "").toLowerCase();
+  for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; }
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+};
+const getInitials = (name) => {
+  const parts = (name || "").trim().split(/\s+/);
+  return parts.length >= 2
+    ? (parts[0][0] + parts[parts.length - 1][0]).toUpperCase()
+    : (name || "?").slice(0, 2).toUpperCase();
+};
+
+function AvatarButton({ name, onClick, disabled, badge }) {
+  const color = nameToColor(name);
+  const initials = getInitials(name);
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className="avatar-btn"
+      style={{
+        display: "flex", flexDirection: "column", alignItems: "center", gap: "8px",
+        background: "transparent", border: "none", cursor: disabled ? "wait" : "pointer",
+        padding: "8px 4px", borderRadius: "12px", fontFamily: "inherit",
+        opacity: disabled ? 0.5 : 1, transition: "opacity 0.15s",
+        WebkitTapHighlightColor: "transparent",
+      }}
+    >
+      <div style={{
+        width: 68, height: 68, borderRadius: "50%", background: color,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 22, fontWeight: 800, color: "#fff",
+        boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
+        position: "relative",
+        transition: "box-shadow 0.15s, transform 0.15s",
+      }}>
+        {initials}
+        {badge && (
+          <span style={{
+            position: "absolute", top: -3, right: -3,
+            background: "#2563eb", color: "#fff",
+            fontSize: 9, fontWeight: 700, borderRadius: "99px",
+            padding: "2px 5px", whiteSpace: "nowrap",
+            border: "2px solid rgba(0,0,0,0.3)",
+          }}>{badge}</span>
+        )}
+      </div>
+      <span style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", textAlign: "center", lineHeight: 1.3, maxWidth: 80, wordBreak: "break-word" }}>{name}</span>
+    </button>
+  );
+}
+
 const kbStyles = `
   @keyframes kenburns {
     0%   { transform: scale(1.0) translate(0%, 0%); }
@@ -272,6 +330,11 @@ const kbStyles = `
   .nav-tab-btn:active { transform: scale(0.94); }
   .crew-tab-btn:active { opacity: 0.75; transform: scale(0.96); }
   * { -webkit-tap-highlight-color: transparent; }
+  .avatar-btn:active > div { box-shadow: 0 0 0 4px rgba(255,255,255,0.35), 0 2px 8px rgba(0,0,0,0.25)!important; transform: scale(0.93); }
+  .avatar-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(90px,1fr)); gap:16px; }
+  .avatar-search { width:100%; padding:10px 14px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); border-radius:10px; color:#fff; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; margin-bottom:16px; }
+  .avatar-search::placeholder { color:rgba(255,255,255,0.4); }
+  .avatar-search:focus { border-color:rgba(255,255,255,0.6); }
 `;
 
 function AuthShell({ children, centered = false }) {
@@ -429,17 +492,19 @@ function AdminLogin({ onLogin, onBack }) {
   return (
     <AuthShell>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
-        <h1 style={{ fontSize: "22px", fontWeight: 600, color: "#fff", margin: "0 0 6px" }}>Office Login</h1>
-        <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", margin: "0 0 24px" }}>Select your profile</p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-          {OFFICE_PROFILES.map((name) => (
-            <Card key={name} onClick={() => handleSelect(name)} style={{ padding: "14px 18px", cursor: loadingPin ? "wait" : "pointer", opacity: loadingPin && selected !== name ? 0.5 : 1 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                <div style={{ width: "36px", height: "36px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px", fontWeight: 700 }}>{name[0]}</div>
-                <div style={{ fontWeight: 500, color: t.text, fontSize: "15px" }}>{name}</div>
-                {loadingPin && selected === name && <div style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted }}>Loading...</div>}
-              </div>
-            </Card>
+        <div style={{ textAlign: "center", marginBottom: "28px" }}>
+          <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
+          <div style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", marginTop: "6px" }}>Select your name to log in</div>
+        </div>
+        <div className="avatar-grid">
+          {[...OFFICE_PROFILES].sort().map((name) => (
+            <AvatarButton
+              key={name}
+              name={name}
+              onClick={() => handleSelect(name)}
+              disabled={loadingPin}
+              badge={loadingPin && selected === name ? "…" : null}
+            />
           ))}
         </div>
     </AuthShell>
@@ -456,6 +521,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
+  const [crewSearch, setCrewSearch] = useState("");
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "crewMembers"), snap => {
@@ -533,29 +599,55 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   }
 
   const displayPin = step === "setup" ? setupPin : pin;
-  const title = step === "pick" ? "Who are you?" : step === "setup" ? "Create your PIN" : step === "confirm" ? "Confirm your PIN" : step === "email" ? "One more thing" : `Hi, ${selectedMember?.name}`;
-  const subtitle = step === "pick" ? "Select your name" : step === "setup" ? "You'll use this every time" : step === "confirm" ? "Enter your PIN again" : step === "email" ? "Add your email for job alerts (optional)" : "Enter your PIN";
+  const title = step === "pick" ? null : step === "setup" ? "Create your PIN" : step === "confirm" ? "Confirm your PIN" : step === "email" ? "One more thing" : `Hi, ${selectedMember?.name?.split(" ")[0]} 👋`;
+  const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "email" ? "Add your email for job alerts (optional)" : "Enter your PIN";
 
   return (
     <AuthShell>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
-        <h1 style={{ fontSize: "22px", fontWeight: 600, color: "#fff", margin: "0 0 6px" }}>{title}</h1>
-        <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
+        {step === "pick" ? (
+          <div style={{ textAlign: "center", marginBottom: "24px" }}>
+            <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
+            <div style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", marginTop: "6px" }}>Tap your name to get started</div>
+          </div>
+        ) : (
+          <>
+            <h1 style={{ fontSize: "22px", fontWeight: 600, color: "#fff", margin: "0 0 6px" }}>{title}</h1>
+            <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
+          </>
+        )}
 
         {step === "pick" && (
           loadingMembers ? <EmptyState text="Loading..." /> :
           members.length === 0 ? <EmptyState text="No crew members yet." sub="Ask the office to add you to the roster." /> :
-          <div style={{ display: "flex", flexDirection: "column", gap: "8px", maxHeight: "55vh", overflowY: "auto", WebkitOverflowScrolling: "touch", paddingBottom: "8px" }}>
-            {members.sort((a,b) => { const ap = a.pin ? 0 : 1; const bp = b.pin ? 0 : 1; return ap !== bp ? ap - bp : a.name.localeCompare(b.name); }).map(m => (
-              <Card key={m.id} onClick={() => handleSelectMember(m)} style={{ padding: "14px 16px", cursor: "pointer", flexShrink: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: 15, color: t.text }}>{m.name}</div>
-                {m.truckId && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                  {(() => { const tr = trucks.find(tr => tr.id === m.truckId); return tr ? (tr.members || tr.name) : ""; })()}
-                </div>}
-                {!m.pin && <div style={{ fontSize: 11, color: t.accent, marginTop: 2 }}>First time — set PIN</div>}
-              </Card>
-            ))}
-          </div>
+          <>
+            <input
+              className="avatar-search"
+              type="text"
+              placeholder="🔍  Search name..."
+              value={crewSearch}
+              onChange={e => setCrewSearch(e.target.value)}
+              autoComplete="off"
+            />
+            {(() => {
+              const filtered = members
+                .filter(m => !crewSearch.trim() || m.name.toLowerCase().includes(crewSearch.toLowerCase()))
+                .sort((a, b) => a.name.localeCompare(b.name));
+              if (filtered.length === 0) return <div style={{ textAlign: "center", color: "rgba(255,255,255,0.55)", fontSize: 13, padding: "24px 0" }}>No match for "{crewSearch}"</div>;
+              return (
+                <div className="avatar-grid">
+                  {filtered.map(m => (
+                    <AvatarButton
+                      key={m.id}
+                      name={m.name}
+                      onClick={() => handleSelectMember(m)}
+                      badge={!m.pin ? "NEW" : null}
+                    />
+                  ))}
+                </div>
+              );
+            })()}
+          </>
         )}
 
         {step === "email" && (
