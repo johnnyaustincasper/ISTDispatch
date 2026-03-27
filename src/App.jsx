@@ -1124,7 +1124,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const openTicketCount = myTickets.filter((tk) => tk.status !== "resolved").length;
 
   return (
-    <div style={{ minHeight: "100dvh", background: t.bg, paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <div className="glass-header" style={{ padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
           <svg width="130" height="36" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -1146,8 +1146,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         </div>
         {crewView !== "home" && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
-            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "4px", background: "none", border: "none", color: "#fff", padding: "10px 14px 10px 8px", fontSize: "15px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s ease", minHeight: "44px", minWidth: "44px", opacity: 0.9 }}>
-              ← Back
+            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", padding: "8px 16px", fontSize: "15px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s ease", minHeight: "44px", borderRadius: "20px" }}>
+              ‹ Back
             </button>
             <span style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>
               {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : ""}
