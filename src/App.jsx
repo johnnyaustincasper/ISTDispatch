@@ -209,10 +209,10 @@ function Card({ children, style: s, onClick }) {
 function Modal({ title, onClose, children }) {
   return (
     <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }} onClick={onClose}>
-      <div style={{ background: "rgba(30,41,59,0.88)", WebkitBackdropFilter: "blur(24px)", backdropFilter: "blur(24px)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "16px", padding: "28px", maxWidth: "480px", width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.4)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "22px", paddingBottom: "14px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-          <h2 style={{ fontSize: "17px", fontWeight: 600, color: "#fff", margin: 0 }}>{title}</h2>
-          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)", width: "28px", height: "28px", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px" }}>✕</button>
+      <div style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "16px", padding: "28px", maxWidth: "480px", width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: t.shadowMd }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "22px", paddingBottom: "14px", borderBottom: "1px solid " + t.border }}>
+          <h2 style={{ fontSize: "17px", fontWeight: 600, color: t.text, margin: 0 }}>{title}</h2>
+          <button onClick={onClose} style={{ background: t.surface, border: "1px solid " + t.border, color: t.textMuted, width: "28px", height: "28px", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px" }}>✕</button>
         </div>
         {children}
       </div>
