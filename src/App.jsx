@@ -4474,7 +4474,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 160px)", overflow: "hidden", margin: "-20px", padding: 0, background: lk.bg }}>
 
               {/* ── Stat filter buttons row ── */}
-              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
+              <div style={{ flexShrink: 0, padding: "8px 12px", marginTop: "16px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
                 <button onClick={() => setInvStatusFilter("all")} style={{
                   padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: invStatusFilter === "all" ? 800 : 600,
                   border: "1px solid " + (invStatusFilter === "all" ? "#2563eb" : "#e2e8f0"),
