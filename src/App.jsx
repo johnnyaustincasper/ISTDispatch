@@ -496,7 +496,7 @@ function AdminLogin({ onLogin, onBack }) {
   }
 
   return (
-    <AuthShell wide centered>
+    <AuthShell wide kiosk>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
           <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
@@ -3768,7 +3768,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                           return (
                             <div key={job.id} style={{ padding: "12px 14px", borderBottom: "1px solid #fecaca" }}>
                               {job.builder && <div style={{ fontWeight: 700, fontSize: 15, color: "#111", marginBottom: 2 }}>{job.builder}</div>}
-                              {job.address && <div style={{ fontSize: 14, fontWeight: 600, color: "#1d4ed8", marginBottom: 3 }}>📍 {job.address}</div>}
+                              {job.address && <div style={{ fontSize: 14, fontWeight: 600, color: "#1d4ed8", marginBottom: 3 }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
                               {hoursAgo !== null && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 2 }}>Completed {hoursAgo}h ago</div>}
                               <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
                                 <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
@@ -3791,7 +3791,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                           return (
                             <div key={job.id} style={{ padding: "12px 14px", borderBottom: "1px solid #bbf7d0" }}>
                               {job.builder && <div style={{ fontWeight: 700, fontSize: 15, color: "#14532d", marginBottom: 2 }}>{job.builder}</div>}
-                              {job.address && <div style={{ fontSize: 14, fontWeight: 600, color: "#15803d", marginBottom: 3 }}>📍 {job.address}</div>}
+                              {job.address && <div style={{ fontSize: 14, fontWeight: 600, color: "#15803d", marginBottom: 3 }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
                               <div style={{ fontSize: 11, color: "#166534", marginTop: 2 }}>✅ Checked by <strong>{job.checkedBy || "—"}</strong> · {checkedTime}</div>
                               <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
                                 <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
@@ -4093,7 +4093,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               return (
                                 <div key={job.id} style={{ background: "#fff", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
                                   {job.builder && <div style={{ fontSize: 14, fontWeight: 800, color: "#111" }}>{job.builder}</div>}
-                                  {job.address && <div style={{ fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}>📍 {job.address}</div>}
+                                  {job.address && <div style={{ fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
                                   <div style={{ fontSize: 11, color: "#b91c1c" }}>By <strong>{completedBy}</strong> · {completedTime}</div>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                                     <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
@@ -4122,7 +4122,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               return (
                                 <div key={job.id} style={{ background: "#fff", border: "1px solid #86efac", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
                                   {job.builder && <div style={{ fontSize: 14, fontWeight: 800, color: "#14532d" }}>{job.builder}</div>}
-                                  {job.address && <div style={{ fontSize: 13, fontWeight: 700, color: "#15803d" }}>📍 {job.address}</div>}
+                                  {job.address && <div style={{ fontSize: 13, fontWeight: 700, color: "#15803d" }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
                                   <div style={{ fontSize: 11, color: "#166534" }}>✅ Checked by <strong>{job.checkedBy || "—"}</strong> · {checkedTime}</div>
                                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                                     <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
