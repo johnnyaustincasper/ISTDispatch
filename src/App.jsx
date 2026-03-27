@@ -4122,6 +4122,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                   {job.builder && <div style={{ fontSize: 14, fontWeight: 800, color: "#14532d" }}>{job.builder}</div>}
                                   {job.address && <div style={{ fontSize: 13, fontWeight: 700, color: "#15803d" }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
                                   <div style={{ fontSize: 11, color: "#166534" }}>✅ Checked by <strong>{job.checkedBy || "—"}</strong> · {checkedTime}</div>
+                                  {job.checkedLat && job.checkedLng
+                                    ? <div style={{ fontSize: 11 }}><a href={`https://www.google.com/maps?q=${job.checkedLat},${job.checkedLng}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>📍 View Check Location</a></div>
+                                    : <div style={{ fontSize: 11, color: "#9ca3af" }}>📍 Location not recorded</div>
+                                  }
                                   <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                                     <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
                                     <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
@@ -4979,6 +4983,15 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ fontWeight: 600, color: t.textSecondary }}>AM:</span><span style={{ fontWeight: 600, color: calViewJob.jobCheckedAM === "Yes" ? "#15803d" : t.textMuted }}>{calViewJob.jobCheckedAM || "No"}</span></span>
                   <span style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ fontWeight: 600, color: t.textSecondary }}>PM:</span><span style={{ fontWeight: 600, color: calViewJob.jobCheckedPM === "Yes" ? "#15803d" : t.textMuted }}>{calViewJob.jobCheckedPM || "No"}</span></span>
                 </div>
+                {calViewJob.checkedAt && (
+                  <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px" }}>
+                    Checked from:{" "}
+                    {calViewJob.checkedLat && calViewJob.checkedLng
+                      ? <a href={`https://www.google.com/maps?q=${calViewJob.checkedLat},${calViewJob.checkedLng}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>View on Map</a>
+                      : <span style={{ color: t.textMuted }}>Location not recorded</span>
+                    }
+                  </div>
+                )}
               </div>
               {jobPm.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>No PM notes.</div> : jobPm.map((p) => (
                 <div key={p.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
