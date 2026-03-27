@@ -1125,7 +1125,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
   return (
     <div style={{ minHeight: "100dvh", background: t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
-      <div className="glass-header" style={{ padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
+      <div className="glass-header" style={{ padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
           <svg width="130" height="36" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
             <rect width="360" height="100" fill="#0f172a" rx="8"/>
@@ -3678,7 +3678,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   return (
     <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       {/* Top header — title + logout only */}
-      <div className="glass-header" style={{ padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
+      <div className="glass-header" style={{ padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
             <rect width="360" height="100" fill="#0f172a" rx="8"/>
