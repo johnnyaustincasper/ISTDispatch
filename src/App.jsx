@@ -4471,7 +4471,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           };
 
           return (
-            <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 64px - 84px - 40px)", overflow: "hidden", margin: "-20px", padding: 0, background: lk.bg }}>
+            <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 160px)", overflow: "hidden", margin: "-20px", padding: 0, background: lk.bg }}>
 
               {/* ── Stat filter buttons row ── */}
               <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
