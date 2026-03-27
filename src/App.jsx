@@ -1130,7 +1130,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               ← Home
             </button>
             <span style={{ fontSize: "14px", fontWeight: 700, color: t.text }}>
-              {crewView === "jobs" ? "📋 Jobs" : crewView === "truck" ? "🚛 My Truck" : crewView === "history" ? "📅 Calendar" : crewView === "timesheet" ? "⏱️ Timesheet" : crewView === "tickets" ? "🎫 Tickets" : crewView === "tools" ? "🔧 Tools" : ""}
+              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : ""}
             </span>
           </div>
         )}
@@ -1141,13 +1141,54 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           const now = new Date();
           const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
           const firstName = crewName ? crewName.split(" ")[0] : crewName;
+          const crewNavIcons = {
+            jobs: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                <line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="13" y2="16"/>
+              </svg>
+            ),
+            truck: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="1" y="3" width="15" height="13" rx="1"/>
+                <path d="M16 8h4l3 5v4h-7V8z"/>
+                <circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/>
+              </svg>
+            ),
+            history: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                <line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/>
+                <line x1="3" y1="10" x2="21" y2="10"/>
+                <rect x="7" y="14" width="3" height="3" rx="0.5"/>
+              </svg>
+            ),
+            timesheet: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 16 14"/>
+              </svg>
+            ),
+            tickets: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2 9a1 1 0 0 1 1-1h18a1 1 0 0 1 1 1v2a2 2 0 0 0 0 4v2a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-2a2 2 0 0 0 0-4V9z"/>
+                <line x1="9" y1="8" x2="9" y2="16" strokeDasharray="2 2"/>
+              </svg>
+            ),
+            tools: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+              </svg>
+            ),
+          };
           const navItems = [
-            { key: "jobs",      icon: "📋", label: "Jobs",       sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs" },
-            { key: "truck",     icon: "🚛", label: "My Truck",   sub: "Inventory & load" },
-            { key: "history",   icon: "📅", label: "Calendar",   sub: "Job history" },
-            { key: "timesheet", icon: "⏱️", label: "Timesheet",  sub: "Track your time" },
-            { key: "tickets",   icon: "🎫", label: "Tickets",    sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
-            { key: "tools",     icon: "🔧", label: "Tools",      sub: "Checkout & return" },
+            { key: "jobs",      label: "Jobs",       sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs" },
+            { key: "truck",     label: "My Truck",   sub: "Inventory & load" },
+            { key: "history",   label: "Calendar",   sub: "Job history" },
+            { key: "timesheet", label: "Timesheet",  sub: "Track your time" },
+            { key: "tickets",   label: "Tickets",    sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
+            { key: "tools",     label: "Tools",      sub: "Checkout & return" },
           ];
           return (
             <div className="tab-view-enter">
@@ -1166,7 +1207,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     {item.badge && (
                       <span style={{ position: "absolute", top: "12px", right: "12px", background: t.danger, color: "#fff", fontSize: "11px", fontWeight: 700, borderRadius: "99px", padding: "2px 7px", minWidth: "20px", textAlign: "center" }}>{item.badge}</span>
                     )}
-                    <span style={{ fontSize: "36px", lineHeight: 1 }}>{item.icon}</span>
+                    <span style={{ lineHeight: 1, color: t.accent, opacity: 0.85 }}>{crewNavIcons[item.key]}</span>
                     <span style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>{item.label}</span>
                     <span style={{ fontSize: "12px", color: t.textMuted, lineHeight: 1.3 }}>{item.sub}</span>
                   </button>
