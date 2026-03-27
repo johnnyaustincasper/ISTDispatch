@@ -4550,7 +4550,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 500, color: lk.text }} title={item.name}>{item.name}</div>
                                 {/* Sub info */}
                                 {subInfo ? <span style={{ fontSize: 9, color: lk.textMuted, whiteSpace: "nowrap", flexShrink: 0 }}>{subInfo}</span> : null}
-                                {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, color: "#6366f1", whiteSpace: "nowrap", flexShrink: 0 }}>{pcsQty}p</span> : null}
+                                {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 11, fontWeight: 700, color: "#6366f1", background: "#ede9fe", borderRadius: 6, padding: "1px 5px", whiteSpace: "nowrap", flexShrink: 0 }}>{pcsQty} pcs</span> : null}
                                 {/* Qty */}
                                 <span style={{ fontSize: 13, fontWeight: 700, color: sc.text, whiteSpace: "nowrap", flexShrink: 0, minWidth: 22, textAlign: "right" }}>{displayQty}</span>
                                 {/* Edit control */}
