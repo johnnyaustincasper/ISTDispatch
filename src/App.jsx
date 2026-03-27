@@ -1141,12 +1141,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>{crewName}</div>
               <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.55)", marginTop: "2px" }}>{truck.name}</div>
             </div>
-            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "rgba(255,255,255,0.7)" }}>Log Out</Button>
+            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a" }}>Log Out</Button>
           </div>
         </div>
         {crewView !== "home" && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
-            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", padding: "8px 16px", fontSize: "15px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s ease", minHeight: "44px", borderRadius: "20px" }}>
+            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(255,255,255,0.35)", border: "1px solid rgba(255,255,255,0.4)", color: "#0f172a", padding: "8px 16px", fontSize: "15px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s ease", minHeight: "44px", borderRadius: "20px" }}>
               ‹ Back
             </button>
             <span style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>
@@ -3691,7 +3691,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </svg>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <span style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.6)" }}>{adminName}</span>
-            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "rgba(255,255,255,0.7)" }}>Log Out</Button>
+            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a" }}>Log Out</Button>
           </div>
         </div>
       </div>
