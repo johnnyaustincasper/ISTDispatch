@@ -208,11 +208,11 @@ function Card({ children, style: s, onClick }) {
 
 function Modal({ title, onClose, children }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.3)", backdropFilter: "blur(2px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }} onClick={onClose}>
-      <div style={{ background: "#fff", border: "1px solid " + t.border, borderRadius: "12px", padding: "28px", maxWidth: "480px", width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 20px 60px rgba(0,0,0,0.15)" }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "22px", paddingBottom: "14px", borderBottom: "1px solid " + t.borderLight }}>
-          <h2 style={{ fontSize: "17px", fontWeight: 600, color: t.text, margin: 0 }}>{title}</h2>
-          <button onClick={onClose} style={{ background: t.bg, border: "1px solid " + t.border, color: t.textMuted, width: "28px", height: "28px", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px" }}>✕</button>
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }} onClick={onClose}>
+      <div style={{ background: "rgba(30,41,59,0.88)", WebkitBackdropFilter: "blur(24px)", backdropFilter: "blur(24px)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: "16px", padding: "28px", maxWidth: "480px", width: "100%", maxHeight: "85vh", overflowY: "auto", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.1), 0 24px 48px rgba(0,0,0,0.4)" }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "22px", paddingBottom: "14px", borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
+          <h2 style={{ fontSize: "17px", fontWeight: 600, color: "#fff", margin: 0 }}>{title}</h2>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.7)", width: "28px", height: "28px", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px" }}>✕</button>
         </div>
         {children}
       </div>
@@ -326,8 +326,8 @@ const kbStyles = `
   .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
   .kb-content { animation: authFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) both; }
   .kb-back-btn { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.2)!important;color:#fff!important;backdrop-filter:blur(8px); }
-  .kb-card { background:rgba(255,255,255,0.1)!important;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.2)!important;box-shadow:0 4px 24px rgba(0,0,0,0.3)!important;transition:background 0.2s,transform 0.2s!important; }
-  .kb-card:hover { background:rgba(255,255,255,0.18)!important;transform:translateY(-2px); }
+  .kb-card { background:rgba(255,255,255,0.1)!important;-webkit-backdrop-filter:blur(16px)!important;backdrop-filter:blur(16px)!important;border:1px solid rgba(255,255,255,0.22)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 24px rgba(0,0,0,0.35)!important;transition:background 0.2s,transform 0.2s!important; }
+  .kb-card:hover { background:rgba(255,255,255,0.18)!important;transform:translateY(-2px);border-color:rgba(255,255,255,0.35)!important; }
   .kb-input { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.25)!important;color:#fff!important; }
   .kb-input::placeholder { color:rgba(255,255,255,0.4)!important; }
   .kb-input:focus { border-color:rgba(255,255,255,0.6)!important; }
@@ -335,6 +335,11 @@ const kbStyles = `
   .nav-tab-btn:active { transform: scale(0.94); }
   .crew-tab-btn:active { opacity: 0.75; transform: scale(0.96); }
   * { -webkit-tap-highlight-color: transparent; }
+  .glass-card { background: rgba(255,255,255,0.07) !important; -webkit-backdrop-filter: blur(12px) !important; backdrop-filter: blur(12px) !important; border: 1px solid rgba(255,255,255,0.12) !important; }
+  .glass-card:hover { background: rgba(255,255,255,0.12) !important; border-color: rgba(255,255,255,0.22) !important; }
+  .glass-header { background: rgba(15,23,42,0.7) !important; -webkit-backdrop-filter: blur(20px) !important; backdrop-filter: blur(20px) !important; border-bottom: 1px solid rgba(255,255,255,0.08) !important; }
+  .glass-nav { background: rgba(15,23,42,0.8) !important; -webkit-backdrop-filter: blur(16px) !important; backdrop-filter: blur(16px) !important; border-top: 1px solid rgba(255,255,255,0.08) !important; }
+  .auth-glow { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(37,99,235,0.18) 0%, transparent 70%); pointer-events: none; z-index: 0; }
   .avatar-btn:hover > div { transform: scale(1.08); box-shadow: 0 6px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.4), 0 0 32px rgba(255,255,255,0.25)!important; }
   .avatar-btn:active > div { transform: scale(0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.3)!important; }
   .avatar-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:16px; width:100%; box-sizing:border-box; }
@@ -346,6 +351,7 @@ const kbStyles = `
 function AuthShell({ children, centered = false, wide = false, kiosk = false }) {
   return (
     <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto" }}>
+      <div className="auth-glow" />
       <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: wide ? "680px" : "420px", width: "100%", boxSizing: "border-box" }}>
         {children}
       </div>
@@ -1119,7 +1125,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
   return (
     <div style={{ minHeight: "100dvh", background: t.bg }}>
-      <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+      <div className="glass-header" style={{ padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
           <svg width="130" height="36" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
             <rect width="360" height="100" fill="#0f172a" rx="8"/>
@@ -1132,18 +1138,18 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           </svg>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: "13px", fontWeight: 700, color: t.text, lineHeight: 1.2 }}>{crewName}</div>
-              <div style={{ fontSize: "11px", color: t.textMuted, marginTop: "2px" }}>{truck.name}</div>
+              <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>{crewName}</div>
+              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.55)", marginTop: "2px" }}>{truck.name}</div>
             </div>
-            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
+            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "rgba(255,255,255,0.7)" }}>Log Out</Button>
           </div>
         </div>
         {crewView !== "home" && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
-            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "6px", background: t.bg, border: "1px solid " + t.border, color: t.textSecondary, borderRadius: "8px", padding: "7px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease" }}>
+            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "6px", background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.85)", borderRadius: "8px", padding: "7px 14px", fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s ease" }}>
               ← Home
             </button>
-            <span style={{ fontSize: "14px", fontWeight: 700, color: t.text }}>
+            <span style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>
               {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : ""}
             </span>
           </div>
@@ -1213,11 +1219,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
                 {navItems.map(item => (
                   <button key={item.key} onClick={() => setCrewView(item.key)}
-                    style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", padding: "24px 16px 20px", background: t.card, border: "1px solid " + t.border, borderRadius: "16px", cursor: "pointer", fontFamily: "inherit", boxShadow: t.shadow, transition: "all 0.15s ease", textAlign: "center", minHeight: "120px" }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.boxShadow = t.shadowMd; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.boxShadow = t.shadow; e.currentTarget.style.transform = ""; }}
-                    onTouchStart={e => { e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.boxShadow = t.shadowMd; }}
-                    onTouchEnd={e => { e.currentTarget.style.borderColor = t.border; e.currentTarget.style.boxShadow = t.shadow; }}>
+                    style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", padding: "24px 16px 20px", background: "rgba(255,255,255,0.72)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.8)", borderRadius: "16px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 16px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.95)", transition: "all 0.15s ease", textAlign: "center", minHeight: "120px" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.88)"; e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(26,86,219,0.12), inset 0 1px 0 rgba(255,255,255,0.95)"; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.72)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.8)"; e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.95)"; }}
+                    onTouchStart={e => { e.currentTarget.style.background = "rgba(255,255,255,0.88)"; e.currentTarget.style.borderColor = t.accent; }}
+                    onTouchEnd={e => { e.currentTarget.style.background = "rgba(255,255,255,0.72)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.8)"; }}>
                     {item.badge && (
                       <span style={{ position: "absolute", top: "12px", right: "12px", background: t.danger, color: "#fff", fontSize: "11px", fontWeight: 700, borderRadius: "99px", padding: "2px 7px", minWidth: "20px", textAlign: "center" }}>{item.badge}</span>
                     )}
@@ -3672,7 +3678,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   return (
     <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))" }}>
       {/* Top header — title + logout only */}
-      <div style={{ background: t.surface, borderBottom: "1px solid " + t.border, padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+      <div className="glass-header" style={{ padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
             <rect width="360" height="100" fill="#0f172a" rx="8"/>
@@ -3684,14 +3690,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <text x="180" y="74" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">OF TULSA</text>
           </svg>
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "12.5px", color: t.textMuted }}>{adminName}</span>
-            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px" }}>Log Out</Button>
+            <span style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.6)" }}>{adminName}</span>
+            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "rgba(255,255,255,0.7)" }}>Log Out</Button>
           </div>
         </div>
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, background: t.surface, borderTop: "2px solid " + t.border, display: "flex", flexDirection: "column", boxShadow: "0 -4px 16px rgba(0,0,0,0.08)" }}>
+      <div className="glass-nav" style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, display: "flex", flexDirection: "column", boxShadow: "0 -4px 20px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", padding: "4px 4px 0" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
@@ -3706,7 +3712,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 alignItems: "center",
                 justifyContent: "center",
                 padding: isActive ? "7px 2px 8px" : "8px 2px 8px",
-                background: isActive ? t.accentBg : "none",
+                background: isActive ? "rgba(37,99,235,0.25)" : "none",
                 border: "none",
                 borderRadius: "10px",
                 cursor: "pointer",
@@ -3725,7 +3731,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           );
         })}
         </div>
-        <div style={{ height: "env(safe-area-inset-bottom, 0px)", background: t.surface }} />
+        <div style={{ height: "env(safe-area-inset-bottom, 0px)", background: "transparent" }} />
       </div>
 
       <div style={{ padding: "20px", maxWidth: "1400px", margin: "0 auto" }}>
