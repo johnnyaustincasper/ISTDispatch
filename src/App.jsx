@@ -934,7 +934,7 @@ function DailyProcedureCard() {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onLogout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onLogout }) {
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -1143,7 +1143,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               ← Home
             </button>
             <span style={{ fontSize: "14px", fontWeight: 700, color: t.text }}>
-              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : ""}
+              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : crewView === "loadHistory" ? "Load History" : ""}
             </span>
           </div>
         )}
@@ -1194,14 +1194,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
               </svg>
             ),
+            loadHistory: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10"/>
+                <polyline points="12 6 12 12 8 14"/>
+                <path d="M2 12h3M12 2v3"/>
+              </svg>
+            ),
           };
           const navItems = [
-            { key: "jobs",      label: "Jobs",       sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs" },
-            { key: "truck",     label: "My Truck",   sub: "Inventory & load" },
-            { key: "history",   label: "Calendar",   sub: "Job history" },
-            { key: "timesheet", label: "Timesheet",  sub: "Track your time" },
-            { key: "tickets",   label: "Tickets",    sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
-            { key: "tools",     label: "Tools",      sub: "Checkout & return" },
+            { key: "jobs",        label: "Jobs",          sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs" },
+            { key: "truck",       label: "My Truck",      sub: "Inventory & load" },
+            { key: "history",     label: "Calendar",      sub: "Job history" },
+            { key: "timesheet",   label: "Timesheet",     sub: "Track your time" },
+            { key: "tickets",     label: "Tickets",       sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
+            { key: "tools",       label: "Tools",         sub: "Checkout & return" },
+            { key: "loadHistory", label: "Load History",  sub: "Loads & unloads" },
           ];
           return (
             <div className="tab-view-enter">
@@ -1669,6 +1677,77 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             adminName={crewName}
             crewMembers={[]}
           />
+        )}
+
+        {crewView === "loadHistory" && (
+          <div className="tab-view-enter">
+            <SectionHeader title="Load History" />
+            {(() => {
+              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+              const truckLoads = (loadLog || []).filter(r => r.truckId === truck.id);
+              const truckReturns = (returnLog || []).filter(r => r.truckId === truck.id);
+
+              // Merge loads and returns into one timeline
+              const allEntries = [
+                ...truckLoads.map(r => ({ ...r, actionType: "load" })),
+                ...truckReturns.map(r => ({ ...r, actionType: "return" })),
+              ].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+              if (allEntries.length === 0) {
+                return (
+                  <div style={{ textAlign: "center", padding: "48px 24px", borderRadius: "12px", border: "2px dashed " + t.border, background: t.surface }}>
+                    <div style={{ fontSize: "32px", marginBottom: "12px", opacity: 0.4 }}>📦</div>
+                    <div style={{ color: t.textSecondary, fontSize: "15px", fontWeight: 600 }}>No load history yet</div>
+                    <div style={{ color: t.textMuted, fontSize: "13px", marginTop: "6px" }}>Your loads and warehouse returns will appear here.</div>
+                  </div>
+                );
+              }
+
+              return allEntries.map((entry, idx) => {
+                const isLoad = entry.actionType === "load";
+                const labelColor = isLoad ? "#1e40af" : "#15803d";
+                const labelBg = isLoad ? "#dbeafe" : "#dcfce7";
+                const labelText = isLoad ? "Loaded to Truck" : "Returned to Warehouse";
+                const items = entry.items || {};
+                const itemEntries = Object.entries(items).filter(([, qty]) => qty > 0);
+
+                const fmtTimestamp = (ts) => {
+                  try {
+                    return new Date(ts).toLocaleString("en-US", { timeZone: "America/Chicago", month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+                  } catch { return ts; }
+                };
+
+                return (
+                  <Card key={entry.id || idx} style={{ borderLeft: "4px solid " + labelColor }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                      <div>
+                        <span style={{ display: "inline-block", padding: "3px 10px", borderRadius: "99px", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.3px", color: labelColor, background: labelBg }}>{labelText}</span>
+                        <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "4px" }}>{fmtTimestamp(entry.timestamp)}</div>
+                      </div>
+                    </div>
+                    {itemEntries.length === 0 ? (
+                      <div style={{ fontSize: "13px", color: t.textMuted, fontStyle: "italic" }}>No items recorded</div>
+                    ) : (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        {itemEntries.map(([itemId, qty]) => {
+                          const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                          const name = item ? item.name : itemId;
+                          const display = isFoam(itemId)
+                            ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+                            : qty + " " + (item ? item.unit : "");
+                          return (
+                            <span key={itemId} style={{ fontSize: "12px", background: t.bg, border: "1px solid " + t.border, color: t.text, padding: "3px 10px", borderRadius: "6px", fontWeight: 600 }}>
+                              {name}: {display}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </Card>
+                );
+              });
+            })()}
+          </div>
         )}
 
         {crewView === "tickets" && (
@@ -3387,6 +3466,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [needsCheckExpanded, setNeedsCheckExpanded] = useState(false);
   const [pmJob, setPmJob] = useState(null);
   const [pmNote, setPmNote] = useState("");
+  const [pmCheckToast, setPmCheckToast] = useState("");
   const [pmCheckedAM, setPmCheckedAM] = useState("No");
   const [pmCheckedPM, setPmCheckedPM] = useState("No");
   const [calViewJobId, setCalViewJobId] = useState(null);
@@ -3503,6 +3583,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     // Submit immediately — no waiting on GPS
     onEditJob(jobId, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
     setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No");
+    setPmCheckToast("✅ Checked!"); setTimeout(() => setPmCheckToast(""), 2500);
     // Try to capture geo in background and patch it in
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
@@ -3672,7 +3753,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             <div style={{ fontWeight: 700, fontSize: 14, color: "#111" }}>{job.builder || job.address}</div>
                             {job.address && job.builder && <div style={{ fontSize: 12, color: "#6b7280" }}>{job.address}</div>}
                             {hoursAgo !== null && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 2 }}>Completed {hoursAgo}h ago</div>}
-                            <button onClick={() => { setShowPMCheck(job); }} style={{ marginTop: 8, width: "100%", padding: "10px", background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ Mark as Checked</button>
+                            <button onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); setPmNote(""); }} style={{ marginTop: 8, width: "100%", minHeight: 52, padding: "12px 10px", background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.3 }}>✓ Mark as Checked</button>
                           </div>
                         );
                       })}
@@ -4700,33 +4781,58 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       )}
 
       {pmJob && (
-        <Modal title="Project Manager Update" onClose={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }}>
-          <div style={{ fontSize: "13.5px", color: t.textMuted, marginBottom: "12px" }}><strong style={{ color: t.text }}>{pmJob.builder || "No Customer"}</strong><br />{pmJob.address} — {pmJob.type}</div>
-          <div style={{ background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 8, padding: "12px 14px", marginBottom: 16 }}>
-            <div style={{ fontSize: 12, fontWeight: 700, color: "#92400e", marginBottom: 6 }}>Location Verification Required</div>
-            <div style={{ fontSize: 12, color: "#78350f", lineHeight: 1.6 }}>
-              When you tap <strong>Submit</strong>, your browser will ask permission to share your location. <strong>You must tap Allow</strong> — this verifies you were on site.
-            </div>
-            <div style={{ marginTop: 10, fontSize: 11, color: "#92400e", lineHeight: 1.7 }}>
-              <strong>If you accidentally denied location:</strong><br />
-              <strong>Chrome:</strong> Tap the lock icon in the address bar → Permissions → Location → Allow<br />
-              <strong>Samsung Internet:</strong> Tap the lock icon → Location → Allow<br />
-              <strong>Either browser:</strong> Go to phone Settings → Apps → Chrome (or Samsung Internet) → Permissions → Location → Allow
+        <Modal title="Job Check-Off" onClose={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }}>
+          {/* Job name + address — big and clear */}
+          <div style={{ textAlign: "center", marginBottom: 20 }}>
+            <div style={{ fontSize: 20, fontWeight: 800, color: t.text, lineHeight: 1.2 }}>{pmJob.builder || "No Customer"}</div>
+            <div style={{ fontSize: 14, color: t.textMuted, marginTop: 4 }}>{pmJob.address}</div>
+            {pmJob.type && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{pmJob.type}</div>}
+          </div>
+
+          {/* AM Check YES/NO */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 8, textAlign: "center" }}>AM Check ✓</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setPmCheckedAM("Yes")}
+                style={{ flex: 1, minHeight: 52, fontSize: 16, fontWeight: 800, borderRadius: 10, border: "3px solid " + (pmCheckedAM === "Yes" ? "#16a34a" : "#d1d5db"), background: pmCheckedAM === "Yes" ? "#16a34a" : "#f9fafb", color: pmCheckedAM === "Yes" ? "#fff" : "#374151", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+              >YES</button>
+              <button
+                onClick={() => setPmCheckedAM("No")}
+                style={{ flex: 1, minHeight: 52, fontSize: 16, fontWeight: 800, borderRadius: 10, border: "3px solid " + (pmCheckedAM === "No" ? "#dc2626" : "#d1d5db"), background: pmCheckedAM === "No" ? "#dc2626" : "#f9fafb", color: pmCheckedAM === "No" ? "#fff" : "#374151", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+              >NO</button>
             </div>
           </div>
-          <TextArea label="Your update" placeholder="Add notes, instructions, status info for this job..." value={pmNote} onChange={(e) => setPmNote(e.target.value)} style={{ minHeight: "100px" }} />
-          <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Job Checked</label>
-          <div style={{ display: "flex", gap: "12px", marginBottom: "16px" }}>
-            <div style={{ flex: 1 }}>
-              <Select label="AM" value={pmCheckedAM} onChange={(e) => setPmCheckedAM(e.target.value)} options={[{ value: "No", label: "No" }, { value: "Yes", label: "Yes" }]} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <Select label="PM" value={pmCheckedPM} onChange={(e) => setPmCheckedPM(e.target.value)} options={[{ value: "No", label: "No" }, { value: "Yes", label: "Yes" }]} />
+
+          {/* PM Check YES/NO */}
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: t.text, marginBottom: 8, textAlign: "center" }}>PM Check ✓</div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button
+                onClick={() => setPmCheckedPM("Yes")}
+                style={{ flex: 1, minHeight: 52, fontSize: 16, fontWeight: 800, borderRadius: 10, border: "3px solid " + (pmCheckedPM === "Yes" ? "#16a34a" : "#d1d5db"), background: pmCheckedPM === "Yes" ? "#16a34a" : "#f9fafb", color: pmCheckedPM === "Yes" ? "#fff" : "#374151", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+              >YES</button>
+              <button
+                onClick={() => setPmCheckedPM("No")}
+                style={{ flex: 1, minHeight: 52, fontSize: 16, fontWeight: 800, borderRadius: 10, border: "3px solid " + (pmCheckedPM === "No" ? "#dc2626" : "#d1d5db"), background: pmCheckedPM === "No" ? "#dc2626" : "#f9fafb", color: pmCheckedPM === "No" ? "#fff" : "#374151", cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s" }}
+              >NO</button>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-            <Button variant="secondary" onClick={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }} style={{ flex: 1 }}>Cancel</Button>
-            <Button onClick={handlePmSubmit} style={{ flex: 1 }}>Submit</Button>
+
+          {/* Notes */}
+          <div style={{ marginBottom: 18 }}>
+            <textarea
+              placeholder="Any notes..."
+              value={pmNote}
+              onChange={(e) => setPmNote(e.target.value)}
+              style={{ width: "100%", boxSizing: "border-box", minHeight: 72, fontSize: 14, padding: "10px 12px", borderRadius: 8, border: "1px solid #d1d5db", fontFamily: "inherit", resize: "vertical", outline: "none" }}
+            />
+          </div>
+
+          {/* Buttons */}
+          <div style={{ display: "flex", gap: 10 }}>
+            <button onClick={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }} style={{ flex: 1, minHeight: 48, fontSize: 15, fontWeight: 600, borderRadius: 10, border: "2px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button onClick={handlePmSubmit} style={{ flex: 2, minHeight: 48, fontSize: 16, fontWeight: 800, borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.3 }}>💾 Save Check</button>
           </div>
         </Modal>
       )}
@@ -5156,7 +5262,7 @@ export default function App() {
       }
     }
     if (Object.keys(logItems).length > 0) {
-      await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: new Date().toISOString() });
+      await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: new Date().toISOString(), crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
     }
     await setDoc(truckRef, {});
   };
@@ -5191,7 +5297,7 @@ export default function App() {
     }
     await setDoc(truckRef, updatedTruck);
     if (Object.keys(logItems).length > 0) {
-      await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: new Date().toISOString() });
+      await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: new Date().toISOString(), crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
     }
   };
   const handleAddTool = async (data) => { await addDoc(collection(db, "tools"), { ...data, createdAt: new Date().toISOString() }); };
@@ -5240,7 +5346,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onLogout={() => { setCrewSession(null); setRole(null); }} />;
   }
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
