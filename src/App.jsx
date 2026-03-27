@@ -3471,6 +3471,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [editMatLogQtys, setEditMatLogQtys] = useState({});
   const [invSearch, setInvSearch] = useState("");
   const [invCatFilter, setInvCatFilter] = useState(null);
+  const [invSort, setInvSort] = useState("category");
+  const [invStatusFilter, setInvStatusFilter] = useState("all");
 
   const deptTruckIds = new Set(
     trucks.filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : (tr.department !== "energySeal"))
@@ -4399,52 +4401,114 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             return 20;
           };
 
-          // Compute which categories match search / filter
-          const visibleCats = categories.filter(cat => {
-            if (invCatFilter && invCatFilter !== cat) return false;
-            const items = sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces));
-            return !searchLower || items.some(i => i.name.toLowerCase().includes(searchLower));
-          });
 
-          // Dashboard color constants
-          const dk = {
-            bg: "#0f172a",
-            surface: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)",
-            border: "rgba(255,255,255,0.08)",
-            borderHover: "rgba(37,99,235,0.4)",
-            text: "#f1f5f9",
-            textMuted: "rgba(255,255,255,0.4)",
-            textDim: "rgba(255,255,255,0.6)",
+          // Light theme color constants for inventory view
+          const lk = {
+            bg: "#f8fafc",
+            cardBg: "#ffffff",
+            cardBorder: "1px solid #e2e8f0",
+            cardShadow: "0 1px 4px rgba(0,0,0,0.06)",
+            text: "#1e293b",
+            textMuted: "#64748b",
+            textDim: "#94a3b8",
             accent: "#2563eb",
-            accentBg: "rgba(37,99,235,0.15)",
-            separator: "rgba(255,255,255,0.06)",
-            inputBg: "rgba(255,255,255,0.05)",
-            inputBorder: "rgba(255,255,255,0.1)",
+            accentBg: "rgba(37,99,235,0.08)",
+            separator: "#f1f5f9",
+            inputBg: "#ffffff",
+            inputBorder: "#e2e8f0",
+            headerBg: "#ffffff",
+            headerBorder: "#e2e8f0",
+            rowHover: "#f1f5f9",
           };
 
-          const StatPill = ({ label, value, color }) => (
-            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)", whiteSpace: "nowrap" }}>
-              <span style={{ fontSize: 10, color: dk.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>{label}</span>
-              <span style={{ fontSize: 12, fontWeight: 800, color: color || dk.text }}>{value}</span>
-            </div>
-          );
+          // Apply status filter
+          const statusFilterFn = (item) => {
+            if (invStatusFilter === "all") return true;
+            const qty = getQty(item.id);
+            if (invStatusFilter === "out") return qty === 0;
+            if (invStatusFilter === "low") return qty > 0 && qty <= 2;
+            if (invStatusFilter === "ok") return qty > 2;
+            return true;
+          };
+
+          // Sort items across all categories for flat sort modes
+          const sortAllItems = (arr) => {
+            if (invSort === "name") return [...arr].sort((a, b) => a.name.localeCompare(b.name));
+            if (invSort === "qty_asc") return [...arr].sort((a, b) => getQty(a.id) - getQty(b.id));
+            if (invSort === "qty_desc") return [...arr].sort((a, b) => getQty(b.id) - getQty(a.id));
+            return [...arr].sort((a, b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
+          };
+
+          // Compute which categories match search / status filter
+          const visibleCats2 = categories.filter(cat => {
+            if (invCatFilter && invCatFilter !== cat) return false;
+            const items = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(statusFilterFn);
+            return items.length > 0 && (!searchLower || items.some(i => i.name.toLowerCase().includes(searchLower)));
+          });
+
+          const StatFilterBtn = ({ id, label, count, color, activeBg, activeBorder }) => {
+            const isActive = invStatusFilter === id;
+            return (
+              <button onClick={() => setInvStatusFilter(isActive ? "all" : id)} style={{
+                padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: isActive ? 800 : 600,
+                border: "1px solid " + (isActive ? activeBorder : "#e2e8f0"),
+                background: isActive ? activeBg : "#ffffff",
+                color: isActive ? color : "#64748b",
+                cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 5,
+                boxShadow: isActive ? "0 1px 3px rgba(0,0,0,0.08)" : "none",
+                transition: "all 0.15s",
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }} />
+                {label} ({count})
+              </button>
+            );
+          };
 
           return (
-            <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 56px)", overflow: "hidden", margin: "-20px", padding: 0, background: dk.bg }}>
+            <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 56px)", overflow: "hidden", margin: "-20px", padding: 0, background: lk.bg }}>
 
-              {/* ── Top control row: search + filter pills ── */}
-              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid " + dk.border, background: "rgba(15,23,42,0.95)" }}>
+              {/* ── Stat filter buttons row ── */}
+              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
+                <button onClick={() => setInvStatusFilter("all")} style={{
+                  padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: invStatusFilter === "all" ? 800 : 600,
+                  border: "1px solid " + (invStatusFilter === "all" ? "#2563eb" : "#e2e8f0"),
+                  background: invStatusFilter === "all" ? "#2563eb" : "#ffffff",
+                  color: invStatusFilter === "all" ? "#ffffff" : "#64748b",
+                  cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                  boxShadow: invStatusFilter === "all" ? "0 1px 3px rgba(37,99,235,0.2)" : "none",
+                  transition: "all 0.15s",
+                }}>All SKUs ({totalSKUs})</button>
+                <StatFilterBtn id="ok" label="In Stock" count={inStockItems.length} color="#16a34a" activeBg="#f0fdf4" activeBorder="#bbf7d0" />
+                <StatFilterBtn id="low" label="Low Stock" count={lowItems.length} color="#d97706" activeBg="#fffbeb" activeBorder="#fde68a" />
+                <StatFilterBtn id="out" label="Out of Stock" count={outItems.length} color="#dc2626" activeBg="#fef2f2" activeBorder="#fecaca" />
+                <div style={{ flex: 1 }} />
+                <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                  <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5 }}>● LIVE</span>
+                  <span style={{ fontSize: 10, color: lk.textMuted, fontWeight: 500 }}>Updated {lastUpdatedStr}</span>
+                </div>
+              </div>
+
+              {/* ── Top control row: search + sort + category pills ── */}
+              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg }}>
                 {/* Search */}
                 <div style={{ position: "relative", width: 180, flexShrink: 0 }}>
-                  <svg style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", opacity: 0.35, pointerEvents: "none" }} width="12" height="12" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <svg style={{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", opacity: 0.35, pointerEvents: "none" }} width="12" height="12" fill="none" stroke="#1e293b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   <input type="text" placeholder="Search…" value={invSearch} onChange={e => setInvSearch(e.target.value)}
-                    style={{ width: "100%", boxSizing: "border-box", padding: "5px 22px 5px 24px", fontSize: 11, borderRadius: 8, border: "1px solid " + dk.inputBorder, background: dk.inputBg, color: dk.text, fontFamily: "inherit", outline: "none" }} />
-                  {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: dk.textMuted, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>}
+                    style={{ width: "100%", boxSizing: "border-box", padding: "5px 22px 5px 24px", fontSize: 11, borderRadius: 8, border: "1px solid " + lk.inputBorder, background: lk.inputBg, color: lk.text, fontFamily: "inherit", outline: "none" }} />
+                  {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: lk.textMuted, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>}
                 </div>
+                {/* Sort dropdown */}
+                <select value={invSort} onChange={e => setInvSort(e.target.value)}
+                  style={{ padding: "5px 8px", fontSize: 11, borderRadius: 8, border: "1px solid " + lk.inputBorder, background: lk.inputBg, color: lk.text, fontFamily: "inherit", outline: "none", cursor: "pointer", flexShrink: 0 }}>
+                  <option value="category">Sort: Category</option>
+                  <option value="name">Sort: Name A–Z</option>
+                  <option value="qty_asc">Sort: Qty Low→High</option>
+                  <option value="qty_desc">Sort: Qty High→Low</option>
+                </select>
                 {/* Category filter pills */}
                 <div style={{ display: "flex", gap: 4, overflowX: "auto", flex: 1, minWidth: 0, alignItems: "center" }}>
                   <button onClick={() => setInvCatFilter(null)}
-                    style={{ padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (invCatFilter === null ? dk.accent : dk.inputBorder), background: invCatFilter === null ? dk.accent : "rgba(255,255,255,0.04)", color: invCatFilter === null ? "#fff" : dk.textDim, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", letterSpacing: "0.3px" }}>All</button>
+                    style={{ padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (invCatFilter === null ? lk.accent : lk.inputBorder), background: invCatFilter === null ? lk.accent : "#ffffff", color: invCatFilter === null ? "#fff" : lk.textMuted, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", letterSpacing: "0.3px" }}>All</button>
                   {categories.map(cat => {
                     const allItems = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces);
                     const hasOut = allItems.some(i => getQty(i.id) === 0);
@@ -4453,27 +4517,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     const isActive = invCatFilter === cat;
                     return (
                       <button key={cat} onClick={() => setInvCatFilter(isActive ? null : cat)}
-                        style={{ padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (isActive ? dk.accent : dk.inputBorder), background: isActive ? dk.accent : "rgba(255,255,255,0.04)", color: isActive ? "#fff" : dk.textDim, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, letterSpacing: "0.3px" }}>
+                        style={{ padding: "3px 9px", borderRadius: 99, fontSize: 10, fontWeight: 700, border: "1px solid " + (isActive ? lk.accent : lk.inputBorder), background: isActive ? lk.accent : "#ffffff", color: isActive ? "#fff" : lk.textMuted, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4, letterSpacing: "0.3px" }}>
                         <span style={{ width: 5, height: 5, borderRadius: "50%", background: dotColor, display: "inline-block", flexShrink: 0 }} />
                         {cat}
                       </button>
                     );
                   })}
-                </div>
-                {/* Live indicator */}
-                <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5, whiteSpace: "nowrap", flexShrink: 0 }}>● LIVE</span>
-              </div>
-
-              {/* ── Summary stat pills ── */}
-              <div style={{ flexShrink: 0, padding: "6px 12px", display: "flex", gap: 6, alignItems: "center", borderBottom: "1px solid " + dk.border, background: "rgba(15,23,42,0.7)", overflowX: "auto" }}>
-                <StatPill label="SKUs" value={totalSKUs} />
-                <StatPill label="In Stock" value={inStockItems.length} color="#22c55e" />
-                <StatPill label="Out of Stock" value={outItems.length} color={outItems.length > 0 ? "#ef4444" : dk.textMuted} />
-                <StatPill label="Low Stock" value={lowItems.length} color={lowItems.length > 0 ? "#f59e0b" : dk.textMuted} />
-                <div style={{ flex: 1 }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
-                  <span style={{ fontSize: 9, color: dk.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>Updated</span>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: dk.textDim }}>{lastUpdatedStr}</span>
                 </div>
               </div>
 
@@ -4488,28 +4537,25 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 padding: 10,
                 alignItems: "stretch",
               }}>
-                {visibleCats.map(cat => {
-                  const allCatItems = sortItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces));
+                {visibleCats2.map(cat => {
+                  const allCatItems = sortAllItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(statusFilterFn));
                   const catItems = allCatItems.filter(i => !searchLower || i.name.toLowerCase().includes(searchLower));
-                  const outCount = allCatItems.filter(i => getQty(i.id) === 0).length;
-                  const lowCount = allCatItems.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; }).length;
-                  const badgeStatus = outCount > 0 ? "out" : lowCount > 0 ? "low" : null;
+                  const outCount = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces && getQty(i.id) === 0).length;
+                  const lowCount = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces && getQty(i.id) > 0 && getQty(i.id) <= 2).length;
                   return (
                     <div key={cat}
-                      style={{ display: "flex", flexDirection: "column", borderRadius: 14, overflow: "hidden", border: "1px solid " + dk.border, background: "linear-gradient(135deg, #1e293b 0%, #0f172a 100%)", minHeight: 0, transition: "box-shadow 0.15s ease" }}
-                      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 0 0 1px rgba(37,99,235,0.4)"}
-                      onMouseLeave={e => e.currentTarget.style.boxShadow = "none"}
+                      style={{ display: "flex", flexDirection: "column", borderRadius: 14, overflow: "hidden", border: lk.cardBorder, background: lk.cardBg, boxShadow: lk.cardShadow, minHeight: 0, transition: "box-shadow 0.15s ease" }}
+                      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 0 0 2px rgba(37,99,235,0.2), 0 2px 8px rgba(0,0,0,0.08)"}
+                      onMouseLeave={e => e.currentTarget.style.boxShadow = lk.cardShadow}
                     >
                       {/* Card header */}
-                      <div style={{ flexShrink: 0, padding: "8px 10px 7px 10px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "1px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</span>
+                      <div style={{ flexShrink: 0, padding: "8px 10px 7px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: lk.textMuted, textTransform: "uppercase", letterSpacing: "1px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</span>
                         <span style={{ display: "flex", gap: 3, flexShrink: 0, marginLeft: 6 }}>
-                          {outCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(239,68,68,0.18)", color: "#ef4444", borderRadius: 99, padding: "2px 6px", border: "1px solid rgba(239,68,68,0.3)", letterSpacing: "0.3px" }}>{outCount} OUT</span>}
-                          {lowCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "rgba(245,158,11,0.18)", color: "#f59e0b", borderRadius: 99, padding: "2px 6px", border: "1px solid rgba(245,158,11,0.3)", letterSpacing: "0.3px" }}>{lowCount} LOW</span>}
+                          {outCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "#fef2f2", color: "#dc2626", borderRadius: 99, padding: "2px 6px", border: "1px solid #fecaca", letterSpacing: "0.3px" }}>{outCount} OUT</span>}
+                          {lowCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "#fffbeb", color: "#d97706", borderRadius: 99, padding: "2px 6px", border: "1px solid #fde68a", letterSpacing: "0.3px" }}>{lowCount} LOW</span>}
                         </span>
                       </div>
-                      {/* Separator */}
-                      <div style={{ height: 1, background: dk.separator, flexShrink: 0 }} />
                       {/* Items list — scrolls within card */}
                       <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
                         {catItems.map(item => {
@@ -4523,14 +4569,18 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                           const maxQty = getMax(item);
                           const barPct = Math.min(100, maxQty > 0 ? (qty / maxQty) * 100 : 0);
                           return (
-                            <div key={item.id} style={{ padding: "5px 10px 6px 10px", borderBottom: "1px solid " + dk.separator }}>
+                            <div key={item.id}
+                              style={{ padding: "5px 10px 6px 10px", borderBottom: "1px solid " + lk.separator, transition: "background 0.1s" }}
+                              onMouseEnter={e => e.currentTarget.style.background = lk.rowHover}
+                              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                            >
                               {/* Row: name + sub info + qty + edit */}
                               <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
                                 {/* Name */}
-                                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 500, color: dk.text }} title={item.name}>{item.name}</div>
+                                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 500, color: lk.text }} title={item.name}>{item.name}</div>
                                 {/* Sub info */}
-                                {subInfo ? <span style={{ fontSize: 9, color: dk.textMuted, whiteSpace: "nowrap", flexShrink: 0 }}>{subInfo}</span> : null}
-                                {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, color: "#818cf8", whiteSpace: "nowrap", flexShrink: 0 }}>{pcsQty}p</span> : null}
+                                {subInfo ? <span style={{ fontSize: 9, color: lk.textMuted, whiteSpace: "nowrap", flexShrink: 0 }}>{subInfo}</span> : null}
+                                {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, color: "#6366f1", whiteSpace: "nowrap", flexShrink: 0 }}>{pcsQty}p</span> : null}
                                 {/* Qty */}
                                 <span style={{ fontSize: 13, fontWeight: 700, color: sc.text, whiteSpace: "nowrap", flexShrink: 0, minWidth: 22, textAlign: "right" }}>{displayQty}</span>
                                 {/* Edit control */}
@@ -4548,21 +4598,21 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 </div>
                               </div>
                               {/* Mini stock bar */}
-                              <div style={{ height: 4, borderRadius: 99, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                              <div style={{ height: 4, borderRadius: 99, background: "#e2e8f0", overflow: "hidden" }}>
                                 <div style={{ height: "100%", width: barPct + "%", borderRadius: 99, background: sc.bar, transition: "width 0.3s ease" }} />
                               </div>
                             </div>
                           );
                         })}
-                        {catItems.length === 0 && searchLower && (
-                          <div style={{ fontSize: 11, color: dk.textMuted, padding: "10px", fontStyle: "italic" }}>No match</div>
+                        {catItems.length === 0 && (searchLower || invStatusFilter !== "all") && (
+                          <div style={{ fontSize: 11, color: lk.textMuted, padding: "10px", fontStyle: "italic" }}>No match</div>
                         )}
                       </div>
                     </div>
                   );
                 })}
-                {visibleCats.length === 0 && (
-                  <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "48px 16px", color: dk.textMuted, fontSize: 13 }}>No items match "{invSearch}"</div>
+                {visibleCats2.length === 0 && (
+                  <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "48px 16px", color: lk.textMuted, fontSize: 13 }}>No items match your current filters</div>
                 )}
               </div>
             </div>
