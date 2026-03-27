@@ -4471,7 +4471,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           };
 
           return (
-            <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 56px)", overflow: "hidden", margin: "-20px", padding: 0, background: lk.bg }}>
+            <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 56px)", overflow: "hidden", margin: "-20px", padding: 0, background: lk.bg }}>
 
               {/* ── Stat filter buttons row ── */}
               <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
@@ -4503,14 +4503,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     style={{ width: "100%", boxSizing: "border-box", padding: "5px 22px 5px 24px", fontSize: 11, borderRadius: 8, border: "1px solid " + lk.inputBorder, background: lk.inputBg, color: lk.text, fontFamily: "inherit", outline: "none" }} />
                   {invSearch && <button onClick={() => setInvSearch("")} style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", cursor: "pointer", color: lk.textMuted, fontSize: 13, lineHeight: 1, padding: 0 }}>×</button>}
                 </div>
-                {/* Sort dropdown */}
-                <select value={invSort} onChange={e => setInvSort(e.target.value)}
-                  style={{ padding: "5px 8px", fontSize: 11, borderRadius: 8, border: "1px solid " + lk.inputBorder, background: lk.inputBg, color: lk.text, fontFamily: "inherit", outline: "none", cursor: "pointer", flexShrink: 0 }}>
-                  <option value="category">Sort: Category</option>
-                  <option value="name">Sort: Name A–Z</option>
-                  <option value="qty_asc">Sort: Qty Low→High</option>
-                  <option value="qty_desc">Sort: Qty High→Low</option>
-                </select>
+
                 {/* Category filter pills */}
                 <div style={{ display: "flex", gap: 4, overflowX: "auto", flex: 1, minWidth: 0, alignItems: "center" }}>
                   <button onClick={() => setInvCatFilter(null)}
