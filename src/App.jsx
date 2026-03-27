@@ -343,9 +343,9 @@ const kbStyles = `
   .avatar-search:focus { border-color:rgba(255,255,255,0.6); }
 `;
 
-function AuthShell({ children, centered = false, wide = false }) {
+function AuthShell({ children, centered = false, wide = false, kiosk = false }) {
   return (
-    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto" }}>
+    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto" }}>
       <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: wide ? "680px" : "420px", width: "100%", boxSizing: "border-box" }}>
         {children}
       </div>
@@ -609,7 +609,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "email" ? "Add your email for job alerts (optional)" : "Enter your PIN";
 
   return (
-    <AuthShell wide>
+    <AuthShell wide kiosk>
         <button onClick={onBack} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.7)", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         {step === "pick" ? (
           <div style={{ textAlign: "center", marginBottom: "24px" }}>
@@ -639,14 +639,12 @@ function CrewLogin({ trucks, onLogin, onBack }) {
               const filtered = members
                 .filter(m => !crewSearch.trim() || m.name.toLowerCase().includes(crewSearch.toLowerCase()))
                 .sort((a, b) => {
-                  // Sort by createdAt ascending (older first, newer at bottom)
-                  // Members with no createdAt or no jobs go to the bottom
-                  const aDate = a.createdAt || null;
-                  const bDate = b.createdAt || null;
-                  if (!aDate && !bDate) return a.name.localeCompare(b.name);
-                  if (!aDate) return 1;
-                  if (!bDate) return -1;
-                  return aDate.localeCompare(bDate);
+                  // Members WITH a pin come first; those without come last
+                  const aHasPin = !!(a.pin);
+                  const bHasPin = !!(b.pin);
+                  if (aHasPin !== bHasPin) return aHasPin ? -1 : 1;
+                  // Within each group, sort alphabetically
+                  return a.name.localeCompare(b.name);
                 });
               if (filtered.length === 0) return <div style={{ textAlign: "center", color: "rgba(255,255,255,0.55)", fontSize: 13, padding: "24px 0" }}>No match for "{crewSearch}"</div>;
               return (
