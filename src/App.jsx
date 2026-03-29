@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 
-import { db } from "./firebase.js";
+import { db, storage } from "./firebase.js";
 import {
   collection,
   doc,
@@ -18,6 +18,13 @@ import {
   orderBy,
   serverTimestamp,
 } from "firebase/firestore";
+import {
+  ref as storageRef,
+  uploadBytes,
+  getDownloadURL,
+  deleteObject,
+} from "firebase/storage";
+import { jsPDF } from "jspdf";
 
 // ─── Constants ───
 const JOB_TYPES = ["Foam","Fiberglass","Removal","Energy Seal"];
@@ -1308,6 +1315,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                       })}
                     </div>
                   )}
+                  {/* Photos section for crew */}
+                  <JobPhotosSection job={job} canDelete={false} uploaderName={crewName} />
                   {(() => {
                     const todayStr = todayCST();
                     const existingToday = (job.dailyMaterialLogs || []).find(l => l.date === todayStr);
@@ -3453,6 +3462,267 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
 }
 
 
+// ─── Job Photos Section ───
+function JobPhotosSection({ job, canDelete, uploaderName }) {
+  const [uploading, setUploading] = useState(false);
+  const [deleting, setDeleting] = useState(null);
+  const photos = job.photos || [];
+
+  const handleUpload = async (e) => {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    setUploading(true);
+    try {
+      const newPhotos = [...photos];
+      for (const file of files) {
+        const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        const path = `jobs/${job.id}/photos/${filename}`;
+        const sRef = storageRef(storage, path);
+        await uploadBytes(sRef, file);
+        const url = await getDownloadURL(sRef);
+        newPhotos.push({
+          url,
+          filename,
+          uploadedBy: uploaderName || "Unknown",
+          uploadedAt: new Date().toISOString(),
+        });
+      }
+      await updateDoc(doc(db, "jobs", job.id), { photos: newPhotos });
+    } catch (err) {
+      alert("Upload failed: " + err.message);
+    } finally {
+      setUploading(false);
+      e.target.value = "";
+    }
+  };
+
+  const handleDelete = async (photo, idx) => {
+    if (!window.confirm("Delete this photo?")) return;
+    setDeleting(idx);
+    try {
+      const path = `jobs/${job.id}/photos/${photo.filename}`;
+      const sRef = storageRef(storage, path);
+      await deleteObject(sRef).catch(() => {});
+      const newPhotos = photos.filter((_, i) => i !== idx);
+      await updateDoc(doc(db, "jobs", job.id), { photos: newPhotos });
+    } catch (err) {
+      alert("Delete failed: " + err.message);
+    } finally {
+      setDeleting(null);
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: "16px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>
+        <div style={{ fontSize: "12px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px" }}>📷 Photos {photos.length > 0 ? `(${photos.length})` : ""}</div>
+        <label style={{ cursor: "pointer", padding: "5px 12px", background: t.accent, color: "#fff", borderRadius: "6px", fontSize: "12px", fontWeight: 600, opacity: uploading ? 0.6 : 1, pointerEvents: uploading ? "none" : "auto" }}>
+          {uploading ? "Uploading…" : "+ Add Photo"}
+          <input type="file" accept="image/*" multiple onChange={handleUpload} style={{ display: "none" }} />
+        </label>
+      </div>
+      {photos.length === 0 ? (
+        <div style={{ fontSize: "12px", color: t.textMuted, fontStyle: "italic" }}>No photos yet.</div>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "8px" }}>
+          {photos.map((photo, idx) => (
+            <div key={idx} style={{ position: "relative", borderRadius: "8px", overflow: "hidden", aspectRatio: "1", background: t.bg }}>
+              <a href={photo.url} target="_blank" rel="noopener noreferrer">
+                <img src={photo.url} alt={photo.filename} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              </a>
+              {canDelete && (
+                <button
+                  onClick={() => handleDelete(photo, idx)}
+                  disabled={deleting === idx}
+                  style={{ position: "absolute", top: "4px", right: "4px", background: "rgba(220,38,38,0.85)", border: "none", color: "#fff", borderRadius: "50%", width: "22px", height: "22px", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
+                >✕</button>
+              )}
+              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.5)", padding: "2px 4px" }}>
+                <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{photo.uploadedBy}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Job Completion PDF ───
+function generateJobPDF(job, updates, pmUpdates, members) {
+  const doc2 = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210;
+  const margin = 16;
+  let y = 0;
+
+  // Header background
+  doc2.setFillColor(15, 23, 42);
+  doc2.rect(0, 0, W, 38, "F");
+
+  // IST accent stripe
+  doc2.setFillColor(37, 99, 235);
+  doc2.rect(margin, 10, 3, 18, "F");
+
+  // Company name
+  doc2.setTextColor(255, 255, 255);
+  doc2.setFontSize(22);
+  doc2.setFont("helvetica", "bold");
+  doc2.text("IST", margin + 7, 22);
+  doc2.setFontSize(8);
+  doc2.setFont("helvetica", "normal");
+  doc2.setTextColor(147, 197, 253);
+  doc2.text("INSULATION SERVICES OF TULSA", margin + 7, 28);
+  doc2.setTextColor(255, 255, 255);
+  doc2.setFontSize(11);
+  doc2.setFont("helvetica", "bold");
+  doc2.text("Job Completion Report", W - margin, 23, { align: "right" });
+  doc2.setFontSize(8);
+  doc2.setFont("helvetica", "normal");
+  doc2.setTextColor(147, 197, 253);
+  doc2.text(new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" }), W - margin, 29, { align: "right" });
+
+  y = 48;
+
+  // Job Details Section
+  doc2.setTextColor(17, 24, 39);
+  doc2.setFontSize(13);
+  doc2.setFont("helvetica", "bold");
+  doc2.text(job.builder || "No Customer Listed", margin, y);
+  y += 7;
+  doc2.setFontSize(10);
+  doc2.setFont("helvetica", "normal");
+  doc2.setTextColor(75, 85, 99);
+  doc2.text(job.address || "", margin, y);
+  y += 5;
+  doc2.text(`Job Type: ${job.type || "—"}   |   Date: ${job.date ? new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—"}`, margin, y);
+  y += 5;
+
+  // Crew
+  const assignedNames = (job.crewMemberIds || []).map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+  if (assignedNames.length > 0) {
+    doc2.text(`Crew: ${assignedNames.join(", ")}`, margin, y);
+    y += 5;
+  }
+
+  // Completed at
+  const completedUpd = (updates || []).filter(u => u.jobId === job.id && u.status === "completed").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
+  if (completedUpd) {
+    const completedDate = new Date(completedUpd.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
+    doc2.text(`Completed: ${completedDate}`, margin, y);
+    y += 5;
+  }
+  if (job.closedAt) {
+    const closedDate = new Date(job.closedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    doc2.text(`Closed out: ${closedDate}`, margin, y);
+    y += 5;
+  }
+
+  y += 4;
+
+  // Materials Section
+  const hasMaterials = (job.dailyMaterialLogs || []).length > 0 || Object.keys(job.materialsUsed || {}).length > 0;
+  if (hasMaterials) {
+    doc2.setFillColor(238, 242, 255);
+    doc2.roundedRect(margin, y, W - margin * 2, 7, 2, 2, "F");
+    doc2.setTextColor(26, 86, 219);
+    doc2.setFontSize(9);
+    doc2.setFont("helvetica", "bold");
+    doc2.text("MATERIALS USED", margin + 4, y + 5);
+    y += 11;
+
+    doc2.setFont("helvetica", "normal");
+    doc2.setTextColor(17, 24, 39);
+    doc2.setFontSize(9);
+
+    const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+
+    const renderMaterials = (mats) => {
+      Object.entries(mats || {}).forEach(([itemId, qty]) => {
+        const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+        if (!item) return;
+        const display = isFoamId(itemId)
+          ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+          : qty + " " + item.unit;
+        doc2.text(`• ${item.name}: ${display}`, margin + 4, y);
+        y += 5;
+      });
+    };
+
+    if ((job.dailyMaterialLogs || []).length > 0) {
+      (job.dailyMaterialLogs || []).forEach(log => {
+        doc2.setTextColor(75, 85, 99);
+        doc2.text(`${log.date} — logged by ${log.loggedBy}`, margin + 4, y);
+        y += 5;
+        doc2.setTextColor(17, 24, 39);
+        renderMaterials(log.materials);
+      });
+    } else {
+      renderMaterials(job.materialsUsed);
+    }
+    y += 4;
+  }
+
+  // PM Notes Section
+  const jobPm = (pmUpdates || []).filter(p => p.jobId === job.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+  if (jobPm.length > 0) {
+    doc2.setFillColor(254, 243, 199);
+    doc2.roundedRect(margin, y, W - margin * 2, 7, 2, 2, "F");
+    doc2.setTextColor(180, 83, 9);
+    doc2.setFontSize(9);
+    doc2.setFont("helvetica", "bold");
+    doc2.text("PROJECT MANAGER NOTES", margin + 4, y + 5);
+    y += 11;
+    doc2.setFont("helvetica", "normal");
+    doc2.setTextColor(17, 24, 39);
+    doc2.setFontSize(9);
+    jobPm.forEach(p => {
+      const lines = doc2.splitTextToSize(`${p.user} (${p.timeStr || ""}): ${p.note}`, W - margin * 2 - 8);
+      lines.forEach(line => {
+        doc2.text(`• ${line}`, margin + 4, y);
+        y += 5;
+      });
+    });
+    y += 4;
+  }
+
+  // Completion Notes
+  if (completedUpd?.notes) {
+    doc2.setFont("helvetica", "bold");
+    doc2.setFontSize(9);
+    doc2.setTextColor(75, 85, 99);
+    doc2.text("COMPLETION NOTES:", margin, y);
+    y += 5;
+    doc2.setFont("helvetica", "normal");
+    doc2.setTextColor(17, 24, 39);
+    const lines = doc2.splitTextToSize(completedUpd.notes, W - margin * 2);
+    lines.forEach(line => { doc2.text(line, margin, y); y += 5; });
+    y += 4;
+  }
+
+  // Photos note
+  const photos = job.photos || [];
+  if (photos.length > 0) {
+    doc2.setFont("helvetica", "bold");
+    doc2.setFontSize(9);
+    doc2.setTextColor(75, 85, 99);
+    doc2.text(`PHOTOS: ${photos.length} photo${photos.length > 1 ? "s" : ""} attached in IST Dispatch.`, margin, y);
+    y += 8;
+  }
+
+  // Footer
+  const footerY = 285;
+  doc2.setDrawColor(226, 229, 234);
+  doc2.line(margin, footerY - 4, W - margin, footerY - 4);
+  doc2.setTextColor(156, 163, 175);
+  doc2.setFontSize(8);
+  doc2.setFont("helvetica", "normal");
+  doc2.text("Insulation Services of Tulsa  |  918-232-9055  |  istulsa.com", W / 2, footerY, { align: "center" });
+  doc2.text(`Generated ${new Date().toLocaleString("en-US", { timeZone: "America/Chicago" })} CST`, W / 2, footerY + 5, { align: "center" });
+
+  const safeName = (job.builder || "Job").replace(/[^a-zA-Z0-9]/g, "_");
+  doc2.save(`IST_Report_${safeName}_${job.date || "unknown"}.pdf`);
+}
+
 function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
@@ -5249,17 +5519,27 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
 
+            {/* 📷 Photos Section */}
+            <JobPhotosSection job={calViewJob} canDelete={["Johnny","Jordan","Skip","Duck","Carolyn"].includes(adminName)} uploaderName={adminName} />
+
             <div style={{ marginBottom: 10 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, display: "block", marginBottom: 4 }}>Move Job Date</label>
               <input type="date" defaultValue={calViewJob.date} onChange={async (e) => { if (e.target.value) { await onEditJob(calViewJob.id, { ...calViewJob, date: e.target.value }); setCalViewJob(null); }}} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
             </div>
-            <div style={{ display: "flex", gap: "10px" }}>
-              <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1 }}>Close</Button>
-              <Button onClick={() => { setPmJob(calViewJob); setPmCheckedAM(calViewJob.jobCheckedAM || "No"); setPmCheckedPM(calViewJob.jobCheckedPM || "No"); setCalViewJob(null); }} style={{ flex: 1 }}>PM Note</Button>
-              <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1 }}>Edit</Button>
-              <Button variant="secondary" onClick={async () => { await onEditJob(calViewJob.id, { ...calViewJob, onHold: true }); setCalViewJob(null); }} style={{ flex: 1 }}>Hold</Button>
-              <Button variant="danger" onClick={async () => { if (confirm("Delete this job?")) { await onDeleteJob(calViewJob.id); setCalViewJob(null); }}} style={{ flex: 1 }}>Delete</Button>
+            <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+              <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1, minWidth: "80px" }}>Close</Button>
+              <Button onClick={() => { setPmJob(calViewJob); setPmCheckedAM(calViewJob.jobCheckedAM || "No"); setPmCheckedPM(calViewJob.jobCheckedPM || "No"); setCalViewJob(null); }} style={{ flex: 1, minWidth: "80px" }}>PM Note</Button>
+              <Button onClick={() => { openEditJob(calViewJob); setCalViewJob(null); }} style={{ flex: 1, minWidth: "80px" }}>Edit</Button>
+              <Button variant="secondary" onClick={async () => { await onEditJob(calViewJob.id, { ...calViewJob, onHold: true }); setCalViewJob(null); }} style={{ flex: 1, minWidth: "80px" }}>Hold</Button>
+              <Button variant="danger" onClick={async () => { if (confirm("Delete this job?")) { await onDeleteJob(calViewJob.id); setCalViewJob(null); }}} style={{ flex: 1, minWidth: "80px" }}>Delete</Button>
             </div>
+            {latestStatus === "completed" && (
+              <Button
+                variant="secondary"
+                onClick={() => generateJobPDF(calViewJob, updates, pmUpdates, members)}
+                style={{ width: "100%", marginTop: "10px", borderColor: "#15803d", color: "#15803d" }}
+              >📄 Generate Completion Report (PDF)</Button>
+            )}
           </Modal>
         );
       })()}
