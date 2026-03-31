@@ -58,6 +58,12 @@ const INVENTORY_ITEMS = [
   // Certainteed R13
   { id: "r13_15_8_t",     name: 'R13 x 15" x 93" (8ft)', pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Certainteed R13", hasPieces: true },
   { id: "r13_15_8_pcs",   name: 'R13 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_8_t" },
+
+  { id: "oc_r13_15_8_t",   name: "Owens Corning R13 x 15\" x 93\" (8ft)", pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Owens Corning R13", hasPieces: true },
+  { id: "oc_r13_15_8_pcs", name: "Owens Corning R13 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_8_t" },
+
+  { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\" (8ft)", pcsPerTube: 9,  sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true },
+  { id: "oc_r19_15_8_pcs", name: "Owens Corning R19 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R19", isPieces: true, parentId: "oc_r19_15_8_t" },
   { id: "r13_15_9_t",     name: 'R13 x 15" x 105" (9ft)',pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Certainteed R13", hasPieces: true },
   { id: "r13_15_9_pcs",   name: 'R13 x 15" x 105" (9ft)',unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_9_t" },
   { id: "r13_24_8_t",     name: 'R13 x 24" x 96"',       pcsPerTube: 11, sqftPerTube: 176,    unit: "tubes", category: "Certainteed R13", hasPieces: true },
@@ -180,7 +186,7 @@ function Input({ label, ...props }) {
   return (
     <div style={{ marginBottom: "16px" }}>
       {label && <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>{label}</label>}
-      <input {...props} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box", ...(props.style || {}) }} onFocus={(e) => e.target.style.borderColor = t.accent} onBlur={(e) => e.target.style.borderColor = t.border} />
+      <input {...props} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box", ...(props.style || {}) }} onFocus={(e) => { e.target.style.borderColor = t.accent; setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "nearest" }), 320); }} onBlur={(e) => e.target.style.borderColor = t.border} />
     </div>
   );
 }
@@ -200,7 +206,7 @@ function TextArea({ label, ...props }) {
   return (
     <div style={{ marginBottom: "16px" }}>
       {label && <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>{label}</label>}
-      <textarea {...props} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", resize: "vertical", minHeight: "80px", boxSizing: "border-box", ...(props.style || {}) }} onFocus={(e) => e.target.style.borderColor = t.accent} onBlur={(e) => e.target.style.borderColor = t.border} />
+      <textarea {...props} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", resize: "vertical", minHeight: "80px", boxSizing: "border-box", ...(props.style || {}) }} onFocus={(e) => { e.target.style.borderColor = t.accent; setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "nearest" }), 320); }} onBlur={(e) => e.target.style.borderColor = t.border} />
     </div>
   );
 }
@@ -215,15 +221,22 @@ function Card({ children, style: s, onClick }) {
   );
 }
 
-function Modal({ title, onClose, children }) {
+function Modal({ title, onClose, children, footer }) {
   return (
-    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: "20px" }} onClick={onClose}>
-      <div style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "16px", padding: "16px", maxWidth: "480px", width: "100%", maxHeight: "92vh", overflowY: "auto", boxShadow: t.shadowMd }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "22px", paddingBottom: "14px", borderBottom: "1px solid " + t.border }}>
+    <div className="modal-backdrop" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
+      <div className="modal-container" style={{ background: t.card, border: "1px solid " + t.border, padding: "16px", maxWidth: "480px", width: "100%", maxHeight: "85dvh", display: "flex", flexDirection: "column", boxShadow: t.shadowMd }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", paddingBottom: "14px", borderBottom: "1px solid " + t.border, flexShrink: 0 }}>
           <h2 style={{ fontSize: "17px", fontWeight: 600, color: t.text, margin: 0 }}>{title}</h2>
-          <button onClick={onClose} style={{ background: t.surface, border: "1px solid " + t.border, color: t.textMuted, width: "28px", height: "28px", borderRadius: "6px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "14px" }}>✕</button>
+          <button onClick={onClose} style={{ background: t.surface, border: "1px solid " + t.border, color: t.textMuted, minWidth: "44px", minHeight: "44px", width: "44px", height: "44px", borderRadius: "8px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", flexShrink: 0 }}>✕</button>
         </div>
-        {children}
+        <div style={{ overflowY: "auto", flex: 1, paddingBottom: footer ? "0" : "env(safe-area-inset-bottom, 8px)" }}>
+          {children}
+        </div>
+        {footer && (
+          <div style={{ flexShrink: 0, paddingTop: "12px", borderTop: "1px solid " + t.border, paddingBottom: "env(safe-area-inset-bottom, 12px)", background: t.card }}>
+            {footer}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -330,6 +343,10 @@ const kbStyles = `
   @keyframes badgePulse {
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.15); }
+  }
+  @keyframes toastSlide {
+    from { opacity: 0; transform: translateX(40px); }
+    to { opacity: 1; transform: translateX(0); }
   }
   .kb-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center; }
   .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
@@ -2801,6 +2818,337 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
   );
 }
 
+// ─── Toast Notification System ───
+function ToastContainer({ toasts, onDismiss }) {
+  if (!toasts || toasts.length === 0) return null;
+  return ReactDOM.createPortal(
+    <div style={{ position: "fixed", bottom: 24, right: 16, zIndex: 9999, display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end", pointerEvents: "none" }}>
+      {toasts.map(toast => (
+        <div key={toast.id} style={{ pointerEvents: "auto", background: "#1e293b", color: "#f1f5f9", borderRadius: 12, padding: "12px 16px", minWidth: 260, maxWidth: 340, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.1)", display: "flex", gap: 12, alignItems: "flex-start", animation: "toastSlide 0.25s ease" }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: "#93c5fd", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.5px" }}>Job Update</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#f1f5f9", marginBottom: 2 }}>{toast.crewName}</div>
+            <div style={{ fontSize: 12, color: "#cbd5e1", marginBottom: 2 }}>{toast.address}</div>
+            <div style={{ fontSize: 12 }}>
+              <span style={{ padding: "2px 8px", borderRadius: 20, fontWeight: 700, fontSize: 11, background: toast.statusBg || "#374151", color: toast.statusColor || "#fff" }}>{toast.statusLabel}</span>
+            </div>
+          </div>
+          <button onClick={() => onDismiss(toast.id)} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.4)", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0, flexShrink: 0 }}>✕</button>
+        </div>
+      ))}
+    </div>,
+    document.body
+  );
+}
+
+function useJobUpdateToasts(updates, jobs) {
+  const [toasts, setToasts] = useState([]);
+  const seenRef = useRef(new Set());
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    // On first mount, seed seenRef with all existing updates so we don't toast on load
+    if (!mountedRef.current) {
+      (updates || []).forEach(u => seenRef.current.add(u.id));
+      mountedRef.current = true;
+      return;
+    }
+    const today = todayCST();
+    (updates || []).forEach(u => {
+      if (!u.id || seenRef.current.has(u.id)) return;
+      if (!u.timestamp || !u.status || !u.crewName) return;
+      // Only show for today's updates
+      const updateDate = tsToCST(u.timestamp);
+      if (updateDate !== today) { seenRef.current.add(u.id); return; }
+      if (!["in_progress","completed","issue"].includes(u.status)) { seenRef.current.add(u.id); return; }
+      seenRef.current.add(u.id);
+      const job = jobs.find(j => j.id === u.jobId);
+      const statusObj = STATUS_OPTIONS.find(s => s.value === u.status);
+      const toast = {
+        id: u.id,
+        crewName: u.crewName,
+        address: job ? (job.address || job.builder || "Unknown job") : "Unknown job",
+        statusLabel: statusObj ? statusObj.label : u.status,
+        statusColor: statusObj ? statusObj.color : "#fff",
+        statusBg: statusObj ? statusObj.bg : "#374151",
+      };
+      setToasts(prev => {
+        const next = [...prev.slice(-2), toast]; // max 3
+        return next;
+      });
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== u.id)), 6000);
+    });
+  }, [updates]);
+
+  const dismiss = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
+  return [toasts, dismiss];
+}
+
+// ─── EOD Summary Modal ───
+function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, onClose }) {
+  const today = todayCST();
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+
+  // Jobs with any activity today
+  const todayJobs = jobs.filter(j => {
+    return updates.some(u => u.jobId === j.id && tsToCST(u.timestamp) === today);
+  });
+
+  // Status per job (latest)
+  const getJobStatus = (jobId) => {
+    const u = updates.filter(u => u.jobId === jobId).sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0];
+    return u ? u.status : "not_started";
+  };
+
+  const completedJobs = todayJobs.filter(j => getJobStatus(j.id) === "completed");
+  const inProgressJobs = todayJobs.filter(j => getJobStatus(j.id) === "in_progress");
+  const notStartedJobs = todayJobs.filter(j => !["completed","in_progress"].includes(getJobStatus(j.id)));
+
+  // Crew who worked today
+  const crewNamesSet = new Set();
+  updates.filter(u => tsToCST(u.timestamp) === today && u.crewName).forEach(u => crewNamesSet.add(u.crewName));
+  const crewNames = [...crewNamesSet].sort();
+
+  // Flags/tickets submitted today
+  const todayTickets = tickets.filter(tk => tsToCST(tk.timestamp) === today);
+
+  const fmtMaterials = (mats) => {
+    if (!mats || Object.keys(mats).length === 0) return null;
+    return Object.entries(mats).map(([itemId, qty]) => {
+      const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+      if (!item) return null;
+      const display = isFoam(itemId)
+        ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+        : qty + " " + item.unit;
+      return <span key={itemId} style={{ display: "inline-block", margin: "2px 4px 2px 0", padding: "2px 8px", background: "#eef2ff", color: "#3730a3", borderRadius: 5, fontSize: 11, fontWeight: 600 }}>{item.name}: {display}</span>;
+    }).filter(Boolean);
+  };
+
+  const getAllMaterials = (job) => {
+    const mats = {};
+    (job.dailyMaterialLogs || []).forEach(log => {
+      if (log.date === today) {
+        Object.entries(log.materials || {}).forEach(([id, qty]) => { mats[id] = (mats[id] || 0) + qty; });
+      }
+    });
+    if (Object.keys(mats).length === 0 && job.materialsUsed) {
+      Object.entries(job.materialsUsed).forEach(([id, qty]) => { mats[id] = (mats[id] || 0) + qty; });
+    }
+    return mats;
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const prioColors = { low: "#1d4ed8", medium: "#b45309", high: "#b91c1c", critical: "#991b1b" };
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 1100, overflow: "auto", display: "flex", justifyContent: "center", padding: "20px" }} onClick={onClose}>
+      <div style={{ background: "#fff", borderRadius: 16, padding: 24, maxWidth: 640, width: "100%", boxShadow: "0 8px 40px rgba(0,0,0,0.2)", alignSelf: "flex-start" }} onClick={e => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20, paddingBottom: 14, borderBottom: "2px solid #1e293b" }}>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "2px", textTransform: "uppercase", color: "#64748b" }}>Insulation Services of Tulsa</div>
+            <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", marginTop: 2 }}>End-of-Day Summary</div>
+            <div style={{ fontSize: 13, color: "#64748b" }}>{new Date(today + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" })}</div>
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={handlePrint} style={{ padding: "8px 14px", borderRadius: 8, background: "#1e293b", color: "#fff", border: "none", fontWeight: 600, fontSize: 13, cursor: "pointer" }}>Print</button>
+            <button onClick={onClose} style={{ background: "#f1f5f9", border: "none", color: "#64748b", width: 32, height: 32, borderRadius: 6, cursor: "pointer", fontSize: 16 }}>✕</button>
+          </div>
+        </div>
+
+        {/* Crew */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748b", marginBottom: 8 }}>Crew Working Today</div>
+          {crewNames.length === 0 ? <div style={{ fontSize: 13, color: "#94a3b8", fontStyle: "italic" }}>No crew updates today</div> : (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              {crewNames.map(n => <span key={n} style={{ padding: "4px 12px", background: "#f1f5f9", border: "1px solid #e2e8f0", borderRadius: 20, fontSize: 13, fontWeight: 600, color: "#1e293b" }}>{n}</span>)}
+            </div>
+          )}
+        </div>
+
+        {/* Job Status Summary */}
+        <div style={{ marginBottom: 20, display: "flex", gap: 10 }}>
+          {[
+            { label: "Completed", count: completedJobs.length, bg: "#dcfce7", color: "#15803d" },
+            { label: "In Progress", count: inProgressJobs.length, bg: "#fef3c7", color: "#b45309" },
+            { label: "Not Started", count: notStartedJobs.length, bg: "#f1f5f9", color: "#64748b" },
+          ].map(s => (
+            <div key={s.label} style={{ flex: 1, background: s.bg, borderRadius: 10, padding: "12px", textAlign: "center" }}>
+              <div style={{ fontSize: 24, fontWeight: 800, color: s.color }}>{s.count}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: s.color, textTransform: "uppercase", letterSpacing: "0.3px" }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Jobs detail */}
+        {todayJobs.length > 0 && (
+          <div style={{ marginBottom: 20 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748b", marginBottom: 10 }}>Jobs</div>
+            {[...completedJobs, ...inProgressJobs, ...notStartedJobs].map(job => {
+              const status = getJobStatus(job.id);
+              const statusObj = STATUS_OPTIONS.find(s => s.value === status);
+              const mats = getAllMaterials(job);
+              const matEls = fmtMaterials(mats);
+              return (
+                <div key={job.id} style={{ marginBottom: 10, padding: "12px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0", borderLeft: "4px solid " + (statusObj?.color || "#94a3b8") }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: matEls?.length ? 8 : 0 }}>
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a" }}>{job.builder || "No Customer"}</div>
+                      <div style={{ fontSize: 12, color: "#64748b" }}>{job.address}{job.type ? " — " + job.type : ""}</div>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: statusObj?.bg || "#f1f5f9", color: statusObj?.color || "#64748b" }}>{statusObj?.label || status}</span>
+                  </div>
+                  {matEls?.length > 0 && <div style={{ marginTop: 6 }}><span style={{ fontSize: 10, color: "#94a3b8", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.4px", marginRight: 4 }}>Materials:</span>{matEls}</div>}
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Flags/tickets */}
+        {todayTickets.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748b", marginBottom: 8 }}>Tickets & Flags ({todayTickets.length})</div>
+            {todayTickets.map(tk => (
+              <div key={tk.id} style={{ padding: "10px 12px", background: "#fef9f0", borderRadius: 8, border: "1px solid #fed7aa", marginBottom: 6, borderLeft: "3px solid " + (prioColors[tk.priority] || "#94a3b8") }}>
+                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                  <span style={{ fontWeight: 600, fontSize: 12, color: prioColors[tk.priority] || "#64748b" }}>{tk.priority?.toUpperCase()}</span>
+                  <span style={{ fontSize: 11, color: "#94a3b8" }}>{tk.submittedBy}</span>
+                </div>
+                <div style={{ fontSize: 13, color: "#0f172a" }}>{tk.description}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {todayJobs.length === 0 && crewNames.length === 0 && todayTickets.length === 0 && (
+          <div style={{ textAlign: "center", padding: "32px", color: "#94a3b8", fontSize: 14 }}>No activity recorded today yet.</div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Truck Reconciliation View ───
+function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckInventory }) {
+  const today = todayCST();
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+
+  const fmtQty = (itemId, qty) => {
+    if (isFoam(itemId)) return Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal";
+    const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+    return qty + (item ? " " + item.unit : "");
+  };
+
+  // Sum items from a log entry's items object
+  const sumItems = (logs) => {
+    const totals = {};
+    logs.forEach(entry => {
+      Object.entries(entry.items || {}).forEach(([id, qty]) => {
+        totals[id] = (totals[id] || 0) + (parseFloat(qty) || 0);
+      });
+    });
+    return totals;
+  };
+
+  const reconcileData = trucks.map(truck => {
+    const todayLoads = loadLog.filter(r => r.truckId === truck.id && tsToCST(r.timestamp) === today);
+    const todayReturns = returnLog.filter(r => r.truckId === truck.id && tsToCST(r.timestamp) === today);
+
+    const loaded = sumItems(todayLoads);
+    const returned = sumItems(todayReturns);
+
+    // Materials used on completed jobs today
+    const materialsUsed = {};
+    jobs.filter(j => {
+      const completedUpd = updates.filter(u => u.jobId === j.id && u.status === "completed")
+        .sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0];
+      return completedUpd && tsToCST(completedUpd.timestamp) === today && j.truckId === truck.id;
+    }).forEach(j => {
+      (j.dailyMaterialLogs || []).filter(l => l.date === today).forEach(log => {
+        Object.entries(log.materials || {}).forEach(([id, qty]) => {
+          materialsUsed[id] = (materialsUsed[id] || 0) + (parseFloat(qty) || 0);
+        });
+      });
+      if (!(j.dailyMaterialLogs || []).some(l => l.date === today) && j.materialsUsed) {
+        Object.entries(j.materialsUsed).forEach(([id, qty]) => {
+          materialsUsed[id] = (materialsUsed[id] || 0) + (parseFloat(qty) || 0);
+        });
+      }
+    });
+
+    // Discrepancy: loaded - returned - materialsUsed
+    const allItemIds = new Set([...Object.keys(loaded), ...Object.keys(returned), ...Object.keys(materialsUsed)]);
+    const discrepancies = {};
+    allItemIds.forEach(id => {
+      const l = loaded[id] || 0;
+      const r = returned[id] || 0;
+      const u = materialsUsed[id] || 0;
+      const disc = l - r - u;
+      // Round to avoid float noise
+      const discRounded = Math.round(disc * 1000) / 1000;
+      if (discRounded > 0.001) discrepancies[id] = discRounded;
+    });
+
+    const hasFlaggedDiscrepancy = Object.keys(discrepancies).length > 0;
+    const hasActivity = Object.keys(loaded).length > 0 || Object.keys(returned).length > 0;
+
+    return { truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy, hasActivity };
+  }).filter(r => r.hasActivity);
+
+  if (reconcileData.length === 0) {
+    return <div style={{ textAlign: "center", padding: "32px 24px", color: "#64748b", fontSize: 14, borderRadius: 10, border: "2px dashed #e2e8f0", background: "#f8fafc" }}>No truck loads recorded today yet.</div>;
+  }
+
+  return (
+    <div>
+      {reconcileData.map(({ truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy }) => (
+        <div key={truck.id} style={{ marginBottom: 16, border: "1px solid " + (hasFlaggedDiscrepancy ? "#fca5a5" : "#bbf7d0"), borderRadius: 12, overflow: "hidden", background: hasFlaggedDiscrepancy ? "#fff7f7" : "#f0fdf4" }}>
+          <div style={{ padding: "12px 16px", background: hasFlaggedDiscrepancy ? "#fee2e2" : "#dcfce7", borderBottom: "1px solid " + (hasFlaggedDiscrepancy ? "#fca5a5" : "#86efac"), display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: hasFlaggedDiscrepancy ? "#991b1b" : "#14532d" }}>
+              {hasFlaggedDiscrepancy ? "⚠️ " : "✅ "}{truck.members || truck.name}
+            </div>
+            {hasFlaggedDiscrepancy && (
+              <span style={{ fontSize: 11, fontWeight: 700, background: "#dc2626", color: "#fff", padding: "2px 10px", borderRadius: 20 }}>DISCREPANCY</span>
+            )}
+          </div>
+          <div style={{ padding: "12px 16px" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: Object.keys(discrepancies).length > 0 ? 12 : 0 }}>
+              {[
+                { label: "Loaded Out", items: loaded, color: "#1d4ed8" },
+                { label: "Returned", items: returned, color: "#15803d" },
+                { label: "Job Materials", items: materialsUsed, color: "#7c3aed" },
+              ].map(section => (
+                <div key={section.label}>
+                  <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: section.color, marginBottom: 6 }}>{section.label}</div>
+                  {Object.keys(section.items).length === 0
+                    ? <div style={{ fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>—</div>
+                    : Object.entries(section.items).map(([id, qty]) => {
+                        const item = INVENTORY_ITEMS.find(i => i.id === id);
+                        return <div key={id} style={{ fontSize: 11, color: "#374151", marginBottom: 2 }}>{item?.name || id}: <strong>{fmtQty(id, qty)}</strong></div>;
+                      })
+                  }
+                </div>
+              ))}
+            </div>
+            {Object.keys(discrepancies).length > 0 && (
+              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Unexplained Discrepancy</div>
+                {Object.entries(discrepancies).map(([id, qty]) => {
+                  const item = INVENTORY_ITEMS.find(i => i.id === id);
+                  return <div key={id} style={{ fontSize: 12, color: "#b91c1c", fontWeight: 600 }}>• {item?.name || id}: {fmtQty(id, qty)} unaccounted</div>;
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Admin Dashboard ───
 // ─── Roster View ─────────────────────────────────────────────────────────────
 function TimesheetModal({ member, jobs, updates, jobUpdates, weekOffset, setWeekOffset, onClose }) {
@@ -3463,9 +3811,10 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
 
 
 // ─── Job Photos Section ───
-function JobPhotosSection({ job, canDelete, uploaderName }) {
+function JobPhotosSection({ job, canDelete, uploaderName, emptyText }) {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(null);
+  const [lightboxIdx, setLightboxIdx] = useState(null);
   const photos = job.photos || [];
 
   const handleUpload = async (e) => {
@@ -3522,17 +3871,15 @@ function JobPhotosSection({ job, canDelete, uploaderName }) {
         </label>
       </div>
       {photos.length === 0 ? (
-        <div style={{ fontSize: "12px", color: t.textMuted, fontStyle: "italic" }}>No photos yet.</div>
+        <div style={{ fontSize: "12px", color: t.textMuted, fontStyle: "italic" }}>{emptyText || "No photos yet."}</div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "8px" }}>
           {photos.map((photo, idx) => (
-            <div key={idx} style={{ position: "relative", borderRadius: "8px", overflow: "hidden", aspectRatio: "1", background: t.bg }}>
-              <a href={photo.url} target="_blank" rel="noopener noreferrer">
-                <img src={photo.url} alt={photo.filename} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-              </a>
+            <div key={idx} style={{ position: "relative", borderRadius: "8px", overflow: "hidden", aspectRatio: "1", background: t.bg, cursor: "pointer" }} onClick={() => setLightboxIdx(idx)}>
+              <img src={photo.url} alt={photo.filename} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
               {canDelete && (
                 <button
-                  onClick={() => handleDelete(photo, idx)}
+                  onClick={(e) => { e.stopPropagation(); handleDelete(photo, idx); }}
                   disabled={deleting === idx}
                   style={{ position: "absolute", top: "4px", right: "4px", background: "rgba(220,38,38,0.85)", border: "none", color: "#fff", borderRadius: "50%", width: "22px", height: "22px", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
                 >✕</button>
@@ -3544,6 +3891,35 @@ function JobPhotosSection({ job, canDelete, uploaderName }) {
           ))}
         </div>
       )}
+
+      {/* Lightbox */}
+      {lightboxIdx !== null && photos[lightboxIdx] && (() => {
+        const photo = photos[lightboxIdx];
+        const total = photos.length;
+        const fmt = (iso) => { try { return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
+        return (
+          <div onClick={() => setLightboxIdx(null)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.88)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+            {/* Close */}
+            <button onClick={() => setLightboxIdx(null)} style={{ position: "absolute", top: "16px", right: "20px", background: "none", border: "none", color: "#fff", fontSize: "28px", cursor: "pointer", lineHeight: 1 }}>✕</button>
+
+            {/* Counter */}
+            <div style={{ position: "absolute", top: "18px", left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.6)", fontSize: "13px" }}>{lightboxIdx + 1} / {total}</div>
+
+            {/* Nav + image row */}
+            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", maxWidth: "900px" }}>
+              <button onClick={() => setLightboxIdx((lightboxIdx - 1 + total) % total)} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: "50%", width: "44px", height: "44px", fontSize: "22px", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+              <img src={photo.url} alt={photo.filename} style={{ flex: 1, maxHeight: "70vh", objectFit: "contain", borderRadius: "8px", display: "block" }} />
+              <button onClick={() => setLightboxIdx((lightboxIdx + 1) % total)} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: "50%", width: "44px", height: "44px", fontSize: "22px", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+            </div>
+
+            {/* Meta */}
+            <div onClick={(e) => e.stopPropagation()} style={{ marginTop: "14px", textAlign: "center" }}>
+              <div style={{ color: "#fff", fontSize: "13px", fontWeight: 600 }}>{photo.uploadedBy}</div>
+              {photo.uploadedAt && <div style={{ color: "rgba(255,255,255,0.55)", fontSize: "12px", marginTop: "3px" }}>{fmt(photo.uploadedAt)}</div>}
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -3757,6 +4133,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [pmCheckToast, setPmCheckToast] = useState("");
   const [pmCheckedAM, setPmCheckedAM] = useState("No");
   const [pmCheckedPM, setPmCheckedPM] = useState("No");
+  const [pmLocation, setPmLocation] = useState(null); // { lat, lng, accuracy }
+  const [pmLocationStatus, setPmLocationStatus] = useState("idle"); // idle | loading | granted | denied
   const [calViewJobId, setCalViewJobId] = useState(null);
   const calViewJob = calViewJobId ? (jobs.find(j => j.id === calViewJobId) || null) : null;
   const setCalViewJob = (job) => setCalViewJobId(job ? job.id : null);
@@ -3767,6 +4145,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [invCatFilter, setInvCatFilter] = useState(null);
   const [invSort, setInvSort] = useState("category");
   const [invStatusFilter, setInvStatusFilter] = useState("all");
+  const [showEodSummary, setShowEodSummary] = useState(false);
+  const [showReconcile, setShowReconcile] = useState(false);
+  const [toasts, dismissToast] = useJobUpdateToasts(updates, jobs);
 
   const deptTruckIds = new Set(
     trucks.filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : (tr.department !== "energySeal"))
@@ -3867,37 +4248,46 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   };
   const handleRemoveJob = (job) => { onDeleteJob(job.id); onLogAction("Removed job: " + job.address + " (" + job.type + ")"); };
   const handlePmSubmit = () => {
+    if (pmLocationStatus !== "granted" || !pmLocation) return; // guard: location required
     const jobLabel = pmJob.builder || pmJob.address;
     const jobId = pmJob.id;
     const prevAM = pmJob.jobCheckedAM || "No";
     const prevPM = pmJob.jobCheckedPM || "No";
     const changes = {};
-    if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; changes.amCheckedAt = new Date().toISOString(); onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
-    if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; changes.pmCheckedAt = new Date().toISOString(); onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
+    const geoTag = { lat: pmLocation.lat, lng: pmLocation.lng, accuracy: pmLocation.accuracy };
+    if (pmCheckedAM !== prevAM) { changes.jobCheckedAM = pmCheckedAM; changes.amCheckedAt = new Date().toISOString(); changes.amGeoTag = geoTag; onLogAction("AM Check: " + pmCheckedAM + " on " + jobLabel); }
+    if (pmCheckedPM !== prevPM) { changes.jobCheckedPM = pmCheckedPM; changes.pmCheckedAt = new Date().toISOString(); changes.pmGeoTag = geoTag; onLogAction("PM Check: " + pmCheckedPM + " on " + jobLabel); }
     // When both are checked, record who checked and when
     const bothChecked = pmCheckedAM === "Yes" && pmCheckedPM === "Yes";
-    if (bothChecked) { changes.checkedAt = new Date().toISOString(); changes.checkedBy = adminName || "Admin"; changes.checkedLat = null; changes.checkedLng = null; changes.checkedGeoAccuracy = null; }
+    if (bothChecked) { changes.checkedAt = new Date().toISOString(); changes.checkedBy = adminName || "Admin"; changes.checkedLat = pmLocation.lat; changes.checkedLng = pmLocation.lng; changes.checkedGeoAccuracy = pmLocation.accuracy; }
     if (pmNote.trim()) { onSubmitPmUpdate({ jobId, user: adminName, note: pmNote, timestamp: new Date().toISOString(), timeStr: timeStr() }); onLogAction("PM note on " + jobLabel + ": \"" + pmNote.trim().slice(0, 80) + (pmNote.trim().length > 80 ? "..." : "") + "\""); }
-    // Submit immediately — no waiting on GPS
     onEditJob(jobId, { jobCheckedAM: pmCheckedAM, jobCheckedPM: pmCheckedPM, ...changes });
     setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No");
     setPmCheckToast("✅ Checked!"); setTimeout(() => setPmCheckToast(""), 2500);
-    // Try to capture geo in background and patch it in
-    if (navigator.geolocation) {
+  };
+  // Auto-request geolocation when PM check modal opens
+  useEffect(() => {
+    if (pmJob) {
+      setPmLocation(null);
+      setPmLocationStatus("loading");
+      if (!navigator.geolocation) {
+        setPmLocationStatus("denied");
+        return;
+      }
       navigator.geolocation.getCurrentPosition(
         (pos) => {
-          const geoTag = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) };
-          const patch = {};
-          if (pmCheckedAM !== prevAM) patch.amGeoTag = geoTag;
-          if (pmCheckedPM !== prevPM) patch.pmGeoTag = geoTag;
-          if (bothChecked) { patch.checkedLat = pos.coords.latitude; patch.checkedLng = pos.coords.longitude; patch.checkedGeoAccuracy = Math.round(pos.coords.accuracy); }
-          if (Object.keys(patch).length > 0) onEditJob(jobId, patch);
+          setPmLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) });
+          setPmLocationStatus("granted");
         },
-        () => {}, // silently ignore if denied
-        { timeout: 10000, maximumAge: 0, enableHighAccuracy: true }
+        () => { setPmLocationStatus("denied"); },
+        { timeout: 15000, maximumAge: 0, enableHighAccuracy: true }
       );
+    } else {
+      setPmLocation(null);
+      setPmLocationStatus("idle");
     }
-  };
+  }, [pmJob]);
+
   const handleRemoveTruck = (tr) => { onDeleteTruck(tr.id); onLogAction("Removed crew: " + tr.name); };
   const sortedLog = [...activityLog].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
@@ -3965,6 +4355,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
   return (
     <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
       {/* Top header — title + logout only */}
       <div className="glass-header" style={{ padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
@@ -4154,6 +4546,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <SectionHeader title={scheduleView === "energySeal" ? "Energy Seal Schedule" : "Schedule"} right={<>
               {uncheckedCount > 0 && <button onClick={() => setShowUncheckedOnly(!showUncheckedOnly)} style={{ padding: "6px 12px", border: "1px solid " + (showUncheckedOnly ? t.danger : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showUncheckedOnly ? t.dangerBg : "#fff", color: showUncheckedOnly ? t.danger : t.textMuted }}>{showUncheckedOnly ? "Show All" : uncheckedCount + " Unchecked"}</button>}
               <button onClick={() => setShowOngoing(o => !o)} style={{ padding: "6px 12px", border: "1px solid " + (showOngoing ? t.accent : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showOngoing ? t.accentBg : "#fff", color: showOngoing ? t.accent : t.textMuted, position: "relative" }}>On-going Jobs{onHoldJobs.length > 0 && <span style={{ position: "absolute", top: -5, right: -5, background: t.accent, color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: "50%", width: 15, height: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>{onHoldJobs.length}</span>}</button>
+              <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
               <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }}>+ Add Job</Button>
             </>} />
             ); })()}
@@ -4337,6 +4730,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 </div>
                               );
                             })()}
+                            {/* Photos section */}
+                            <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                              <JobPhotosSection job={job} canDelete={["Johnny","Jordan","Skip","Duck","Carolyn"].includes(adminName)} uploaderName={adminName} emptyText="No photos yet — crew will upload from their jobs" />
+                            </div>
+
                             {/* Action row */}
                             <div style={{ display: "flex", gap: "8px", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid " + t.borderLight }}>
                               <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>PM Note</Button>
@@ -4759,10 +5157,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           };
 
           return (
-            <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 160px)", overflow: "hidden", margin: "-20px", padding: 0, background: lk.bg }}>
+            <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 140px)", overflow: "hidden", margin: "0 -20px -20px", padding: 0, background: lk.bg }}>
 
               {/* ── Stat filter buttons row ── */}
-              <div style={{ flexShrink: 0, padding: "8px 12px", marginTop: "16px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
+              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
                 <button onClick={() => setInvStatusFilter("all")} style={{
                   padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: invStatusFilter === "all" ? 800 : 600,
                   border: "1px solid " + (invStatusFilter === "all" ? "#2563eb" : "#e2e8f0"),
@@ -4784,64 +5182,114 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
 
 
-              {/* ── Category grid — fills remaining height ── */}
-              <div style={{
-                flex: 1,
-                overflow: "auto",
-                display: "grid",
-                gridTemplateColumns: "repeat(4, 1fr)",
-                gridAutoRows: "1fr",
-                gap: 8,
-                padding: 10,
-                alignItems: "stretch",
-              }}>
-                {visibleCats2.map(cat => {
-                  const allCatItems = sortAllItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(statusFilterFn));
-                  const catItems = allCatItems.filter(i => !searchLower || i.name.toLowerCase().includes(searchLower));
-                  const outCount = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces && getQty(i.id) === 0).length;
-                  const lowCount = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces && getQty(i.id) > 0 && getQty(i.id) <= 2).length;
+              {/* ── Search bar ── */}
+              <div style={{ flexShrink: 0, padding: "6px 12px", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", alignItems: "center", gap: 8 }}>
+                <input
+                  type="text"
+                  placeholder="Search inventory…"
+                  value={invSearch}
+                  onChange={e => setInvSearch(e.target.value)}
+                  style={{ flex: 1, padding: "5px 10px", border: "1px solid " + lk.inputBorder, borderRadius: 8, fontSize: 12, fontFamily: "inherit", background: lk.inputBg, color: lk.text, outline: "none" }}
+                />
+                {invSearch && (
+                  <button onClick={() => setInvSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: lk.textMuted, fontSize: 16, lineHeight: 1, padding: "2px 4px", fontFamily: "inherit" }}>×</button>
+                )}
+              </div>
+
+              {/* ── Dense two-column dashboard ── */}
+              {(() => {
+                // Derive category buckets dynamically from INVENTORY_ITEMS
+                const _allCats = [...new Set(INVENTORY_ITEMS.filter(i => !i.isPieces).map(i => i.category))];
+                const _foamCats  = _allCats.filter(cat => cat.toLowerCase().includes("foam") || INVENTORY_ITEMS.some(i => i.category === cat && i.unit === "bbl"));
+                const _blownCats = _allCats.filter(cat => cat.toLowerCase().includes("blown") || cat.toLowerCase().includes("cellulose"));
+                const _fgCats    = _allCats.filter(cat => !_foamCats.includes(cat) && !_blownCats.includes(cat) && INVENTORY_ITEMS.some(i => i.category === cat && (i.unit === "tubes" || i.unit === "pcs")));
+                const _otherCats = _allCats.filter(cat => !_foamCats.includes(cat) && !_blownCats.includes(cat) && !_fgCats.includes(cat));
+                const MATERIAL_GROUPS = [
+                  { key: "foam",   label: "Foam",             categories: _foamCats },
+                  { key: "blown",  label: "Blown",            categories: _blownCats },
+                  { key: "fg",     label: "Fiberglass Batts", categories: _fgCats },
+                  { key: "other",  label: "Other",            categories: _otherCats },
+                ];
+
+                // Flatten items per group, applying filters
+                const groupItems = (group) => {
+                  const items = [];
+                  group.categories.forEach(cat => {
+                    const catItems = sortAllItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces))
+                      .filter(statusFilterFn)
+                      .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || cat.toLowerCase().includes(searchLower));
+                    catItems.forEach(item => items.push({ item, cat }));
+                  });
+                  return items;
+                };
+
+                // Split groups into left (Foam + Blown) and right (Fiberglass + Other)
+                const leftGroups  = MATERIAL_GROUPS.filter(g => g.key === "foam" || g.key === "blown");
+                const rightGroups = MATERIAL_GROUPS.filter(g => g.key === "fg"   || g.key === "other");
+
+                const renderGroup = (group) => {
+                  const rows = groupItems(group);
+                  if (rows.length === 0) return null;
+                  // Track current category for section dividers within a group
+                  let lastCat = null;
                   return (
-                    <div key={cat}
-                      style={{ display: "flex", flexDirection: "column", borderRadius: 14, overflow: "hidden", border: lk.cardBorder, background: lk.cardBg, boxShadow: lk.cardShadow, minHeight: 0, transition: "box-shadow 0.15s ease" }}
-                      onMouseEnter={e => e.currentTarget.style.boxShadow = "0 0 0 2px rgba(37,99,235,0.2), 0 2px 8px rgba(0,0,0,0.08)"}
-                      onMouseLeave={e => e.currentTarget.style.boxShadow = lk.cardShadow}
-                    >
-                      {/* Card header */}
-                      <div style={{ flexShrink: 0, padding: "8px 10px 7px 10px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "#f8fafc", borderBottom: "1px solid #e2e8f0" }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: lk.textMuted, textTransform: "uppercase", letterSpacing: "1px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{cat}</span>
-                        <span style={{ display: "flex", gap: 3, flexShrink: 0, marginLeft: 6 }}>
-                          {outCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "#fef2f2", color: "#dc2626", borderRadius: 99, padding: "2px 6px", border: "1px solid #fecaca", letterSpacing: "0.3px" }}>{outCount} OUT</span>}
-                          {lowCount > 0 && <span style={{ fontSize: 9, fontWeight: 800, background: "#fffbeb", color: "#d97706", borderRadius: 99, padding: "2px 6px", border: "1px solid #fde68a", letterSpacing: "0.3px" }}>{lowCount} LOW</span>}
+                    <div key={group.key} style={{ marginBottom: 6 }}>
+                      {/* Group header */}
+                      <div style={{ padding: "4px 10px", background: "#e8edf5", borderRadius: "6px 6px 0 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 10, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.8px" }}>{group.label}</span>
+                        <span style={{ display: "flex", gap: 4 }}>
+                          {rows.filter(r => getQty(r.item.id) === 0).length > 0 && (
+                            <span style={{ fontSize: 9, fontWeight: 700, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 99, padding: "1px 5px" }}>
+                              {rows.filter(r => getQty(r.item.id) === 0).length} OUT
+                            </span>
+                          )}
+                          {rows.filter(r => { const q = getQty(r.item.id); return q > 0 && q <= 2; }).length > 0 && (
+                            <span style={{ fontSize: 9, fontWeight: 700, background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 99, padding: "1px 5px" }}>
+                              {rows.filter(r => { const q = getQty(r.item.id); return q > 0 && q <= 2; }).length} LOW
+                            </span>
+                          )}
                         </span>
                       </div>
-                      {/* Items list — scrolls within card */}
-                      <div style={{ flex: 1, overflowY: "auto", padding: "4px 0" }}>
-                        {catItems.map(item => {
+                      {/* Rows */}
+                      <div style={{ border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 6px 6px", overflow: "hidden", background: lk.cardBg }}>
+                        {rows.map(({ item, cat }, idx) => {
+                          const showCatLabel = cat !== lastCat && group.categories.length > 1;
+                          if (showCatLabel) lastCat = cat;
                           const qty = getQty(item.id);
                           const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
                           const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
                           const status = stockStatus(qty);
                           const sc = stockColors[status];
                           const displayQty = isFoam(item.id) ? qty.toFixed(2) : qty;
-                          const subInfo = isFoam(item.id) && qty > 0 ? `${bblToGals(qty, item.id)}g` : (item.sqftPerTube && qty > 0 ? `${(item.sqftPerTube * qty).toFixed(0)} sqft` : "");
-                          const maxQty = getMax(item);
-                          const barPct = Math.min(100, maxQty > 0 ? (qty / maxQty) * 100 : 0);
+                          const subInfo = isFoam(item.id) && qty > 0
+                            ? `${bblToGals(qty, item.id)}g`
+                            : (item.sqftPerTube && qty > 0 ? `${(item.sqftPerTube * qty).toFixed(0)} sqft` : "");
+                          const statusDotColor = sc.bar;
                           return (
-                            <div key={item.id}
-                              style={{ padding: "5px 10px 6px 10px", borderBottom: "1px solid " + lk.separator, transition: "background 0.1s" }}
-                              onMouseEnter={e => e.currentTarget.style.background = lk.rowHover}
-                              onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                            >
-                              {/* Row: name + sub info + qty + edit */}
-                              <div style={{ display: "flex", alignItems: "center", gap: 5, marginBottom: 4 }}>
+                            <React.Fragment key={item.id}>
+                              {showCatLabel && (
+                                <div style={{ padding: "2px 10px", background: "#f8fafc", borderTop: idx > 0 ? "1px solid #e2e8f0" : "none", fontSize: 9, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.6px" }}>
+                                  {cat}
+                                </div>
+                              )}
+                              <div
+                                style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderTop: "1px solid " + lk.separator, minHeight: 28, transition: "background 0.1s" }}
+                                onMouseEnter={e => e.currentTarget.style.background = lk.rowHover}
+                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                              >
+                                {/* Status dot */}
+                                <span style={{ width: 7, height: 7, borderRadius: "50%", background: statusDotColor, flexShrink: 0 }} />
                                 {/* Name */}
-                                <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: 500, color: lk.text }} title={item.name}>{item.name}</div>
+                                <span style={{ flex: 1, fontSize: 11.5, fontWeight: 500, color: lk.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.name}>{item.name}</span>
                                 {/* Sub info */}
-                                {subInfo ? <span style={{ fontSize: 9, color: lk.textMuted, whiteSpace: "nowrap", flexShrink: 0 }}>{subInfo}</span> : null}
-                                {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 11, fontWeight: 700, color: "#6366f1", background: "#ede9fe", borderRadius: 6, padding: "1px 5px", whiteSpace: "nowrap", flexShrink: 0 }}>{pcsQty} pcs</span> : null}
-                                {/* Qty */}
-                                <span style={{ fontSize: 13, fontWeight: 700, color: sc.text, whiteSpace: "nowrap", flexShrink: 0, minWidth: 22, textAlign: "right" }}>{displayQty}</span>
-                                {/* Edit control */}
+                                {subInfo ? <span style={{ fontSize: 9, color: lk.textMuted, flexShrink: 0, whiteSpace: "nowrap" }}>{subInfo}</span> : null}
+                                {/* Pieces badge */}
+                                {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9.5, fontWeight: 700, color: "#6366f1", background: "#ede9fe", borderRadius: 5, padding: "1px 4px", flexShrink: 0 }}>{pcsQty}pc</span> : null}
+                                {/* Qty + unit */}
+                                <span style={{ fontSize: 12, fontWeight: 700, color: sc.text, minWidth: 26, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap" }}>
+                                  {displayQty} <span style={{ fontSize: 9, fontWeight: 500, color: lk.textMuted }}>{item.unit}</span>
+                                </span>
+                                {/* Edit */}
                                 <div style={{ flexShrink: 0 }}>
                                   <InventoryEditCell
                                     itemId={item.id}
@@ -4855,22 +5303,49 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                   />
                                 </div>
                               </div>
-                              {/* Mini stock bar */}
-                              <div style={{ height: 4, borderRadius: 99, background: "#e2e8f0", overflow: "hidden" }}>
-                                <div style={{ height: "100%", width: barPct + "%", borderRadius: 99, background: sc.bar, transition: "width 0.3s ease" }} />
-                              </div>
-                            </div>
+                            </React.Fragment>
                           );
                         })}
-                        {catItems.length === 0 && (searchLower || invStatusFilter !== "all") && (
-                          <div style={{ fontSize: 11, color: lk.textMuted, padding: "10px", fontStyle: "italic" }}>No match</div>
-                        )}
                       </div>
                     </div>
                   );
-                })}
-                {visibleCats2.length === 0 && (
-                  <div style={{ gridColumn: "1/-1", textAlign: "center", padding: "48px 16px", color: lk.textMuted, fontSize: 13 }}>No items match your current filters</div>
+                };
+
+                const allEmpty = MATERIAL_GROUPS.every(g => groupItems(g).length === 0);
+
+                return (
+                  <div style={{ flex: 1, overflow: "auto", display: "flex", gap: 8, padding: "8px 10px", alignItems: "flex-start" }}>
+                    {allEmpty ? (
+                      <div style={{ flex: 1, textAlign: "center", padding: "48px 16px", color: lk.textMuted, fontSize: 13 }}>No items match your current filters</div>
+                    ) : (
+                      <>
+                        {/* Left panel: Foam + Blown */}
+                        <div style={{ flex: "0 0 32%", minWidth: 0 }}>
+                          {leftGroups.map(g => renderGroup(g))}
+                        </div>
+                        {/* Right panel: Fiberglass + Other */}
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          {rightGroups.map(g => renderGroup(g))}
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* ─── Truck Reconciliation ─── */}
+              <div style={{ flexShrink: 0, borderTop: "1px solid #e2e8f0", background: "#fff" }}>
+                <button
+                  onClick={() => setShowReconcile(r => !r)}
+                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "12px 16px", borderBottom: showReconcile ? "1px solid #e2e8f0" : "none" }}
+                >
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>🚛 Today's Truck Reconciliation</span>
+                  <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: "auto" }}>{showReconcile ? "▲ Hide" : "▼ Show"}</span>
+                </button>
+                {showReconcile && (
+                  <div style={{ padding: "12px 16px", maxHeight: 320, overflowY: "auto" }}>
+                    <TruckReconcileView trucks={trucks} loadLog={loadLog} returnLog={returnLog} jobs={jobs} updates={updates} truckInventory={truckInventory} />
+                  </div>
                 )}
               </div>
             </div>
@@ -4899,10 +5374,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       </div>
 
       {showAddJob && (
-        <Modal title="Add Job" onClose={() => setShowAddJob(false)}>
+        <Modal title="Add Job" onClose={() => setShowAddJob(false)} footer={<Button onClick={handleAddJob} disabled={!jobForm.address.trim()} style={{ width: "100%" }}>Add Job to Schedule</Button>}>
           <div className="compact-form">
-          <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} />
-          <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} />
+          <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} inputMode="text" autoComplete="off" />
+          <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} inputMode="text" autoComplete="street-address" />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
           <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
           {/* Employee multi-select — source of truth for timesheet */}
@@ -4913,7 +5388,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 {jobForm.crewMemberIds.filter(Boolean).map(id => {
                   const m = members.find(mb => mb.id === id);
                   return m ? (
-                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: t.accentBg, color: t.accent, fontSize: "12px", fontWeight: 600, padding: "4px 10px", borderRadius: "20px", border: "1px solid #bfdbfe" }}>
+                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: t.accentBg, color: t.accent, fontSize: "12px", fontWeight: 600, padding: "6px 12px", borderRadius: "20px", border: "1px solid #bfdbfe", minHeight: "36px" }}>
                       {m.name}
                       <button onClick={() => setJobForm({ ...jobForm, crewMemberIds: jobForm.crewMemberIds.filter(i => i !== id) })} style={{ background: "none", border: "none", cursor: "pointer", color: t.accent, fontSize: "14px", lineHeight: 1, padding: 0, fontFamily: "inherit" }}>×</button>
                     </span>
@@ -4959,7 +5434,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </label>
             </div>
           </div>
-          <Button onClick={handleAddJob} disabled={!jobForm.address.trim()} style={{ width: "100%" }}>Add Job to Schedule</Button>
           </div>
         </Modal>
       )}
@@ -5166,7 +5640,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       )}
 
       {editingJob && (
-        <Modal title="Edit Job" onClose={() => setEditingJob(null)}>
+        <Modal title="Edit Job" onClose={() => setEditingJob(null)} footer={<div style={{ display: "flex", gap: "10px" }}><Button variant="secondary" onClick={() => setEditingJob(null)} style={{ flex: 1 }}>Cancel</Button><Button onClick={handleSaveEdit} disabled={!editForm.address.trim()} style={{ flex: 1 }}>Save Changes</Button></div>}>
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
@@ -5182,7 +5656,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 {editForm.crewMemberIds.filter(Boolean).map(id => {
                   const m = members.find(mb => mb.id === id);
                   return m ? (
-                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: t.accentBg, color: t.accent, fontSize: "12px", fontWeight: 600, padding: "4px 10px", borderRadius: "20px", border: "1px solid #bfdbfe" }}>
+                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: t.accentBg, color: t.accent, fontSize: "12px", fontWeight: 600, padding: "6px 12px", borderRadius: "20px", border: "1px solid #bfdbfe", minHeight: "36px" }}>
                       {m.name}
                       <button onClick={() => setEditForm({ ...editForm, crewMemberIds: editForm.crewMemberIds.filter(i => i !== id) })} style={{ background: "none", border: "none", cursor: "pointer", color: t.accent, fontSize: "14px", lineHeight: 1, padding: 0, fontFamily: "inherit" }}>×</button>
                     </span>
@@ -5228,15 +5702,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </label>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "10px", marginTop: "6px" }}>
-            <Button variant="secondary" onClick={() => setEditingJob(null)} style={{ flex: 1 }}>Cancel</Button>
-            <Button onClick={handleSaveEdit} disabled={!editForm.address.trim()} style={{ flex: 1 }}>Save Changes</Button>
-          </div>
         </Modal>
       )}
 
       {pmJob && (
-        <Modal title="Job Check-Off" onClose={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }}>
+        <Modal title="Job Check-Off" onClose={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); setPmLocation(null); setPmLocationStatus("idle"); }}>
           {/* Job name + address — big and clear */}
           <div style={{ textAlign: "center", marginBottom: 20 }}>
             <div style={{ fontSize: 20, fontWeight: 800, color: t.text, lineHeight: 1.2 }}>{pmJob.builder || "No Customer"}</div>
@@ -5284,15 +5754,26 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             />
           </div>
 
-          {/* Geo note */}
-          {pmCheckedAM === "Yes" && pmCheckedPM === "Yes" && (
-            <div style={{ fontSize: 12, color: "#6b7280", textAlign: "center", marginBottom: 12 }}>📍 Your location will be recorded when you save</div>
-          )}
+          {/* Geo status */}
+          <div style={{ marginBottom: 14, borderRadius: 8, padding: "10px 14px", textAlign: "center", fontSize: 13, fontWeight: 600,
+            background: pmLocationStatus === "granted" ? "#f0fdf4" : pmLocationStatus === "denied" ? "#fef2f2" : "#fffbeb",
+            color: pmLocationStatus === "granted" ? "#15803d" : pmLocationStatus === "denied" ? "#dc2626" : "#92400e",
+            border: "1px solid " + (pmLocationStatus === "granted" ? "#bbf7d0" : pmLocationStatus === "denied" ? "#fecaca" : "#fde68a")
+          }}>
+            {pmLocationStatus === "loading" && "📍 Getting your location…"}
+            {pmLocationStatus === "granted" && `📍 Location captured (±${pmLocation?.accuracy}m)`}
+            {pmLocationStatus === "denied" && (
+              <span>🚫 Location access denied — enable location to submit
+                <button onClick={() => { setPmLocationStatus("loading"); navigator.geolocation && navigator.geolocation.getCurrentPosition((pos) => { setPmLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy) }); setPmLocationStatus("granted"); }, () => setPmLocationStatus("denied"), { timeout: 15000, maximumAge: 0, enableHighAccuracy: true }); }} style={{ marginLeft: 10, fontSize: 12, padding: "3px 8px", borderRadius: 6, border: "1px solid #dc2626", background: "#fff", color: "#dc2626", cursor: "pointer", fontFamily: "inherit" }}>Retry</button>
+              </span>
+            )}
+            {pmLocationStatus === "idle" && "📍 Requesting location…"}
+          </div>
 
           {/* Buttons */}
           <div style={{ display: "flex", gap: 10 }}>
-            <button onClick={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); }} style={{ flex: 1, minHeight: 48, fontSize: 15, fontWeight: 600, borderRadius: 10, border: "2px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
-            <button onClick={handlePmSubmit} style={{ flex: 2, minHeight: 48, fontSize: 16, fontWeight: 800, borderRadius: 10, border: "none", background: "#16a34a", color: "#fff", cursor: "pointer", fontFamily: "inherit", letterSpacing: 0.3 }}>💾 Save Check</button>
+            <button onClick={() => { setPmJob(null); setPmNote(""); setPmCheckedAM("No"); setPmCheckedPM("No"); setPmLocation(null); setPmLocationStatus("idle"); }} style={{ flex: 1, minHeight: 48, fontSize: 15, fontWeight: 600, borderRadius: 10, border: "2px solid #d1d5db", background: "#f9fafb", color: "#374151", cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button onClick={handlePmSubmit} disabled={pmLocationStatus !== "granted"} style={{ flex: 2, minHeight: 48, fontSize: 16, fontWeight: 800, borderRadius: 10, border: "none", background: pmLocationStatus === "granted" ? "#16a34a" : "#9ca3af", color: "#fff", cursor: pmLocationStatus === "granted" ? "pointer" : "not-allowed", fontFamily: "inherit", letterSpacing: 0.3 }}>💾 Save Check</button>
           </div>
         </Modal>
       )}
