@@ -5246,7 +5246,82 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             );
           };
 
-          // Simple flat inventory list for foam gun parts & project tools (with category grouping)
+          // Materials grid — proper component so hooks are legal
+          const MaterialsGrid = ({ inventory, onUpdateInventory, invStatusFilter, invSearch, stockStatus, stockColors, isFoam, bblToGals, galsToBbl, sortAllItems, statusFilterFn, searchLower }) => {
+            const [activeMfg, setActiveMfg] = React.useState('all');
+            const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
+
+            const getManufacturer = (item) => {
+              const cat = item.category || "";
+              if (item.unit === "bbl") return "Foam";
+              if (cat.includes("Certainteed")) return "Certainteed";
+              if (cat.includes("Owens Corning")) return "Owens Corning";
+              if (cat.includes("Johns Manville") || cat.includes("JM")) return "Johns Manville";
+              if (cat.toLowerCase().includes("blown") || cat.toLowerCase().includes("cellulose")) return "Blown";
+              return "Other";
+            };
+            const MFG_ORDER = ["Certainteed", "Owens Corning", "Johns Manville", "Foam", "Blown", "Other"];
+            const getRVal = (cat) => { const m = (cat||"").match(/R(\d+)/i); return m ? parseInt(m[1]) : 999; };
+
+            const mfgGroups = MFG_ORDER.map(mfg => {
+              const items = sortAllItems(
+                INVENTORY_ITEMS
+                  .filter(i => !i.isPieces && getManufacturer(i) === mfg)
+                  .filter(statusFilterFn)
+                  .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || (i.category||"").toLowerCase().includes(searchLower))
+              ).sort((a, b) => getRVal(a.category) - getRVal(b.category));
+              return { mfg, items };
+            }).filter(g => g.items.length > 0);
+
+            const allMfgItems = mfgGroups.map(g => g.items).flat();
+            const visibleMfgItems = activeMfg === 'all' ? allMfgItems : (mfgGroups.find(g => g.mfg === activeMfg)?.items || []);
+
+            const renderMatCard = (item) => {
+              const qty = getQty(item.id);
+              const status = stockStatus(qty);
+              const sc = stockColors[status];
+              const borderColor = sc.bar;
+              const displayQty = isFoam(item.id) ? qty.toFixed(2) : qty;
+              const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
+              const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
+              return (
+                <div key={item.id} style={{
+                  background: '#fff', borderRadius: 6, padding: '6px 8px',
+                  border: '1px solid #e2e8f0', borderLeftColor: borderColor, borderLeftWidth: 3,
+                  display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                  minHeight: 64, boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                }}>
+                  <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.category}</span>
+                  <span style={{ fontSize: 11, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>{item.name}</span>
+                  <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 2 }}>
+                    <span style={{ fontSize: 16, fontWeight: 800, color: sc.text, lineHeight: 1 }}>{displayQty} <span style={{ fontSize: 9, fontWeight: 500, color: '#94a3b8' }}>{item.unit}</span></span>
+                    {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '1px 4px' }}>{pcsQty}pc</span> : null}
+                    <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
+                  </div>
+                </div>
+              );
+            };
+
+            return (
+              <>
+                <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '6px 10px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                  <button onClick={() => setActiveMfg('all')} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeMfg === 'all' ? '#2563eb' : '#fff', color: activeMfg === 'all' ? '#fff' : '#64748b', border: '1px solid ' + (activeMfg === 'all' ? '#2563eb' : '#e2e8f0') }}>All ({allMfgItems.length})</button>
+                  {mfgGroups.map(({ mfg, items: gItems }) => (
+                    <button key={mfg} onClick={() => setActiveMfg(mfg)} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeMfg === mfg ? '#2563eb' : '#fff', color: activeMfg === mfg ? '#fff' : '#64748b', border: '1px solid ' + (activeMfg === mfg ? '#2563eb' : '#e2e8f0') }}>
+                      {mfg} ({gItems.length})
+                    </button>
+                  ))}
+                </div>
+                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gridAutoRows: 'minmax(64px, auto)', gap: 4, padding: '6px 8px', overflowY: 'auto', alignContent: 'start' }}>
+                  {visibleMfgItems.length === 0
+                    ? <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px 16px', color: '#94a3b8', fontSize: 13 }}>No items match your filters</div>
+                    : visibleMfgItems.map(item => renderMatCard(item))}
+                </div>
+              </>
+            );
+          };
+
+// Simple flat inventory list for foam gun parts & project tools (with category grouping)
           const SimpleInvList = ({ items, invData, onUpdate }) => {
             const getQ = (id) => invData.find(r => r.itemId === id)?.qty || 0;
             const [editing, setEditing] = React.useState(null);
@@ -5401,8 +5476,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 )}
               </div>
 
-              {/* ── Single-column manufacturer groups ── */}
+              {/* ── Materials grid ── */}
               {(() => {
+                const placeholder_remove_iife = true; if (placeholder_remove_iife) return <MaterialsGrid inventory={inventory} onUpdateInventory={onUpdateInventory} invStatusFilter={invStatusFilter} invSearch={invSearch} stockStatus={stockStatus} stockColors={stockColors} isFoam={isFoam} bblToGals={bblToGals} galsToBbl={galsToBbl} sortAllItems={sortAllItems} statusFilterFn={statusFilterFn} searchLower={searchLower} />;
                 // Map each item to a manufacturer group
                 const getManufacturer = (item) => {
                   const cat = item.category || "";
@@ -5417,7 +5493,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 const MFG_ORDER = ["Certainteed", "Owens Corning", "Johns Manville", "Foam", "Blown", "Other"];
 
                 // Extract R-value from category string for sorting
-                const getRVal = (cat) => { const m = cat.match(/R(\d+)/i); return m ? parseInt(m[1]) : 999; };
+                const getRVal = (cat) => { const m = (cat||"").match(/R(\d+)/i); return m ? parseInt(m[1]) : 999; };
 
                 // Build groups
                 const mfgGroups = MFG_ORDER.map(mfg => {
