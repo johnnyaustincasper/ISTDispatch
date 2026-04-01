@@ -16,6 +16,7 @@ import {
   query,
   where,
   orderBy,
+  limit,
   serverTimestamp,
 } from "firebase/firestore";
 import {
@@ -3438,6 +3439,7 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
   const [assigning, setAssigning] = useState(null);
   const [timesheetMember, setTimesheetMember] = useState(null);
   const [tsWeekOffset, setTsWeekOffset] = useState(0);
+  const [expandedMember, setExpandedMember] = useState(null);
 
   const printAllTimesheets = async () => {
     const now = new Date();
@@ -3494,6 +3496,38 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
 
   const getTruckName = (truckId) => { const tr = trucks.find(tr => tr.id === truckId); return tr ? (tr.members || tr.name) : "Unassigned"; };
 
+  // Activity helpers
+  const now30 = Date.now() - 30 * 24 * 60 * 60 * 1000;
+  const now7  = Date.now() - 7  * 24 * 60 * 60 * 1000;
+  const now14 = Date.now() - 14 * 24 * 60 * 60 * 1000;
+
+  const getMemberJobs = (memberId) =>
+    (jobs || []).filter(j => (j.crewMemberIds || []).includes(memberId));
+
+  const getRecentJobs = (memberId) =>
+    getMemberJobs(memberId).filter(j => new Date(j.date).getTime() >= now30);
+
+  const getLastActiveDate = (memberId) => {
+    const all = getMemberJobs(memberId);
+    if (!all.length) return null;
+    const sorted = [...all].sort((a, b) => new Date(b.date) - new Date(a.date));
+    return sorted[0].date;
+  };
+
+  const getActivityColor = (memberId) => {
+    const last = getLastActiveDate(memberId);
+    if (!last) return "#94a3b8";
+    const ts = new Date(last).getTime();
+    if (ts >= now7)  return "#22c55e";
+    if (ts >= now14) return "#f59e0b";
+    return "#94a3b8";
+  };
+
+  const getLast5Jobs = (memberId) => {
+    const all = getMemberJobs(memberId);
+    return [...all].sort((a, b) => new Date(b.date) - new Date(a.date)).slice(0, 5);
+  };
+
   return (
     <div>
       <SectionHeader title="Roster" right={<div style={{ display: "flex", gap: 8 }}><Button variant="secondary" onClick={printAllTimesheets} style={{ fontSize: 12 }}>Print All Timesheets</Button><Button onClick={() => setShowAdd(true)}>+ Add Member</Button></div>} />
@@ -3512,6 +3546,17 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
       {members.length === 0 ? (
         <EmptyState text="No crew members yet." sub="Add your first crew member above." />
       ) : (() => {
+        // Quick stats
+        const totalCrew = members.length;
+        const activeThisWeek = members.filter(m => {
+          const last = getLastActiveDate(m.id);
+          return last && new Date(last).getTime() >= now7;
+        }).length;
+        const inactive = members.filter(m => {
+          const last = getLastActiveDate(m.id);
+          return !last || new Date(last).getTime() < now14;
+        }).length;
+
         // Group by truck
         const sortedTrucks = [...trucks].sort((a,b) => (a.order ?? 999) - (b.order ?? 999));
         const unassigned = members.filter(m => !m.truckId);
@@ -3520,47 +3565,104 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
           ...(unassigned.length > 0 ? [{ truck: null, members: unassigned.sort((a,b) => a.name.localeCompare(b.name)) }] : []),
         ];
 
-        return groups.map(({ truck, members: groupMembers }) => (
-          <div key={truck?.id || "unassigned"} style={{ marginBottom: 20 }}>
-            {/* Truck header */}
-            <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid " + t.borderLight }}>
-              {truck ? (truck.members || truck.name) : "Unassigned"}
-            </div>
-            {groupMembers.map(member => (
-              <Card key={member.id} style={{ marginBottom: 8 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 14, color: t.accent, cursor: "pointer", textDecoration: "underline" }} onClick={() => { setTimesheetMember(member); setTsWeekOffset(0); }}>{member.name}</div>
-                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
-                      {member.email ? member.email : "No email yet"}
-                    </div>
-                    {member.pin ? (
-                      <div style={{ fontSize: 11, color: t.green, marginTop: 2 }}>✓ PIN set</div>
-                    ) : (
-                      <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>No PIN yet</div>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                    {assigning === member.id ? (
-                      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                        <select onChange={e => assignTruck(member.id, e.target.value)} defaultValue={member.truckId || ""} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit" }}>
-                          <option value="">Unassigned</option>
-                          {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.members || tr.name}</option>)}
-                        </select>
-                        <button onClick={() => setAssigning(null)} style={{ fontSize: 11, color: t.textMuted, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
-                      </div>
-                    ) : (
-                      <button onClick={() => setAssigning(member.id)} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + t.border, background: member.truckId ? t.accentBg : t.bg, color: member.truckId ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
-                        {getTruckName(member.truckId)}
-                      </button>
-                    )}
-
-                  </div>
-                </div>
-              </Card>
+        return <>
+          {/* Quick stats row */}
+          <div style={{ display: "flex", gap: 10, marginBottom: 16, flexWrap: "wrap" }}>
+            {[
+              { label: "Total Crew", value: totalCrew, color: t.accent, bg: t.accentBg },
+              { label: "Active This Week", value: activeThisWeek, color: "#16a34a", bg: "#f0fdf4" },
+              { label: "Inactive 14d+", value: inactive, color: "#64748b", bg: "#f1f5f9" },
+            ].map(s => (
+              <div key={s.label} style={{ background: s.bg, borderRadius: 8, padding: "8px 14px", minWidth: 90 }}>
+                <div style={{ fontSize: 20, fontWeight: 700, color: s.color }}>{s.value}</div>
+                <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>{s.label}</div>
+              </div>
             ))}
           </div>
-        ));
+
+          {groups.map(({ truck, members: groupMembers }) => (
+            <div key={truck?.id || "unassigned"} style={{ marginBottom: 20 }}>
+              {/* Truck header */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid " + t.borderLight }}>
+                {truck ? (truck.members || truck.name) : "Unassigned"}
+              </div>
+              {groupMembers.map(member => {
+                const recentJobs = getRecentJobs(member.id);
+                const lastActive = getLastActiveDate(member.id);
+                const actColor = getActivityColor(member.id);
+                const isExpanded = expandedMember === member.id;
+                const last5 = getLast5Jobs(member.id);
+                return (
+                  <Card key={member.id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        {/* Activity dot */}
+                        <div style={{ width: 10, height: 10, borderRadius: "50%", background: actColor, flexShrink: 0, boxShadow: "0 0 0 2px " + actColor + "33" }} title={actColor === "#22c55e" ? "Active this week" : actColor === "#f59e0b" ? "Active 8–14 days ago" : "Inactive 14d+"} />
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14, color: t.accent, cursor: "pointer", textDecoration: "underline" }} onClick={() => { setTimesheetMember(member); setTsWeekOffset(0); }}>{member.name}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>
+                            {member.email ? member.email : "No email yet"}
+                          </div>
+                          {member.pin ? (
+                            <div style={{ fontSize: 11, color: t.green, marginTop: 2 }}>✓ PIN set</div>
+                          ) : (
+                            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>No PIN yet</div>
+                          )}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                        {/* Job count badge */}
+                        <div style={{ textAlign: "center", background: t.accentBg, borderRadius: 8, padding: "4px 10px" }}>
+                          <div style={{ fontSize: 16, fontWeight: 700, color: t.accent }}>{recentJobs.length}</div>
+                          <div style={{ fontSize: 10, color: t.textMuted, fontWeight: 600 }}>jobs/30d</div>
+                        </div>
+                        {/* Last active */}
+                        <div style={{ textAlign: "center", background: "#f8fafc", borderRadius: 8, padding: "4px 10px" }}>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{lastActive ? new Date(lastActive + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</div>
+                          <div style={{ fontSize: 10, color: t.textMuted, fontWeight: 600 }}>last active</div>
+                        </div>
+                        {assigning === member.id ? (
+                          <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                            <select onChange={e => assignTruck(member.id, e.target.value)} defaultValue={member.truckId || ""} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit" }}>
+                              <option value="">Unassigned</option>
+                              {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.members || tr.name}</option>)}
+                            </select>
+                            <button onClick={() => setAssigning(null)} style={{ fontSize: 11, color: t.textMuted, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
+                          </div>
+                        ) : (
+                          <button onClick={() => setAssigning(member.id)} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, border: "1px solid " + t.border, background: member.truckId ? t.accentBg : t.bg, color: member.truckId ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit", fontWeight: 500 }}>
+                            {getTruckName(member.truckId)}
+                          </button>
+                        )}
+                        {/* Expand toggle */}
+                        <button onClick={() => setExpandedMember(isExpanded ? null : member.id)} style={{ fontSize: 11, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, background: isExpanded ? t.accentBg : "none", color: isExpanded ? t.accent : t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>
+                          {isExpanded ? "▲ Hide" : "▼ Jobs"}
+                        </button>
+                      </div>
+                    </div>
+                    {/* Expanded: last 5 jobs */}
+                    {isExpanded && (
+                      <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Last 5 Jobs</div>
+                        {last5.length === 0 ? (
+                          <div style={{ fontSize: 12, color: t.textMuted }}>No jobs found.</div>
+                        ) : last5.map(j => (
+                          <div key={j.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, fontSize: 12 }}>
+                            <div style={{ fontWeight: 500, color: t.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{j.address || "No address"}</div>
+                            <div style={{ display: "flex", gap: 8, alignItems: "center", flexShrink: 0, marginLeft: 8 }}>
+                              <span style={{ color: t.textMuted }}>{j.date ? new Date(j.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "—"}</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, background: t.accentBg, color: t.accent, padding: "2px 7px", borderRadius: 4 }}>{j.type || j.jobCategory || "—"}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+            </div>
+          ))}
+        </>;
       })()}
 
       {timesheetMember && <TimesheetModal member={timesheetMember} jobs={jobs} updates={updates} jobUpdates={jobUpdates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} onClose={() => setTimesheetMember(null)} />}
@@ -4012,7 +4114,7 @@ function JobPhotosSection({ job, canDelete, uploaderName, emptyText }) {
 }
 
 // ─── Job Completion PDF ───
-function generateJobPDF(job, updates, pmUpdates, members) {
+async function generateJobPDF(job, updates, pmUpdates, members) {
   const doc2 = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210;
   const margin = 16;
@@ -4162,15 +4264,63 @@ function generateJobPDF(job, updates, pmUpdates, members) {
     y += 4;
   }
 
-  // Photos note
-  const photos = job.photos || [];
+  // Photos section — embed up to 6 photos
+  const photos = (job.photos || []).slice(0, 6);
   if (photos.length > 0) {
-    doc2.setFont("helvetica", "bold");
+    // Section header
+    doc2.setFillColor(238, 242, 255);
+    doc2.roundedRect(margin, y, W - margin * 2, 7, 2, 2, "F");
+    doc2.setTextColor(26, 86, 219);
     doc2.setFontSize(9);
-    doc2.setTextColor(75, 85, 99);
-    doc2.text(`PHOTOS: ${photos.length} photo${photos.length > 1 ? "s" : ""} attached in IST Dispatch.`, margin, y);
-    y += 8;
+    doc2.setFont("helvetica", "bold");
+    doc2.text("JOB PHOTOS", margin + 4, y + 5);
+    y += 11;
+
+    // Helper: fetch URL → base64 data URI
+    const fetchBase64 = (url) => new Promise((resolve) => {
+      fetch(url)
+        .then(r => r.blob())
+        .then(blob => {
+          const reader = new FileReader();
+          reader.onloadend = () => resolve(reader.result);
+          reader.onerror = () => resolve(null);
+          reader.readAsDataURL(blob);
+        })
+        .catch(() => resolve(null));
+    });
+
+    const imgW = (W - margin * 2 - 6) / 2; // 2-per-row with gap
+    const imgH = imgW * 0.65;
+
+    const dataUrls = await Promise.all(photos.map(url => fetchBase64(url)));
+
+    for (let i = 0; i < dataUrls.length; i += 2) {
+      // Check if we need a new page
+      if (y + imgH + 6 > 270) {
+        doc2.addPage();
+        y = 20;
+      }
+      const left = dataUrls[i];
+      const right = dataUrls[i + 1];
+      if (left) {
+        try { doc2.addImage(left, "JPEG", margin, y, imgW, imgH, undefined, "FAST"); } catch(e) { /* skip bad image */ }
+      }
+      if (right) {
+        try { doc2.addImage(right, "JPEG", margin + imgW + 6, y, imgW, imgH, undefined, "FAST"); } catch(e) { /* skip bad image */ }
+      }
+      y += imgH + 6;
+    }
+    y += 4;
   }
+
+  // Signature line
+  if (y + 20 > 270) { doc2.addPage(); y = 20; }
+  doc2.setDrawColor(17, 24, 39);
+  doc2.setTextColor(17, 24, 39);
+  doc2.setFontSize(9);
+  doc2.setFont("helvetica", "normal");
+  doc2.text("Customer Signature: ___________________________   Date: ___________", margin, y + 10);
+  y += 18;
 
   // Footer
   const footerY = 285;
@@ -4179,7 +4329,7 @@ function generateJobPDF(job, updates, pmUpdates, members) {
   doc2.setTextColor(156, 163, 175);
   doc2.setFontSize(8);
   doc2.setFont("helvetica", "normal");
-  doc2.text("Insulation Services of Tulsa  |  918-232-9055  |  istulsa.com", W / 2, footerY, { align: "center" });
+  doc2.text("Thank you for choosing IST  |  insulation-services-da91a.web.app  |  Tulsa, OK", W / 2, footerY, { align: "center" });
   doc2.text(`Generated ${new Date().toLocaleString("en-US", { timeZone: "America/Chicago" })} CST`, W / 2, footerY + 5, { align: "center" });
 
   const safeName = (job.builder || "Job").replace(/[^a-zA-Z0-9]/g, "_");
@@ -4190,6 +4340,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [showAddJob, setShowAddJob] = useState(false);
+  const [showTakeoffImport, setShowTakeoffImport] = useState(false);
+  const [takeoffQuotes, setTakeoffQuotes] = useState([]);
+  const [takeoffLoading, setTakeoffLoading] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
   const toggleJobExpand = (id) => setExpandedJobs(prev => ({ ...prev, [id]: !prev[id] }));
   const [showAddTruck, setShowAddTruck] = useState(false);
@@ -4299,6 +4452,32 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
   const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); onAddJob({ ...jobForm, crewMemberIds: cleanCrew }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "" }); setAddCrewSearch(""); setShowAddJob(false); };
+
+  const openTakeoffImport = async () => {
+    setShowTakeoffImport(true);
+    setTakeoffLoading(true);
+    try {
+      const q = query(collection(db, "quotes"), orderBy("createdAt", "desc"), limit(30));
+      const snap = await getDocs(q);
+      const quotes = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setTakeoffQuotes(quotes);
+    } catch (e) {
+      setTakeoffQuotes([]);
+    } finally {
+      setTakeoffLoading(false);
+    }
+  };
+
+  const importTakeoffQuote = (q) => {
+    setJobForm(prev => ({
+      ...prev,
+      builder: q.customerName || "",
+      address: q.address || "",
+      type: q.jobType || prev.type,
+      notes: [prev.notes, q.totalPrice ? `Quoted: $${Number(q.totalPrice).toLocaleString()}` : "", q.salesman ? `Salesman: ${q.salesman}` : ""].filter(Boolean).join("\n"),
+    }));
+    setShowTakeoffImport(false);
+  };
   const handleAddTruck = () => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, order: maxOrder + 1 }); onLogAction("Added crew: " + truckForm.name); setTruckForm({ name: "", members: "" }); setShowAddTruck(false); };
   const handleMoveTruck = (truckId, direction) => {
     const idx = sortedTrucks.findIndex((tr) => tr.id === truckId);
@@ -5519,9 +5698,37 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         )}
       </div>
 
+      {showTakeoffImport && (
+        <Modal title="Import from Takeoff" onClose={() => setShowTakeoffImport(false)}>
+          {takeoffLoading ? (
+            <div style={{ textAlign: "center", padding: "32px", color: "#64748b" }}>Loading quotes...</div>
+          ) : takeoffQuotes.length === 0 ? (
+            <div style={{ textAlign: "center", padding: "32px", color: "#64748b" }}>No quotes found in Firestore.</div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+              {takeoffQuotes.map(q => (
+                <div key={q.id} onClick={() => importTakeoffQuote(q)} style={{ padding: "12px 14px", borderRadius: "8px", border: "1px solid #e2e8f0", cursor: "pointer", background: "#f8fafc" }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: "#1e293b" }}>{q.customerName || "Unknown Customer"}</div>
+                  <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{q.address || "No address"}</div>
+                  <div style={{ display: "flex", gap: "12px", marginTop: 4 }}>
+                    {q.jobType && <span style={{ fontSize: 11, background: "#dbeafe", color: "#1d4ed8", borderRadius: 4, padding: "2px 6px" }}>{q.jobType}</span>}
+                    {q.totalPrice && <span style={{ fontSize: 11, background: "#dcfce7", color: "#15803d", borderRadius: 4, padding: "2px 6px" }}>${Number(q.totalPrice).toLocaleString()}</span>}
+                    {q.createdAt?.toDate && <span style={{ fontSize: 11, color: "#94a3b8" }}>{q.createdAt.toDate().toLocaleDateString()}</span>}
+                    {q.salesman && <span style={{ fontSize: 11, color: "#94a3b8" }}>{q.salesman}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
+      )}
+
       {showAddJob && (
         <Modal title="Add Job" onClose={() => setShowAddJob(false)} footer={<Button onClick={handleAddJob} disabled={!jobForm.address.trim()} style={{ width: "100%" }}>Add Job to Schedule</Button>}>
           <div className="compact-form">
+          <div style={{ marginBottom: "12px" }}>
+            <button onClick={openTakeoffImport} style={{ width: "100%", padding: "10px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", color: "#1d4ed8", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📋 Import from Takeoff</button>
+          </div>
           <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} inputMode="text" autoComplete="off" />
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} inputMode="text" autoComplete="street-address" />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
