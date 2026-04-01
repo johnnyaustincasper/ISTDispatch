@@ -445,15 +445,7 @@ const kbStyles = `
   .kb-input:focus { border-color:rgba(255,255,255,0.6)!important; }
   .tab-view-enter { animation: tabFadeIn 0.18s cubic-bezier(0.16,1,0.3,1) both; }
   .nav-tab-btn:active { transform: scale(0.94); }
-  /* Inventory responsive layout */
-  .inv-mobile-tabs { display: flex; }
-  .inv-desktop-columns { display: none !important; }
-  .inv-mobile-content { display: block; }
-  @media (min-width: 768px) {
-    .inv-mobile-tabs { display: none !important; }
-    .inv-desktop-columns { display: flex !important; }
-    .inv-mobile-content { display: none !important; }
-  }
+
   .crew-tab-btn:active { opacity: 0.75; transform: scale(0.96); }
   * { -webkit-tap-highlight-color: transparent; }
   .glass-card { background: rgba(255,255,255,0.07) !important; -webkit-backdrop-filter: blur(12px) !important; backdrop-filter: blur(12px) !important; border: 1px solid rgba(255,255,255,0.12) !important; }
@@ -5315,8 +5307,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           return (
             <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 168px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))", overflow: "hidden", margin: "0 -20px -20px", padding: 0, background: lk.bg }}>
 
-              {/* ── Mobile-only tab nav (hidden on tablet/desktop) ── */}
-              <div className="inv-mobile-tabs" style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
+              {/* ── Tab nav ── */}
+              <div style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
                 {[
                   { id: "materials",     label: "Materials" },
                   { id: "foam_parts",    label: "Foam Gun Parts" },
@@ -5338,13 +5330,19 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 })}
               </div>
 
-              {/* ── Desktop/tablet: 3-column all-in-one view ── */}
-              <div className="inv-desktop-columns" style={{ flex: 1, overflow: "hidden", display: "flex", gap: 0 }}>
-                {/* Column 1 — Materials (contains stat filters + search + list) */}
-                <div style={{ flex: "1 1 40%", display: "flex", flexDirection: "column", overflow: "hidden", borderRight: "1px solid " + lk.headerBorder }}>
-                  <div style={{ flexShrink: 0, padding: "6px 10px", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", textTransform: "uppercase", letterSpacing: "0.08em" }}>Materials</div>
-                  </div>
+              {invTab === "foam_parts" && (
+                <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                  <SimpleInvList items={FOAM_GUN_PARTS} invData={foamPartsInventory || []} onUpdate={onUpdateFoamParts} />
+                </div>
+              )}
+              {invTab === "project_tools" && (
+                <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                  <SimpleInvList items={PROJECT_TOOLS_ITEMS} invData={projectToolsInventory || []} onUpdate={onUpdateProjectTools} />
+                </div>
+              )}
+
+              {/* ── Materials tab content ── */}
+              {invTab === "materials" && <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
               {/* ── Stat filter buttons row ── */}
               <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
                 <button onClick={() => setInvStatusFilter("all")} style={{
@@ -5503,38 +5501,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   </div>
                 )}
               </div>
-                </div>{/* end materials column */}
-
-                {/* Column 2 — Foam Gun Parts */}
-                <div style={{ flex: "0 0 25%", display: "flex", flexDirection: "column", overflow: "hidden", borderRight: "1px solid " + lk.headerBorder }}>
-                  <div style={{ flexShrink: 0, padding: "6px 10px", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", textTransform: "uppercase", letterSpacing: "0.08em" }}>Foam Gun Parts</div>
-                  </div>
-                  <div style={{ flex: 1, overflow: "hidden" }}>
-                    <SimpleInvList items={FOAM_GUN_PARTS} invData={foamPartsInventory || []} onUpdate={onUpdateFoamParts} />
-                  </div>
-                </div>
-
-                {/* Column 3 — Tools & Accessories */}
-                <div style={{ flex: "0 0 35%", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                  <div style={{ flexShrink: 0, padding: "6px 10px", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#2563eb", textTransform: "uppercase", letterSpacing: "0.08em" }}>Tools & Accessories</div>
-                  </div>
-                  <div style={{ flex: 1, overflow: "hidden" }}>
-                    <SimpleInvList items={PROJECT_TOOLS_ITEMS} invData={projectToolsInventory || []} onUpdate={onUpdateProjectTools} />
-                  </div>
-                </div>
-              </div>{/* end desktop columns */}
-
-              {/* ── Mobile: tab-based single column ── */}
-              <div className="inv-mobile-content">
-                {invTab === "foam_parts" && (
-                  <SimpleInvList items={FOAM_GUN_PARTS} invData={foamPartsInventory || []} onUpdate={onUpdateFoamParts} />
-                )}
-                {invTab === "project_tools" && (
-                  <SimpleInvList items={PROJECT_TOOLS_ITEMS} invData={projectToolsInventory || []} onUpdate={onUpdateProjectTools} />
-                )}
-              </div>
+              </div>}
             </div>
           );
         })()}
