@@ -5274,6 +5274,39 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 </div>
                               );
                             })()}
+                            {/* 💰 Job P&L */}
+                            {(job.closedOut || job.revenue) && (() => {
+                              const matCost = calcJobMaterialCost(job);
+                              const rev = job.revenue || 0;
+                              const profit = rev - matCost;
+                              const margin = rev > 0 ? Math.round((profit / rev) * 100) : null;
+                              return (
+                                <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#15803d", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px" }}>💰 Job P&L</div>
+                                  {rev > 0 ? (
+                                    <div style={{ background: profit >= 0 ? "#f0fdf4" : "#fff1f2", border: "1px solid " + (profit >= 0 ? "#86efac" : "#fca5a5"), borderRadius: 8, padding: "10px 12px", fontSize: 13 }}>
+                                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: t.text }}><span>Revenue</span><span style={{ fontWeight: 600 }}>${rev.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>
+                                      {matCost > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: t.textSecondary }}><span>Material Cost</span><span>−${matCost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>}
+                                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: margin !== null ? 4 : 0, fontWeight: 700, color: profit >= 0 ? "#15803d" : "#dc2626", borderTop: "1px solid " + (profit >= 0 ? "#86efac" : "#fca5a5"), paddingTop: 6, marginTop: 2 }}><span>Gross Profit</span><span>{profit >= 0 ? "+" : ""}${profit.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>
+                                      {margin !== null && <div style={{ display: "flex", justifyContent: "space-between", color: profit >= 0 ? "#15803d" : "#dc2626", fontSize: 12 }}><span>Margin</span><span>{margin}%</span></div>}
+                                    </div>
+                                  ) : (
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: t.textMuted, fontSize: 12 }}>
+                                      <span>Add revenue to see P&L</span>
+                                      <button onClick={() => { setQuickRevenueJobId(job.id); setQuickRevenueVal(""); }} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: "1px solid " + t.border, background: t.bg, cursor: "pointer", fontFamily: "inherit", color: t.accent }}>+ Add</button>
+                                    </div>
+                                  )}
+                                  {quickRevenueJobId === job.id && (
+                                    <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                                      <input type="number" min="0" placeholder="Revenue $" value={quickRevenueVal} onChange={e => setQuickRevenueVal(e.target.value)} style={{ flex: 1, padding: "7px 10px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 13, fontFamily: "inherit" }} />
+                                      <button onClick={async () => { if (quickRevenueVal) { await onEditJob(job.id, { ...job, revenue: parseFloat(quickRevenueVal) }); setQuickRevenueJobId(null); } }} style={{ padding: "7px 12px", borderRadius: 6, background: "#15803d", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: 13 }}>Save</button>
+                                      <button onClick={() => setQuickRevenueJobId(null)} style={{ padding: "7px 10px", borderRadius: 6, background: "none", border: "1px solid " + t.border, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>✕</button>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
+
                             {/* Photos section */}
                             <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
                               <JobPhotosSection job={job} canDelete={["Johnny","Jordan","Skip","Duck","Carolyn"].includes(adminName)} uploaderName={adminName} emptyText="No photos yet — crew will upload from their jobs" />
@@ -6156,6 +6189,105 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         {view === "weather" && (
           <WeatherTab jobs={jobs} trucks={trucks} />
         )}
+
+        {view === "builders" && (() => {
+          const BUILDER_TAGS = ["Residential", "Production", "Commercial", "Repeat", "One-Time"];
+          const filteredBuilders = (builders || []).filter(b => !builderSearchQuery || b.name.toLowerCase().includes(builderSearchQuery.toLowerCase()) || (b.contact || "").toLowerCase().includes(builderSearchQuery.toLowerCase()));
+          return (
+            <>
+              <SectionHeader title="🏗️ Builder / Customer Database" right={<Button onClick={() => { setBuilderForm({ name: "", contact: "", address: "", notes: "", tags: [] }); setShowAddBuilder(true); }}>+ Add Builder</Button>} />
+              <div style={{ marginBottom: 16 }}>
+                <input type="text" placeholder="Search builders..." value={builderSearchQuery} onChange={e => setBuilderSearchQuery(e.target.value)} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", background: t.surface, color: t.text, boxSizing: "border-box" }} />
+              </div>
+              {filteredBuilders.length === 0 && <EmptyState text="No builders yet. Add your first builder!" />}
+              {filteredBuilders.map(b => {
+                const bJobs = jobs.filter(j => (j.builder || "").toLowerCase() === b.name.toLowerCase());
+                const totalRev = bJobs.reduce((s, j) => s + (j.revenue || 0), 0);
+                const lastJob = bJobs.sort((a, b2) => new Date(b2.date) - new Date(a.date))[0];
+                const isExpanded = !!expandedBuilders[b.id];
+                return (
+                  <Card key={b.id} style={{ marginBottom: 10 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setExpandedBuilders(prev => ({ ...prev, [b.id]: !prev[b.id] }))}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{b.name}</div>
+                        {b.contact && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{b.contact}</div>}
+                        {b.tags && b.tags.length > 0 && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
+                            {b.tags.map(tag => (
+                              <span key={tag} style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>{tag}</span>
+                            ))}
+                          </div>
+                        )}
+                        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>
+                          {bJobs.length} job{bJobs.length !== 1 ? "s" : ""}
+                          {totalRev > 0 && <span> · ${totalRev.toLocaleString()} total revenue</span>}
+                          {lastJob && <span> · Last: {lastJob.date}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
+                        <button onClick={() => { setEditingBuilder(b); setBuilderForm({ name: b.name, contact: b.contact || "", address: b.address || "", notes: b.notes || "", tags: b.tags || [] }); }} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid " + t.border, background: "none", cursor: "pointer", fontFamily: "inherit", color: t.textMuted }}>Edit</button>
+                        <button onClick={async () => { if (confirm("Delete " + b.name + "?")) await onDeleteBuilder(b.id); }} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fff1f2", cursor: "pointer", fontFamily: "inherit", color: "#dc2626" }}>Delete</button>
+                      </div>
+                    </div>
+                    {isExpanded && (
+                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid " + t.borderLight }}>
+                        {b.address && <div style={{ fontSize: 12, color: t.textSecondary, marginBottom: 4 }}>📍 {b.address}</div>}
+                        {b.notes && <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic", marginBottom: 10 }}>{b.notes}</div>}
+                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Job History ({bJobs.length})</div>
+                        {bJobs.length === 0 ? (
+                          <div style={{ fontSize: 12, color: t.textMuted }}>No jobs linked to this builder yet.</div>
+                        ) : bJobs.slice(0, 10).map(j => (
+                          <div key={j.id} style={{ fontSize: 12, padding: "5px 0", borderBottom: "1px solid " + t.borderLight, display: "flex", justifyContent: "space-between" }}>
+                            <div><span style={{ color: t.text, fontWeight: 600 }}>{j.date}</span><span style={{ color: t.textMuted }}> · {j.address}</span><span style={{ color: t.textMuted }}> · {j.type}</span></div>
+                            {j.revenue ? <span style={{ color: "#15803d", fontWeight: 600 }}>${j.revenue.toLocaleString()}</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                );
+              })}
+
+              {/* Add Builder Modal */}
+              {showAddBuilder && (
+                <Modal title="Add Builder" onClose={() => setShowAddBuilder(false)} footer={<Button onClick={async () => { if (!builderForm.name.trim()) return; await onAddBuilder({ ...builderForm, createdAt: new Date().toISOString() }); setShowAddBuilder(false); }} disabled={!builderForm.name.trim()} style={{ width: "100%" }}>Add Builder</Button>}>
+                  <Input label="Name *" value={builderForm.name} onChange={e => setBuilderForm({ ...builderForm, name: e.target.value })} placeholder="e.g. ABC Builders" />
+                  <Input label="Contact (phone or email)" value={builderForm.contact} onChange={e => setBuilderForm({ ...builderForm, contact: e.target.value })} placeholder="e.g. 918-555-1234" />
+                  <Input label="Address" value={builderForm.address} onChange={e => setBuilderForm({ ...builderForm, address: e.target.value })} placeholder="Company address (optional)" />
+                  <TextArea label="Notes" value={builderForm.notes} onChange={e => setBuilderForm({ ...builderForm, notes: e.target.value })} placeholder="Any notes about this builder..." />
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: 8 }}>Tags</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {BUILDER_TAGS.map(tag => {
+                        const sel = builderForm.tags.includes(tag);
+                        return <button key={tag} onClick={() => setBuilderForm({ ...builderForm, tags: sel ? builderForm.tags.filter(t2 => t2 !== tag) : [...builderForm.tags, tag] })} style={{ padding: "6px 12px", borderRadius: 99, fontSize: 12, fontWeight: 600, background: sel ? "#2563eb" : "#f1f5f9", color: sel ? "#fff" : "#64748b", border: sel ? "1px solid #2563eb" : "1px dashed #cbd5e1", cursor: "pointer", fontFamily: "inherit" }}>{sel ? "✓ " : ""}{tag}</button>;
+                      })}
+                    </div>
+                  </div>
+                </Modal>
+              )}
+
+              {/* Edit Builder Modal */}
+              {editingBuilder && (
+                <Modal title="Edit Builder" onClose={() => setEditingBuilder(null)} footer={<div style={{ display: "flex", gap: 10 }}><Button variant="secondary" onClick={() => setEditingBuilder(null)} style={{ flex: 1 }}>Cancel</Button><Button onClick={async () => { await onEditBuilder(editingBuilder.id, builderForm); setEditingBuilder(null); }} disabled={!builderForm.name.trim()} style={{ flex: 1 }}>Save</Button></div>}>
+                  <Input label="Name *" value={builderForm.name} onChange={e => setBuilderForm({ ...builderForm, name: e.target.value })} />
+                  <Input label="Contact" value={builderForm.contact} onChange={e => setBuilderForm({ ...builderForm, contact: e.target.value })} />
+                  <Input label="Address" value={builderForm.address} onChange={e => setBuilderForm({ ...builderForm, address: e.target.value })} />
+                  <TextArea label="Notes" value={builderForm.notes} onChange={e => setBuilderForm({ ...builderForm, notes: e.target.value })} />
+                  <div style={{ marginBottom: 16 }}>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: 8 }}>Tags</label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                      {BUILDER_TAGS.map(tag => {
+                        const sel = builderForm.tags.includes(tag);
+                        return <button key={tag} onClick={() => setBuilderForm({ ...builderForm, tags: sel ? builderForm.tags.filter(t2 => t2 !== tag) : [...builderForm.tags, tag] })} style={{ padding: "6px 12px", borderRadius: 99, fontSize: 12, fontWeight: 600, background: sel ? "#2563eb" : "#f1f5f9", color: sel ? "#fff" : "#64748b", border: sel ? "1px solid #2563eb" : "1px dashed #cbd5e1", cursor: "pointer", fontFamily: "inherit" }}>{sel ? "✓ " : ""}{tag}</button>;
+                      })}
+                    </div>
+                  </div>
+                </Modal>
+              )}
+            </>
+          );
+        })()}
       </div>
 
       {showTakeoffImport && (
@@ -9504,6 +9636,7 @@ export default function App() {
     else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
 
+  const [builders, setBuilders] = React.useState([]);
   const [foamPartsInventory, setFoamPartsInventory] = React.useState([]);
   const [projectToolsInventory, setProjectToolsInventory] = React.useState([]);
 
@@ -9514,7 +9647,10 @@ export default function App() {
     const unsub2 = onSnapshot(collection(db, "projectToolsInventory"), snap => {
       setProjectToolsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    return () => { unsub1(); unsub2(); };
+    const unsub3 = onSnapshot(collection(db, "builders"), snap => {
+      setBuilders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => { unsub1(); unsub2(); unsub3(); };
   }, []);
 
   const handleUpdateFoamParts = async (itemId, qty) => {
@@ -9522,6 +9658,9 @@ export default function App() {
     if (existing) { await updateDoc(doc(db, "foamGunParts", existing.id), { qty, updatedAt: new Date().toISOString() }); }
     else { await addDoc(collection(db, "foamGunParts"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
+  const handleAddBuilder = async (data) => { await addDoc(collection(db, "builders"), data); };
+  const handleEditBuilder = async (id, data) => { await updateDoc(doc(db, "builders", id), data); };
+  const handleDeleteBuilder = async (id) => { await deleteDoc(doc(db, "builders", id)); };
 
   const handleUpdateProjectTools = async (itemId, qty) => {
     const existing = projectToolsInventory.find(r => r.itemId === itemId);
@@ -9728,6 +9867,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} />;
   return null;
 }
