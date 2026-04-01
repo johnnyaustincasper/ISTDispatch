@@ -5309,139 +5309,108 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 )}
               </div>
 
-              {/* ── Dense two-column dashboard ── */}
+              {/* ── Single-column manufacturer groups ── */}
               {(() => {
-                // Derive category buckets dynamically from INVENTORY_ITEMS
-                const _allCats = [...new Set(INVENTORY_ITEMS.filter(i => !i.isPieces).map(i => i.category))];
-                const _foamCats  = _allCats.filter(cat => cat.toLowerCase().includes("foam") || INVENTORY_ITEMS.some(i => i.category === cat && i.unit === "bbl"));
-                const _blownCats = _allCats.filter(cat => cat.toLowerCase().includes("blown") || cat.toLowerCase().includes("cellulose"));
-                const _fgCats    = _allCats.filter(cat => !_foamCats.includes(cat) && !_blownCats.includes(cat) && INVENTORY_ITEMS.some(i => i.category === cat && (i.unit === "tubes" || i.unit === "pcs")));
-                const _otherCats = _allCats.filter(cat => !_foamCats.includes(cat) && !_blownCats.includes(cat) && !_fgCats.includes(cat));
-                const MATERIAL_GROUPS = [
-                  { key: "foam",   label: "Foam",             categories: _foamCats },
-                  { key: "blown",  label: "Blown",            categories: _blownCats },
-                  { key: "fg",     label: "Fiberglass Batts", categories: _fgCats },
-                  { key: "other",  label: "Other",            categories: _otherCats },
-                ];
-
-                // Flatten items per group, applying filters
-                const groupItems = (group) => {
-                  const items = [];
-                  group.categories.forEach(cat => {
-                    const catItems = sortAllItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces))
-                      .filter(statusFilterFn)
-                      .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || cat.toLowerCase().includes(searchLower));
-                    catItems.forEach(item => items.push({ item, cat }));
-                  });
-                  return items;
+                // Map each item to a manufacturer group
+                const getManufacturer = (item) => {
+                  const cat = item.category || "";
+                  if (item.unit === "bbl") return "Foam";
+                  if (cat.includes("Certainteed")) return "Certainteed";
+                  if (cat.includes("Owens Corning")) return "Owens Corning";
+                  if (cat.includes("Johns Manville") || cat.includes("JM")) return "Johns Manville";
+                  if (cat.toLowerCase().includes("blown") || cat.toLowerCase().includes("cellulose")) return "Blown";
+                  return "Other";
                 };
 
-                // Split groups into left (Foam + Blown) and right (Fiberglass + Other)
-                const leftGroups  = MATERIAL_GROUPS.filter(g => g.key === "foam" || g.key === "blown");
-                const rightGroups = MATERIAL_GROUPS.filter(g => g.key === "fg"   || g.key === "other");
+                const MFG_ORDER = ["Certainteed", "Owens Corning", "Johns Manville", "Foam", "Blown", "Other"];
 
-                const renderGroup = (group) => {
-                  const rows = groupItems(group);
-                  if (rows.length === 0) return null;
-                  // Track current category for section dividers within a group
-                  let lastCat = null;
+                // Extract R-value from category string for sorting
+                const getRVal = (cat) => { const m = cat.match(/R(\d+)/i); return m ? parseInt(m[1]) : 999; };
+
+                // Build groups
+                const mfgGroups = MFG_ORDER.map(mfg => {
+                  const items = sortAllItems(
+                    INVENTORY_ITEMS
+                      .filter(i => !i.isPieces && getManufacturer(i) === mfg)
+                      .filter(statusFilterFn)
+                      .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || i.category.toLowerCase().includes(searchLower))
+                  ).sort((a, b) => getRVal(a.category) - getRVal(b.category));
+                  return { mfg, items };
+                }).filter(g => g.items.length > 0);
+
+                const allEmpty = mfgGroups.length === 0;
+
+                const renderItemRow = (item) => {
+                  const qty = getQty(item.id);
+                  const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
+                  const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
+                  const status = stockStatus(qty);
+                  const sc = stockColors[status];
+                  const displayQty = isFoam(item.id) ? qty.toFixed(2) : qty;
+                  const subInfo = isFoam(item.id) && qty > 0
+                    ? `${bblToGals(qty, item.id)}g`
+                    : (item.sqftPerTube && qty > 0 ? `${(item.sqftPerTube * qty).toFixed(0)} sqft` : "");
                   return (
-                    <div key={group.key} style={{ marginBottom: 6 }}>
-                      {/* Group header */}
-                      <div style={{ padding: "4px 10px", background: "#e8edf5", borderRadius: "6px 6px 0 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 10, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.8px" }}>{group.label}</span>
-                        <span style={{ display: "flex", gap: 4 }}>
-                          {rows.filter(r => getQty(r.item.id) === 0).length > 0 && (
-                            <span style={{ fontSize: 9, fontWeight: 700, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 99, padding: "1px 5px" }}>
-                              {rows.filter(r => getQty(r.item.id) === 0).length} OUT
-                            </span>
-                          )}
-                          {rows.filter(r => { const q = getQty(r.item.id); return q > 0 && q <= 2; }).length > 0 && (
-                            <span style={{ fontSize: 9, fontWeight: 700, background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 99, padding: "1px 5px" }}>
-                              {rows.filter(r => { const q = getQty(r.item.id); return q > 0 && q <= 2; }).length} LOW
-                            </span>
-                          )}
+                    <React.Fragment key={item.id}>
+                      <div
+                        style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderTop: "1px solid " + lk.separator, minHeight: 30, transition: "background 0.1s" }}
+                        onMouseEnter={e => e.currentTarget.style.background = lk.rowHover}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                      >
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: sc.bar, flexShrink: 0 }} />
+                        <span style={{ flex: 1, fontSize: 12, fontWeight: 500, color: lk.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.name}>{item.name}</span>
+                        {subInfo ? <span style={{ fontSize: 9, color: lk.textMuted, flexShrink: 0, whiteSpace: "nowrap" }}>{subInfo}</span> : null}
+                        {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9.5, fontWeight: 700, color: "#6366f1", background: "#ede9fe", borderRadius: 5, padding: "1px 4px", flexShrink: 0 }}>{pcsQty}pc</span> : null}
+                        <span style={{ fontSize: 12, fontWeight: 700, color: sc.text, minWidth: 26, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap" }}>
+                          {displayQty} <span style={{ fontSize: 9, fontWeight: 500, color: lk.textMuted }}>{item.unit}</span>
                         </span>
+                        <div style={{ flexShrink: 0 }}>
+                          <InventoryEditCell
+                            itemId={item.id}
+                            qty={qty}
+                            isFoam={isFoam(item.id)}
+                            bblToGals={bblToGals}
+                            galsToBbl={galsToBbl}
+                            pcsItem={pcsItem}
+                            pcsQty={pcsQty}
+                            onUpdateInventory={onUpdateInventory}
+                          />
+                        </div>
                       </div>
-                      {/* Rows */}
-                      <div style={{ border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 6px 6px", overflow: "hidden", background: lk.cardBg }}>
-                        {rows.map(({ item, cat }, idx) => {
-                          const showCatLabel = cat !== lastCat && group.categories.length > 1;
-                          if (showCatLabel) lastCat = cat;
-                          const qty = getQty(item.id);
-                          const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
-                          const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
-                          const status = stockStatus(qty);
-                          const sc = stockColors[status];
-                          const displayQty = isFoam(item.id) ? qty.toFixed(2) : qty;
-                          const subInfo = isFoam(item.id) && qty > 0
-                            ? `${bblToGals(qty, item.id)}g`
-                            : (item.sqftPerTube && qty > 0 ? `${(item.sqftPerTube * qty).toFixed(0)} sqft` : "");
-                          const statusDotColor = sc.bar;
-                          return (
-                            <React.Fragment key={item.id}>
-                              {showCatLabel && (
-                                <div style={{ padding: "2px 10px", background: "#f8fafc", borderTop: idx > 0 ? "1px solid #e2e8f0" : "none", fontSize: 9, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.6px" }}>
-                                  {cat}
-                                </div>
-                              )}
-                              <div
-                                style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderTop: "1px solid " + lk.separator, minHeight: 28, transition: "background 0.1s" }}
-                                onMouseEnter={e => e.currentTarget.style.background = lk.rowHover}
-                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
-                              >
-                                {/* Status dot */}
-                                <span style={{ width: 7, height: 7, borderRadius: "50%", background: statusDotColor, flexShrink: 0 }} />
-                                {/* Name */}
-                                <span style={{ flex: 1, fontSize: 11.5, fontWeight: 500, color: lk.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={item.name}>{item.name}</span>
-                                {/* Sub info */}
-                                {subInfo ? <span style={{ fontSize: 9, color: lk.textMuted, flexShrink: 0, whiteSpace: "nowrap" }}>{subInfo}</span> : null}
-                                {/* Pieces badge */}
-                                {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9.5, fontWeight: 700, color: "#6366f1", background: "#ede9fe", borderRadius: 5, padding: "1px 4px", flexShrink: 0 }}>{pcsQty}pc</span> : null}
-                                {/* Qty + unit */}
-                                <span style={{ fontSize: 12, fontWeight: 700, color: sc.text, minWidth: 26, textAlign: "right", flexShrink: 0, whiteSpace: "nowrap" }}>
-                                  {displayQty} <span style={{ fontSize: 9, fontWeight: 500, color: lk.textMuted }}>{item.unit}</span>
-                                </span>
-                                {/* Edit */}
-                                <div style={{ flexShrink: 0 }}>
-                                  <InventoryEditCell
-                                    itemId={item.id}
-                                    qty={qty}
-                                    isFoam={isFoam(item.id)}
-                                    bblToGals={bblToGals}
-                                    galsToBbl={galsToBbl}
-                                    pcsItem={pcsItem}
-                                    pcsQty={pcsQty}
-                                    onUpdateInventory={onUpdateInventory}
-                                  />
-                                </div>
-                              </div>
-                            </React.Fragment>
-                          );
-                        })}
-                      </div>
-                    </div>
+                      {pcsItem && pcsQty > 0 && (
+                        <div style={{ padding: "2px 10px 2px 23px", background: "#f8fafc", borderTop: "1px solid " + lk.separator }}>
+                          <span style={{ fontSize: 10, color: "#6366f1", fontWeight: 600 }}>{pcsQty} loose pcs</span>
+                        </div>
+                      )}
+                    </React.Fragment>
                   );
                 };
 
-                const allEmpty = MATERIAL_GROUPS.every(g => groupItems(g).length === 0);
-
                 return (
-                  <div style={{ flex: 1, overflow: "auto", display: "flex", gap: 8, padding: "8px 10px", alignItems: "flex-start" }}>
+                  <div style={{ flex: 1, overflow: "auto", padding: "8px 10px" }}>
                     {allEmpty ? (
-                      <div style={{ flex: 1, textAlign: "center", padding: "48px 16px", color: lk.textMuted, fontSize: 13 }}>No items match your current filters</div>
-                    ) : (
-                      <>
-                        {/* Left panel: Foam + Blown */}
-                        <div style={{ flex: "0 0 32%", minWidth: 0 }}>
-                          {leftGroups.map(g => renderGroup(g))}
+                      <div style={{ textAlign: "center", padding: "48px 16px", color: lk.textMuted, fontSize: 13 }}>No items match your current filters</div>
+                    ) : mfgGroups.map(({ mfg, items }) => {
+                      const outCount = items.filter(i => getQty(i.id) === 0).length;
+                      const lowCount = items.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; }).length;
+                      return (
+                        <div key={mfg} style={{ marginBottom: 8 }}>
+                          {/* Manufacturer header */}
+                          <div style={{ padding: "5px 10px", background: "#e8edf5", borderRadius: "6px 6px 0 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.8px" }}>
+                              {mfg} <span style={{ fontWeight: 500, fontSize: 10, color: "#64748b", textTransform: "none", letterSpacing: 0 }}>({items.length})</span>
+                            </span>
+                            <span style={{ display: "flex", gap: 4 }}>
+                              {outCount > 0 && <span style={{ fontSize: 9, fontWeight: 700, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 99, padding: "1px 5px" }}>{outCount} OUT</span>}
+                              {lowCount > 0 && <span style={{ fontSize: 9, fontWeight: 700, background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 99, padding: "1px 5px" }}>{lowCount} LOW</span>}
+                            </span>
+                          </div>
+                          <div style={{ border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 6px 6px", overflow: "hidden", background: lk.cardBg }}>
+                            {items.map(item => renderItemRow(item))}
+                          </div>
                         </div>
-                        {/* Right panel: Fiberglass + Other */}
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          {rightGroups.map(g => renderGroup(g))}
-                        </div>
-                      </>
-                    )}
+                      );
+                    })}
                   </div>
                 );
               })()}
@@ -5494,40 +5463,32 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} inputMode="text" autoComplete="street-address" />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
           <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
-          {/* Employee multi-select — source of truth for timesheet */}
+          {/* Employee tap-to-toggle — source of truth for timesheet */}
           <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "6px" }}>Assign Employees <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span></label>
-            {jobForm.crewMemberIds.filter(Boolean).length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
-                {jobForm.crewMemberIds.filter(Boolean).map(id => {
-                  const m = members.find(mb => mb.id === id);
-                  return m ? (
-                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: t.accentBg, color: t.accent, fontSize: "12px", fontWeight: 600, padding: "6px 12px", borderRadius: "20px", border: "1px solid #bfdbfe", minHeight: "36px" }}>
-                      {m.name}
-                      <button onClick={() => setJobForm({ ...jobForm, crewMemberIds: jobForm.crewMemberIds.filter(i => i !== id) })} style={{ background: "none", border: "none", cursor: "pointer", color: t.accent, fontSize: "14px", lineHeight: 1, padding: 0, fontFamily: "inherit" }}>×</button>
-                    </span>
-                  ) : null;
-                })}
-              </div>
-            )}
-            <input type="text" placeholder="Search employees..." value={addCrewSearch} onChange={e => setAddCrewSearch(e.target.value)} style={{ width: "100%", padding: "7px 10px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "13px", fontFamily: "inherit", marginBottom: "4px", boxSizing: "border-box" }} />
-            <div style={{ maxHeight: "110px", overflowY: "auto", border: "1px solid " + t.border, borderRadius: "6px" }}>
-              {members.filter(m => m.name.toLowerCase().includes(addCrewSearch.toLowerCase())).map(m => {
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Assign Crew <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span></label>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {members.map(m => {
                 const selected = (jobForm.crewMemberIds || []).includes(m.id);
+                const firstName = m.name.split(" ")[0];
                 return (
-                  <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", cursor: "pointer", background: selected ? t.accentBg : "transparent", borderBottom: "1px solid " + t.borderLight }}>
-                    <input type="checkbox" checked={selected} onChange={() => {
+                  <button
+                    key={m.id}
+                    onClick={() => {
                       if (selected) setJobForm({ ...jobForm, crewMemberIds: jobForm.crewMemberIds.filter(i => i !== m.id) });
                       else setJobForm({ ...jobForm, crewMemberIds: [...(jobForm.crewMemberIds || []), m.id] });
-                    }} style={{ accentColor: t.accent, width: "16px", height: "16px" }} />
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: selected ? t.accent : t.accentBg, color: selected ? "#fff" : t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{m.name[0]}</div>
-                    <span style={{ fontSize: "13px", fontWeight: selected ? 600 : 400, color: t.text }}>{m.name}</span>
-                  </label>
+                    }}
+                    style={{
+                      padding: "8px 14px", borderRadius: 99, fontSize: 13, fontWeight: 600,
+                      background: selected ? "#2563eb" : "#f1f5f9",
+                      color: selected ? "#ffffff" : "#64748b",
+                      border: selected ? "1px solid #2563eb" : "1px dashed #cbd5e1",
+                      cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                    }}
+                  >
+                    {selected ? `✓ ${firstName}` : firstName}
+                  </button>
                 );
               })}
-              {members.filter(m => m.name.toLowerCase().includes(addCrewSearch.toLowerCase())).length === 0 && (
-                <div style={{ padding: "12px", fontSize: "12px", color: t.textMuted, textAlign: "center" }}>No employees found</div>
-              )}
             </div>
           </div>
           <div style={{ marginBottom: "16px" }}>
@@ -5759,43 +5720,35 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
           <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
-          {/* Employee multi-select for edit form */}
+          {/* Employee tap-to-toggle for edit form */}
           <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "6px" }}>
-              Assign Employees <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>
+              Assign Crew <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span>
               {(() => { const latUpd = updates.filter(u => u.jobId === editingJob?.id).sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0]; return latUpd?.status === "in_progress" ? <span style={{ marginLeft: 8, color: "#b45309", background: "#fef3c7", fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, border: "1px solid #fde68a" }}>In Progress — changes will be logged</span> : null; })()}
             </label>
-            {editForm.crewMemberIds.filter(Boolean).length > 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "8px" }}>
-                {editForm.crewMemberIds.filter(Boolean).map(id => {
-                  const m = members.find(mb => mb.id === id);
-                  return m ? (
-                    <span key={id} style={{ display: "inline-flex", alignItems: "center", gap: "5px", background: t.accentBg, color: t.accent, fontSize: "12px", fontWeight: 600, padding: "6px 12px", borderRadius: "20px", border: "1px solid #bfdbfe", minHeight: "36px" }}>
-                      {m.name}
-                      <button onClick={() => setEditForm({ ...editForm, crewMemberIds: editForm.crewMemberIds.filter(i => i !== id) })} style={{ background: "none", border: "none", cursor: "pointer", color: t.accent, fontSize: "14px", lineHeight: 1, padding: 0, fontFamily: "inherit" }}>×</button>
-                    </span>
-                  ) : null;
-                })}
-              </div>
-            )}
-            <input type="text" placeholder="Search employees..." value={editCrewSearch} onChange={e => setEditCrewSearch(e.target.value)} style={{ width: "100%", padding: "7px 10px", border: "1px solid " + t.border, borderRadius: "6px", fontSize: "13px", fontFamily: "inherit", marginBottom: "4px", boxSizing: "border-box" }} />
-            <div style={{ maxHeight: "180px", overflowY: "auto", border: "1px solid " + t.border, borderRadius: "6px" }}>
-              {members.filter(m => m.name.toLowerCase().includes(editCrewSearch.toLowerCase())).map(m => {
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+              {members.map(m => {
                 const selected = (editForm.crewMemberIds || []).includes(m.id);
+                const firstName = m.name.split(" ")[0];
                 return (
-                  <label key={m.id} style={{ display: "flex", alignItems: "center", gap: "10px", padding: "9px 12px", cursor: "pointer", background: selected ? t.accentBg : "transparent", borderBottom: "1px solid " + t.borderLight }}>
-                    <input type="checkbox" checked={selected} onChange={() => {
+                  <button
+                    key={m.id}
+                    onClick={() => {
                       if (selected) setEditForm({ ...editForm, crewMemberIds: editForm.crewMemberIds.filter(i => i !== m.id) });
                       else setEditForm({ ...editForm, crewMemberIds: [...(editForm.crewMemberIds || []), m.id] });
-                    }} style={{ accentColor: t.accent, width: "16px", height: "16px" }} />
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: selected ? t.accent : t.accentBg, color: selected ? "#fff" : t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{m.name[0]}</div>
-                    <span style={{ fontSize: "13px", fontWeight: selected ? 600 : 400, color: t.text }}>{m.name}</span>
-                  </label>
+                    }}
+                    style={{
+                      padding: "8px 14px", borderRadius: 99, fontSize: 13, fontWeight: 600,
+                      background: selected ? "#2563eb" : "#f1f5f9",
+                      color: selected ? "#ffffff" : "#64748b",
+                      border: selected ? "1px solid #2563eb" : "1px dashed #cbd5e1",
+                      cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                    }}
+                  >
+                    {selected ? `✓ ${firstName}` : firstName}
+                  </button>
                 );
               })}
-              {members.filter(m => m.name.toLowerCase().includes(editCrewSearch.toLowerCase())).length === 0 && (
-                <div style={{ padding: "12px", fontSize: "12px", color: t.textMuted, textAlign: "center" }}>No employees found</div>
-              )}
             </div>
           </div>
           <div style={{ marginBottom: "16px" }}>
