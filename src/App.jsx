@@ -109,6 +109,46 @@ const INVENTORY_ITEMS = [
   { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool", hasPieces: true },
   { id: "rw_6_pcs",  name: 'Rockwool 6"',        unit: "pcs",   category: "Rockwool", isPieces: true, parentId: "rw_6_t" },
 ];
+const FOAM_GUN_PARTS = [
+  { id: "fgp_gun_graco",      name: "Graco Fusion AP Gun",          unit: "units" },
+  { id: "fgp_gun_graco_cs",   name: "Graco Fusion CS Gun",          unit: "units" },
+  { id: "fgp_tip_set",        name: "Mix Chamber Tip Set",          unit: "sets"  },
+  { id: "fgp_side_seal",      name: "Side Seals (pair)",            unit: "pairs" },
+  { id: "fgp_purge_plug",     name: "Purge Plugs",                  unit: "pcs"   },
+  { id: "fgp_o_ring_kit",     name: "O-Ring Kit",                   unit: "kits"  },
+  { id: "fgp_fluid_manifold", name: "Fluid Manifold",               unit: "units" },
+  { id: "fgp_hose_50ft",      name: "Heated Hose 50ft",            unit: "units" },
+  { id: "fgp_hose_25ft",      name: "Heated Hose 25ft",            unit: "units" },
+  { id: "fgp_drum_pump",      name: "Drum Pump",                   unit: "units" },
+  { id: "fgp_filter_iso",     name: "ISO Filter",                  unit: "units" },
+  { id: "fgp_filter_poly",    name: "Poly Filter",                 unit: "units" },
+  { id: "fgp_transfer_hose",  name: "Transfer Hose",               unit: "units" },
+  { id: "fgp_solvent_can",    name: "Gun Cleaner / Solvent (can)", unit: "cans"  },
+];
+
+const PROJECT_TOOLS_ITEMS = [
+  { id: "pt_blower_machine",   name: "Blower Machine",             unit: "units" },
+  { id: "pt_blower_hose_50",   name: "Blower Hose 50ft",          unit: "units" },
+  { id: "pt_blower_hose_25",   name: "Blower Hose 25ft",          unit: "units" },
+  { id: "pt_staple_gun",       name: "Staple Gun",                 unit: "units" },
+  { id: "pt_staples_box",      name: "Staples (box)",              unit: "boxes" },
+  { id: "pt_utility_knife",    name: "Utility Knife",              unit: "units" },
+  { id: "pt_blades_box",       name: "Utility Blades (box)",       unit: "boxes" },
+  { id: "pt_tape_measuring",   name: "Measuring Tape",             unit: "units" },
+  { id: "pt_tape_red",         name: "Red Tape Roll",              unit: "rolls" },
+  { id: "pt_tape_white",       name: "White Tape Roll",            unit: "rolls" },
+  { id: "pt_drop_cloth",       name: "Drop Cloth",                 unit: "units" },
+  { id: "pt_plastic_sheeting", name: "Plastic Sheeting (roll)",    unit: "rolls" },
+  { id: "pt_respirator",       name: "Respirator (half-face)",     unit: "units" },
+  { id: "pt_resp_filters",     name: "Respirator Filters (pair)",  unit: "pairs" },
+  { id: "pt_tyvek_suit",       name: "Tyvek Suit",                 unit: "units" },
+  { id: "pt_safety_glasses",   name: "Safety Glasses",             unit: "units" },
+  { id: "pt_work_light",       name: "Work Light",                 unit: "units" },
+  { id: "pt_ext_cord_50",      name: "Extension Cord 50ft",       unit: "units" },
+  { id: "pt_knee_pads",        name: "Knee Pads",                 unit: "pairs" },
+  { id: "pt_trash_bags",       name: "Trash Bags (box)",          unit: "boxes" },
+];
+
 // Returns deduction array for tube items using full-tube + loose-piece logic
 const calcTubeDeductions = (tubeItem, fullTubesUsed, loosePiecesUsed, truckInv) => {
   if (!tubeItem || !tubeItem.pcsPerTube) return [];
@@ -4099,7 +4139,7 @@ function generateJobPDF(job, updates, pmUpdates, members) {
   doc2.save(`IST_Report_${safeName}_${job.date || "unknown"}.pdf`);
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [showAddJob, setShowAddJob] = useState(false);
@@ -4145,6 +4185,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [invCatFilter, setInvCatFilter] = useState(null);
   const [invSort, setInvSort] = useState("category");
   const [invStatusFilter, setInvStatusFilter] = useState("all");
+  const [invTab, setInvTab] = useState("materials");
+  const [foamPartsQtys, setFoamPartsQtys] = useState({});
+  const [projectToolsQtys, setProjectToolsQtys] = useState({});
   const [showEodSummary, setShowEodSummary] = useState(false);
   const [showReconcile, setShowReconcile] = useState(false);
   const [toasts, dismissToast] = useJobUpdateToasts(updates, jobs);
@@ -5156,9 +5199,79 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             );
           };
 
+          // Simple flat inventory list for foam gun parts & project tools
+          const SimpleInvList = ({ items, invData, onUpdate }) => {
+            const getQ = (id) => invData.find(r => r.itemId === id)?.qty || 0;
+            const [editing, setEditing] = React.useState(null);
+            const [editVal, setEditVal] = React.useState("");
+            const dotColor = (q) => q === 0 ? "#ef4444" : q === 1 ? "#f59e0b" : "#22c55e";
+            const qtyColor = (q) => q === 0 ? "#ef4444" : q === 1 ? "#f59e0b" : "#22c55e";
+            return (
+              <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+                {items.map(item => {
+                  const qty = getQ(item.id);
+                  const isEditing = editing === item.id;
+                  return (
+                    <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor(qty), flexShrink: 0 }} />
+                      <span style={{ flex: 1, fontSize: 12.5, fontWeight: 500, color: "#1e293b" }}>{item.name}</span>
+                      <span style={{ fontSize: 11, color: "#94a3b8", marginRight: 4 }}>{item.unit}</span>
+                      {isEditing ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)-1); setEditVal(String(v)); }} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                          <input value={editVal} onChange={e => setEditVal(e.target.value)} style={{ width: 40, textAlign: "center", border: "1px solid #2563eb", borderRadius: 6, fontSize: 13, padding: "2px 4px", fontFamily: "inherit", outline: "none" }} />
+                          <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)+1); setEditVal(String(v)); }} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                          <button onClick={() => { const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onUpdate(item.id, v); setEditing(null); }} style={{ padding: "2px 8px", borderRadius: 6, border: "none", background: "#2563eb", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓</button>
+                          <button onClick={() => setEditing(null)} style={{ padding: "2px 6px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: qtyColor(qty), minWidth: 20, textAlign: "right" }}>{qty}</span>
+                          <button onClick={() => { setEditing(item.id); setEditVal(String(qty)); }} style={{ padding: "3px 9px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Edit</button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          };
+
           return (
             <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 168px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))", overflow: "hidden", margin: "0 -20px -20px", padding: 0, background: lk.bg }}>
 
+              {/* ── Inventory sub-tab nav ── */}
+              <div style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
+                {[
+                  { id: "materials",    label: "Materials" },
+                  { id: "foam_parts",   label: "Foam Gun Parts" },
+                  { id: "project_tools", label: "Tools & Accessories" },
+                ].map(tab => {
+                  const active = invTab === tab.id;
+                  return (
+                    <button key={tab.id} onClick={() => setInvTab(tab.id)} style={{
+                      padding: "6px 12px", borderRadius: "8px 8px 0 0", fontSize: 12, fontWeight: active ? 700 : 500,
+                      border: "1px solid " + (active ? "#2563eb" : "#e2e8f0"),
+                      borderBottom: active ? "1px solid #fff" : "1px solid " + lk.headerBorder,
+                      background: active ? "#ffffff" : "transparent",
+                      color: active ? "#2563eb" : "#64748b",
+                      cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                      marginBottom: active ? -1 : 0,
+                      transition: "all 0.15s",
+                    }}>{tab.label}</button>
+                  );
+                })}
+              </div>
+
+              {invTab === "foam_parts" && (
+                <SimpleInvList items={FOAM_GUN_PARTS} invData={foamPartsInventory || []} onUpdate={onUpdateFoamParts} />
+              )}
+              {invTab === "project_tools" && (
+                <SimpleInvList items={PROJECT_TOOLS_ITEMS} invData={projectToolsInventory || []} onUpdate={onUpdateProjectTools} />
+              )}
+
+              {/* ── Materials tab content ── */}
+              {invTab === "materials" && <>
               {/* ── Stat filter buttons row ── */}
               <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
                 <button onClick={() => setInvStatusFilter("all")} style={{
@@ -5348,6 +5461,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   </div>
                 )}
               </div>
+              </>}
             </div>
           );
         })()}
@@ -8620,6 +8734,31 @@ export default function App() {
     if (existing) { await updateDoc(doc(db, "inventory", existing.id), { qty }); }
     else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
+
+  const [foamPartsInventory, setFoamPartsInventory] = React.useState([]);
+  const [projectToolsInventory, setProjectToolsInventory] = React.useState([]);
+
+  React.useEffect(() => {
+    const unsub1 = onSnapshot(collection(db, "foamGunParts"), snap => {
+      setFoamPartsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    const unsub2 = onSnapshot(collection(db, "projectToolsInventory"), snap => {
+      setProjectToolsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => { unsub1(); unsub2(); };
+  }, []);
+
+  const handleUpdateFoamParts = async (itemId, qty) => {
+    const existing = foamPartsInventory.find(r => r.itemId === itemId);
+    if (existing) { await updateDoc(doc(db, "foamGunParts", existing.id), { qty, updatedAt: new Date().toISOString() }); }
+    else { await addDoc(collection(db, "foamGunParts"), { itemId, qty, updatedAt: new Date().toISOString() }); }
+  };
+
+  const handleUpdateProjectTools = async (itemId, qty) => {
+    const existing = projectToolsInventory.find(r => r.itemId === itemId);
+    if (existing) { await updateDoc(doc(db, "projectToolsInventory", existing.id), { qty, updatedAt: new Date().toISOString() }); }
+    else { await addDoc(collection(db, "projectToolsInventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
+  };
   // Deduct job materials from truck. usedMap = { itemId: qty } (tubes and loose pcs as entered by crew).
   // Reads fresh from Firestore, computes remaining, writes back.
   const handleDeductFromTruck = async (truckId, usedMap) => {
@@ -8820,6 +8959,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} />;
   return null;
 }
