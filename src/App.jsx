@@ -2159,6 +2159,28 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 ✓ Materials already logged for today — ready to close out.
               </div>
             )}
+            {/* Est. Material Cost preview */}
+            {(() => {
+              // Compute cost from daily logs + today's closeout inputs
+              let cost = 0;
+              (closeoutJob.job.dailyMaterialLogs || []).forEach(log => { cost += calcMaterialCost(log.materials); });
+              cost += Object.entries(closeoutMaterialQtys).reduce((s, [id, raw]) => {
+                const item = INVENTORY_ITEMS.find(i => i.id === id);
+                if (!item?.cost) return s;
+                const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+                const qty = isFoamId
+                  ? (parseFloat(raw) || 0) / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48)
+                  : (parseFloat(raw) || 0);
+                return s + item.cost * qty;
+              }, 0);
+              if (cost <= 0) return null;
+              return (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, fontWeight: 600, color: "#15803d", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "8px 12px", marginBottom: 10 }}>
+                  <span>Est. Material Cost</span>
+                  <span>${cost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                </div>
+              );
+            })()}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <Button variant="secondary" onClick={() => setCloseoutJob(null)} style={{ flex: 1 }}>Cancel</Button>
               <Button onClick={() => handleCloseoutConfirm(closeoutJob.skipMaterials)} style={{ flex: 1 }}>Confirm Closeout</Button>
@@ -5129,6 +5151,79 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 );
               })()}
             </div>{/* end two-column grid */}
+
+            {/* ── 30-Day Material Usage Trends ── */}
+            {(() => {
+              const thirtyDaysAgo = new Date();
+              thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+              // Aggregate usage from closed jobs in the last 30 days
+              const totals = {};
+              jobs.forEach(job => {
+                if (!job.closedOut) return;
+                const closedDate = job.closedAt ? new Date(job.closedAt) : null;
+                if (!closedDate || closedDate < thirtyDaysAgo) return;
+                const addMats = (mats) => {
+                  if (!mats) return;
+                  Object.entries(mats).forEach(([id, qty]) => {
+                    const item = INVENTORY_ITEMS.find(i => i.id === id);
+                    if (!item || item.isPieces) return;
+                    totals[id] = (totals[id] || 0) + (parseFloat(qty) || 0);
+                  });
+                };
+                if ((job.dailyMaterialLogs || []).length > 0) {
+                  job.dailyMaterialLogs.forEach(log => addMats(log.materials));
+                } else {
+                  addMats(job.materialsUsed);
+                }
+              });
+              const rows = Object.entries(totals).filter(([,q]) => q > 0);
+              const maxQty = rows.reduce((m, [,q]) => Math.max(m, q), 1);
+              const getBarColor = (id) => {
+                const item = INVENTORY_ITEMS.find(i => i.id === id);
+                if (!item) return "#6b7280";
+                if (item.category === "Blown") return "#16a34a";
+                if (item.category === "Foam") return "#f97316";
+                return "#2563eb";
+              };
+              return (
+                <div style={{ marginTop: 20 }}>
+                  <button
+                    onClick={() => setShowUsageTrends(p => !p)}
+                    style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "10px 14px", background: t.surface, border: "1px solid " + t.border, borderRadius: showUsageTrends ? "10px 10px 0 0" : 10, cursor: "pointer", fontFamily: "inherit", fontSize: 14, fontWeight: 700, color: t.text, textAlign: "left" }}
+                  >
+                    <span>📊 30-Day Material Usage</span>
+                    <span style={{ marginLeft: "auto", fontSize: 12, color: t.textMuted }}>{showUsageTrends ? "▲ Hide" : "▼ Show"}</span>
+                  </button>
+                  {showUsageTrends && (
+                    <div style={{ background: t.surface, border: "1px solid " + t.border, borderTop: "none", borderRadius: "0 0 10px 10px", padding: "14px 16px" }}>
+                      {rows.length === 0
+                        ? <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic" }}>No completed jobs with materials in the last 30 days.</div>
+                        : rows.sort((a, b) => b[1] - a[1]).map(([id, qty]) => {
+                          const item = INVENTORY_ITEMS.find(i => i.id === id);
+                          if (!item) return null;
+                          const barPct = Math.max(4, Math.round((qty / maxQty) * 100));
+                          const cost = (item.cost || 0) * qty;
+                          const barColor = getBarColor(id);
+                          return (
+                            <div key={id} style={{ marginBottom: 10 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: t.text }}>{item.name}</span>
+                                <span style={{ fontSize: 11, color: t.textMuted }}>
+                                  {qty} {item.unit}{cost > 0 ? ` · $${cost.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : ""}
+                                </span>
+                              </div>
+                              <div style={{ height: 14, background: t.bg, borderRadius: 7, overflow: "hidden" }}>
+                                <div style={{ height: "100%", width: barPct + "%", background: barColor, borderRadius: 7, transition: "width 0.3s" }} />
+                              </div>
+                            </div>
+                          );
+                        })
+                      }
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
 
@@ -5754,7 +5849,18 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 <StatFilterBtn id="low" label="Low Stock" count={lowItems.length} color="#d97706" activeBg="#fffbeb" activeBorder="#fde68a" />
                 <StatFilterBtn id="out" label="Out of Stock" count={outItems.length} color="#dc2626" activeBg="#fef2f2" activeBorder="#fecaca" />
                 <div style={{ flex: 1 }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 5, flexShrink: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                  {(() => {
+                    const totalVal = INVENTORY_ITEMS.reduce((sum, item) => {
+                      if (!item.cost || item.isPieces) return sum;
+                      return sum + (item.cost || 0) * ((inventory || {})[item.id] || 0);
+                    }, 0);
+                    return (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 99, padding: "2px 8px" }}>
+                        ${totalVal.toLocaleString("en-US", { maximumFractionDigits: 0 })} inv. value
+                      </span>
+                    );
+                  })()}
                   <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5 }}>● LIVE</span>
                   <span style={{ fontSize: 10, color: lk.textMuted, fontWeight: 500 }}>Updated {lastUpdatedStr}</span>
                 </div>
@@ -6457,6 +6563,18 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 })}
               </div>
             )}
+
+            {/* Est. Material Cost */}
+            {(() => {
+              const cost = calcJobMaterialCost(calViewJob);
+              if (cost <= 0) return null;
+              return (
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, fontWeight: 600, color: "#15803d", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "8px 12px", marginBottom: 12 }}>
+                  <span>Est. Material Cost</span>
+                  <span>${cost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                </div>
+              );
+            })()}
 
             {/* 📷 Photos Section */}
             <JobPhotosSection job={calViewJob} canDelete={["Johnny","Jordan","Skip","Duck","Carolyn"].includes(adminName)} uploaderName={adminName} />
