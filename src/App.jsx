@@ -8647,13 +8647,35 @@ function QuoteView({ onBack, adminName }) {
 
 
 // ─── Main App ───
+const OFFICE_SESSION_KEY = "ist-office-session";
+const OFFICE_SESSION_TTL = 4 * 60 * 60 * 1000; // 4 hours
+
+function getSavedOfficeSession() {
+  try {
+    const raw = localStorage.getItem(OFFICE_SESSION_KEY);
+    if (!raw) return null;
+    const { name, ts } = JSON.parse(raw);
+    if (Date.now() - ts > OFFICE_SESSION_TTL) { localStorage.removeItem(OFFICE_SESSION_KEY); return null; }
+    return name;
+  } catch { return null; }
+}
+
+function saveOfficeSession(name) {
+  try { localStorage.setItem(OFFICE_SESSION_KEY, JSON.stringify({ name, ts: Date.now() })); } catch {}
+}
+
+function clearOfficeSession() {
+  try { localStorage.removeItem(OFFICE_SESSION_KEY); } catch {}
+}
+
 export default function App() {
+  const savedSession = getSavedOfficeSession();
   const [loading, setLoading] = useState(true);
-  const [role, setRole] = useState(null);
+  const [role, setRole] = useState(savedSession ? "admin" : null);
   const [launcherDismissed, setLauncherDismissed] = useState(false);
   const [adminView, setAdminView] = useState("dispatch"); // "dispatch" | "quotes"
   const [crewSession, setCrewSession] = useState(null);
-  const [adminName, setAdminName] = useState(null);
+  const [adminName, setAdminName] = useState(savedSession || null);
   const [trucks, setTrucks] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [updates, setUpdates] = useState([]);
@@ -8919,7 +8941,7 @@ export default function App() {
     setCrewSession({ memberId: member.id, crewName: member.name, truckId: truck?.id || null });
     setRole("crew");
   };
-  const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
+  const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); saveOfficeSession(name); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
   const isAuthScreen = !role || (role === "admin" && !adminName) || (role === "crew" && !crewSession) || (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed);
 
@@ -8982,7 +9004,7 @@ export default function App() {
     </AuthShell>
     </div>
   );
-  if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} />;
+  if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} />;
   return null;
 }
