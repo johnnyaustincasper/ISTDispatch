@@ -110,43 +110,89 @@ const INVENTORY_ITEMS = [
   { id: "rw_6_pcs",  name: 'Rockwool 6"',        unit: "pcs",   category: "Rockwool", isPieces: true, parentId: "rw_6_t" },
 ];
 const FOAM_GUN_PARTS = [
-  { id: "fgp_gun_graco",      name: "Graco Fusion AP Gun",          unit: "units" },
-  { id: "fgp_gun_graco_cs",   name: "Graco Fusion CS Gun",          unit: "units" },
-  { id: "fgp_tip_set",        name: "Mix Chamber Tip Set",          unit: "sets"  },
-  { id: "fgp_side_seal",      name: "Side Seals (pair)",            unit: "pairs" },
-  { id: "fgp_purge_plug",     name: "Purge Plugs",                  unit: "pcs"   },
-  { id: "fgp_o_ring_kit",     name: "O-Ring Kit",                   unit: "kits"  },
-  { id: "fgp_fluid_manifold", name: "Fluid Manifold",               unit: "units" },
-  { id: "fgp_hose_50ft",      name: "Heated Hose 50ft",            unit: "units" },
-  { id: "fgp_hose_25ft",      name: "Heated Hose 25ft",            unit: "units" },
-  { id: "fgp_drum_pump",      name: "Drum Pump",                   unit: "units" },
-  { id: "fgp_filter_iso",     name: "ISO Filter",                  unit: "units" },
-  { id: "fgp_filter_poly",    name: "Poly Filter",                 unit: "units" },
-  { id: "fgp_transfer_hose",  name: "Transfer Hose",               unit: "units" },
-  { id: "fgp_solvent_can",    name: "Gun Cleaner / Solvent (can)", unit: "cans"  },
+  // ── Drill Bits ──
+  { id: "fgp_drill_47",        name: "#47 Drill Bits",              unit: "pcs",   category: "Drill Bits" },
+  { id: "fgp_drill_52",        name: "#52 Drill Bits",              unit: "pcs",   category: "Drill Bits" },
+  // ── Repair Kits ──
+  { id: "fgp_kit_246355",      name: "246355 Rebuild Kit",          unit: "units", category: "Repair Kits" },
+  { id: "fgp_kit_248212_open", name: "248212 T1 Pump Repair Kit (Opened)", unit: "units", category: "Repair Kits" },
+  { id: "fgp_kit_t1_unopened", name: "T1 Repair Kit (Unopened)",   unit: "units", category: "Repair Kits" },
+  { id: "fgp_kit_lower_t1",    name: "Lower Repair Kit T1",         unit: "units", category: "Repair Kits" },
+  // ── O-Rings & Seals ──
+  { id: "fgp_oring_00043b",    name: "00043B O-Rings",             unit: "pcs",   category: "O-Rings & Seals" },
+  { id: "fgp_ring_backcap",    name: "Back Cap Ring",              unit: "pcs",   category: "O-Rings & Seals" },
+  { id: "fgp_oring_fluid_hsg", name: "Fluid Housing O-Ring",       unit: "pcs",   category: "O-Rings & Seals" },
+  { id: "fgp_ring_white_misc", name: "Misc White Rings",           unit: "pcs",   category: "O-Rings & Seals" },
+  { id: "fgp_oring_small",     name: "Small O-Ring",              unit: "pcs",   category: "O-Rings & Seals" },
+  { id: "fgp_seal_side_black", name: "Side Seals (Black)",         unit: "pcs",   category: "O-Rings & Seals" },
+  { id: "fgp_seal_side_white", name: "Side Seals (White)",         unit: "pcs",   category: "O-Rings & Seals" },
+  { id: "fgp_oring_trigger",   name: "Trigger O-Rings",           unit: "pcs",   category: "O-Rings & Seals" },
+  // ── Parts & Valves ──
+  { id: "fgp_part_202248",     name: "202248",                    unit: "units", category: "Parts & Valves" },
+  { id: "fgp_part_248129",     name: "248129",                    unit: "units", category: "Parts & Valves" },
+  { id: "fgp_part_248133",     name: "248133",                    unit: "units", category: "Parts & Valves" },
+  { id: "fgp_valve_check",     name: "Check Valve",               unit: "units", category: "Parts & Valves" },
+  { id: "fgp_valve_spring",    name: "Check Valve Spring",        unit: "units", category: "Parts & Valves" },
 ];
 
 const PROJECT_TOOLS_ITEMS = [
-  { id: "pt_blower_machine",   name: "Blower Machine",             unit: "units" },
-  { id: "pt_blower_hose_50",   name: "Blower Hose 50ft",          unit: "units" },
-  { id: "pt_blower_hose_25",   name: "Blower Hose 25ft",          unit: "units" },
-  { id: "pt_staple_gun",       name: "Staple Gun",                 unit: "units" },
-  { id: "pt_staples_box",      name: "Staples (box)",              unit: "boxes" },
-  { id: "pt_utility_knife",    name: "Utility Knife",              unit: "units" },
-  { id: "pt_blades_box",       name: "Utility Blades (box)",       unit: "boxes" },
-  { id: "pt_tape_measuring",   name: "Measuring Tape",             unit: "units" },
-  { id: "pt_tape_red",         name: "Red Tape Roll",              unit: "rolls" },
-  { id: "pt_tape_white",       name: "White Tape Roll",            unit: "rolls" },
-  { id: "pt_drop_cloth",       name: "Drop Cloth",                 unit: "units" },
-  { id: "pt_plastic_sheeting", name: "Plastic Sheeting (roll)",    unit: "rolls" },
-  { id: "pt_respirator",       name: "Respirator (half-face)",     unit: "units" },
-  { id: "pt_resp_filters",     name: "Respirator Filters (pair)",  unit: "pairs" },
-  { id: "pt_tyvek_suit",       name: "Tyvek Suit",                 unit: "units" },
-  { id: "pt_safety_glasses",   name: "Safety Glasses",             unit: "units" },
-  { id: "pt_work_light",       name: "Work Light",                 unit: "units" },
-  { id: "pt_ext_cord_50",      name: "Extension Cord 50ft",       unit: "units" },
-  { id: "pt_knee_pads",        name: "Knee Pads",                 unit: "pairs" },
-  { id: "pt_trash_bags",       name: "Trash Bags (box)",          unit: "boxes" },
+  // ── Power Tools ──
+  { id: "pt_drill_dewalt",      name: "DeWalt Drill w/ Batteries x2 + Charger", unit: "units", category: "Power Tools" },
+  { id: "pt_drill_mitool",      name: "Mitool Drill w/ Battery + Charger",       unit: "units", category: "Power Tools" },
+  { id: "pt_drill_hilti",       name: "Hilti Drill",                             unit: "units", category: "Power Tools" },
+  { id: "pt_drill_kobalt",      name: "Corded Drill Kobalt (Paint Mixer)",       unit: "units", category: "Power Tools" },
+  { id: "pt_saw_hilti",         name: "Hilti Skill Saw",                         unit: "units", category: "Power Tools" },
+  { id: "pt_saw_foam",          name: "Foam Wall Saw",                           unit: "units", category: "Power Tools" },
+  { id: "pt_foamzall",          name: "Foamzall (Rebuilt)",                      unit: "units", category: "Power Tools" },
+  { id: "pt_grinder_dewalt",    name: "DeWalt Grinder",                         unit: "units", category: "Power Tools" },
+  { id: "pt_hilti_dx5",         name: "Hilti DX5",                              unit: "units", category: "Power Tools" },
+  { id: "pt_hilti_nuron_chgr",  name: "Hilti Nuron Charger",                    unit: "units", category: "Power Tools" },
+  { id: "pt_light_dewalt",      name: "DeWalt Light",                           unit: "units", category: "Power Tools" },
+  { id: "pt_pump_rebuild",      name: "Pump (Needs Rebuild)",                   unit: "units", category: "Power Tools" },
+  // ── Hand Tools ──
+  { id: "pt_knife_utility_box", name: "Box Utility Knives",                     unit: "units", category: "Hand Tools" },
+  { id: "pt_hammer_framing",    name: "Framing Hammer",                         unit: "units", category: "Hand Tools" },
+  { id: "pt_level",             name: "Level",                                  unit: "units", category: "Hand Tools" },
+  { id: "pt_nut_driver",        name: "Nut Driver",                             unit: "units", category: "Hand Tools" },
+  { id: "pt_socket_set",        name: "Socket Set (Craftsman)",                 unit: "units", category: "Hand Tools" },
+  { id: "pt_speed_square",      name: "Speed Square",                           unit: "units", category: "Hand Tools" },
+  // ── Tape & Caulk ──
+  { id: "pt_tape_caution",      name: "Caution Tape",                           unit: "rolls", category: "Tape & Caulk" },
+  { id: "pt_tape_duct",         name: "Duct Tape",                              unit: "rolls", category: "Tape & Caulk" },
+  { id: "pt_tape_painter_125",  name: "Painters Tape 1-1/4\"",                  unit: "rolls", category: "Tape & Caulk" },
+  { id: "pt_tape_painter_2in",  name: "Painters Tape 2\"",                      unit: "rolls", category: "Tape & Caulk" },
+  { id: "pt_tape_vinyl_red",    name: "Red Vinyl Tape",                         unit: "rolls", category: "Tape & Caulk" },
+  { id: "pt_caulk_bigstretch",  name: "Big Stretch Caulk",                     unit: "tubes", category: "Tape & Caulk" },
+  // ── PPE ──
+  { id: "pt_ppe_3m_filters",    name: "3M Triangular Filters",                 unit: "units", category: "PPE" },
+  { id: "pt_ppe_bullard_filt",  name: "Bullard Filters",                       unit: "units", category: "PPE" },
+  { id: "pt_ppe_bullard_resp",  name: "Bullard Respirator",                    unit: "units", category: "PPE" },
+  { id: "pt_ppe_curry_comb",    name: "Curry Combs",                           unit: "units", category: "PPE" },
+  { id: "pt_ppe_earplugs",      name: "Ear Plugs (case)",                      unit: "cases", category: "PPE" },
+  { id: "pt_ppe_head_socks",    name: "Head Socks Black (box)",                unit: "boxes", category: "PPE" },
+  { id: "pt_ppe_honeywell",     name: "Honeywell Filters",                     unit: "units", category: "PPE" },
+  { id: "pt_ppe_prosuits_2xl",  name: "2XL Prosuits",                          unit: "units", category: "PPE" },
+  // ── Chemicals & Fluids ──
+  { id: "pt_chem_chemtrend",    name: "Chemtrend Release",                     unit: "units", category: "Chemicals & Fluids" },
+  { id: "pt_chem_def",          name: "Diesel Exhaust Fluid (DEF)",            unit: "jugs",  category: "Chemicals & Fluids" },
+  { id: "pt_chem_dynasolve",    name: "Dynasolve",                             unit: "units", category: "Chemicals & Fluids" },
+  { id: "pt_chem_frothpack",    name: "Frothpack",                             unit: "units", category: "Chemicals & Fluids" },
+  { id: "pt_chem_serum1000",    name: "Serum 1000",                            unit: "units", category: "Chemicals & Fluids" },
+  { id: "pt_chem_sterofab",     name: "Sterofab",                              unit: "units", category: "Chemicals & Fluids" },
+  // ── Supplies & Accessories ──
+  { id: "pt_sup_batteries_aaa", name: "AAA Batteries",                         unit: "pcs",   category: "Supplies & Accessories" },
+  { id: "pt_sup_air_chutes",    name: "Air Chutes (bundle)",                   unit: "bundles", category: "Supplies & Accessories" },
+  { id: "pt_sup_locks_keys",    name: "BX Locks & Keys (Interior Door)",       unit: "sets",  category: "Supplies & Accessories" },
+  { id: "pt_sup_energy_seal",   name: "Energy Seal (cans)",                    unit: "cans",  category: "Supplies & Accessories" },
+  { id: "pt_sup_ext_cord_100",  name: "Extension Cord 100ft",                 unit: "units", category: "Supplies & Accessories" },
+  { id: "pt_sup_air_hose",      name: "Fresh Air Hoses",                       unit: "units", category: "Supplies & Accessories" },
+  { id: "pt_sup_garbage_bags",  name: "Hefty Garbage Bags",                    unit: "boxes", category: "Supplies & Accessories" },
+  { id: "pt_sup_headlamps",     name: "Headlamps",                             unit: "units", category: "Supplies & Accessories" },
+  { id: "pt_sup_poly_10mil",    name: "Poly 10mil (rolls)",                   unit: "rolls", category: "Supplies & Accessories" },
+  { id: "pt_sup_poly_2mil",     name: "Poly 2mil (sheets)",                   unit: "units", category: "Supplies & Accessories" },
+  // ── Fasteners ──
+  { id: "pt_fast_shots",        name: "Shots",                                 unit: "units", category: "Fasteners" },
+  { id: "pt_fast_bolts_plastic", name: "Plastic Bolts",                        unit: "units", category: "Fasteners" },
 ];
 
 // Returns deduction array for tube items using full-tube + loose-piece logic
@@ -5199,40 +5245,60 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             );
           };
 
-          // Simple flat inventory list for foam gun parts & project tools
+          // Simple flat inventory list for foam gun parts & project tools (with category grouping)
           const SimpleInvList = ({ items, invData, onUpdate }) => {
             const getQ = (id) => invData.find(r => r.itemId === id)?.qty || 0;
             const [editing, setEditing] = React.useState(null);
             const [editVal, setEditVal] = React.useState("");
             const dotColor = (q) => q === 0 ? "#ef4444" : q === 1 ? "#f59e0b" : "#22c55e";
             const qtyColor = (q) => q === 0 ? "#ef4444" : q === 1 ? "#f59e0b" : "#22c55e";
+            // Group by category if items have category field
+            const hasCategories = items.some(i => i.category);
+            const groups = hasCategories
+              ? items.reduce((acc, item) => {
+                  const cat = item.category || "Other";
+                  if (!acc[cat]) acc[cat] = [];
+                  acc[cat].push(item);
+                  return acc;
+                }, {})
+              : { "": items };
+            const renderItem = (item) => {
+              const qty = getQ(item.id);
+              const isEditing = editing === item.id;
+              return (
+                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
+                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor(qty), flexShrink: 0 }} />
+                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 500, color: "#1e293b" }}>{item.name}</span>
+                  <span style={{ fontSize: 11, color: "#94a3b8", marginRight: 4 }}>{item.unit}</span>
+                  {isEditing ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)-1); setEditVal(String(v)); }} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
+                      <input value={editVal} onChange={e => setEditVal(e.target.value)} style={{ width: 40, textAlign: "center", border: "1px solid #2563eb", borderRadius: 6, fontSize: 13, padding: "2px 4px", fontFamily: "inherit", outline: "none" }} />
+                      <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)+1); setEditVal(String(v)); }} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
+                      <button onClick={() => { const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onUpdate(item.id, v); setEditing(null); }} style={{ padding: "2px 8px", borderRadius: 6, border: "none", background: "#2563eb", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓</button>
+                      <button onClick={() => setEditing(null)} style={{ padding: "2px 6px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: qtyColor(qty), minWidth: 20, textAlign: "right" }}>{qty}</span>
+                      <button onClick={() => { setEditing(item.id); setEditVal(String(qty)); }} style={{ padding: "3px 9px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Edit</button>
+                    </div>
+                  )}
+                </div>
+              );
+            };
             return (
               <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
-                {items.map(item => {
-                  const qty = getQ(item.id);
-                  const isEditing = editing === item.id;
-                  return (
-                    <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor(qty), flexShrink: 0 }} />
-                      <span style={{ flex: 1, fontSize: 12.5, fontWeight: 500, color: "#1e293b" }}>{item.name}</span>
-                      <span style={{ fontSize: 11, color: "#94a3b8", marginRight: 4 }}>{item.unit}</span>
-                      {isEditing ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                          <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)-1); setEditVal(String(v)); }} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                          <input value={editVal} onChange={e => setEditVal(e.target.value)} style={{ width: 40, textAlign: "center", border: "1px solid #2563eb", borderRadius: 6, fontSize: 13, padding: "2px 4px", fontFamily: "inherit", outline: "none" }} />
-                          <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)+1); setEditVal(String(v)); }} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-                          <button onClick={() => { const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onUpdate(item.id, v); setEditing(null); }} style={{ padding: "2px 8px", borderRadius: 6, border: "none", background: "#2563eb", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓</button>
-                          <button onClick={() => setEditing(null)} style={{ padding: "2px 6px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
-                        </div>
-                      ) : (
-                        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: qtyColor(qty), minWidth: 20, textAlign: "right" }}>{qty}</span>
-                          <button onClick={() => { setEditing(item.id); setEditVal(String(qty)); }} style={{ padding: "3px 9px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Edit</button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
+                {Object.entries(groups).map(([cat, catItems]) => (
+                  <React.Fragment key={cat}>
+                    {cat && (
+                      <div style={{ padding: "5px 8px", background: "#f1f5f9", borderRadius: 6, marginTop: 4, marginBottom: 2 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>{cat}</span>
+                      </div>
+                    )}
+                    {catItems.map(renderItem)}
+                  </React.Fragment>
+                ))}
               </div>
             );
           };
