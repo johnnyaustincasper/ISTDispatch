@@ -5263,43 +5263,64 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   return acc;
                 }, {})
               : { "": items };
-            const renderItem = (item) => {
+            const [activeCat, setActiveCat] = React.useState('all');
+            const visibleItems = activeCat === 'all' ? items : (groups[activeCat] || []);
+            const renderCard = (item) => {
               const qty = getQ(item.id);
               const isEditing = editing === item.id;
+              const borderColor = qty === 0 ? '#ef4444' : qty <= 2 ? '#f59e0b' : '#22c55e';
+              const qtyColorVal = qty === 0 ? '#ef4444' : qty <= 2 ? '#f59e0b' : '#1e293b';
               return (
-                <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", background: "#fff", borderRadius: 8, border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-                  <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor(qty), flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: 500, color: "#1e293b" }}>{item.name}</span>
-                  <span style={{ fontSize: 11, color: "#94a3b8", marginRight: 4 }}>{item.unit}</span>
+                <div key={item.id} onClick={() => { if (!isEditing) { setEditing(item.id); setEditVal(String(qty)); } }}
+                  style={{
+                    background: '#fff',
+                    borderRadius: 6,
+                    padding: '6px 8px',
+                    cursor: isEditing ? 'default' : 'pointer',
+                    border: `1px solid ${isEditing ? '#2563eb' : '#e2e8f0'}`,
+                    borderLeftColor: borderColor,
+                    borderLeftWidth: 3,
+                    display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                    minHeight: 64,
+                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                    position: 'relative',
+                  }}>
+                  <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.id.toUpperCase()}</span>
+                  <span style={{ fontSize: 11, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>{item.name}</span>
                   {isEditing ? (
-                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)-1); setEditVal(String(v)); }} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" }}>−</button>
-                      <input value={editVal} onChange={e => setEditVal(e.target.value)} style={{ width: 40, textAlign: "center", border: "1px solid #2563eb", borderRadius: 6, fontSize: 13, padding: "2px 4px", fontFamily: "inherit", outline: "none" }} />
-                      <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)+1); setEditVal(String(v)); }} style={{ width: 26, height: 26, borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontFamily: "inherit", color: "#1e293b", display: "flex", alignItems: "center", justifyContent: "center" }}>+</button>
-                      <button onClick={() => { const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onUpdate(item.id, v); setEditing(null); }} style={{ padding: "2px 8px", borderRadius: 6, border: "none", background: "#2563eb", color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓</button>
-                      <button onClick={() => setEditing(null)} style={{ padding: "2px 6px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#fff", color: "#64748b", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>✕</button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginTop: 2 }} onClick={e => e.stopPropagation()}>
+                      <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)-1); setEditVal(String(v)); }} style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>−</button>
+                      <input value={editVal} onChange={e => setEditVal(e.target.value)} onClick={e => e.stopPropagation()}
+                        style={{ width: 32, textAlign: 'center', border: '1px solid #2563eb', borderRadius: 4, fontSize: 12, padding: '1px 2px', fontFamily: 'inherit', outline: 'none' }} />
+                      <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)+1); setEditVal(String(v)); }} style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
+                      <button onClick={(e) => { e.stopPropagation(); const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onUpdate(item.id, v); setEditing(null); }}
+                        style={{ width: 20, height: 20, borderRadius: 4, border: 'none', background: '#2563eb', color: '#fff', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</button>
+                      <button onClick={(e) => { e.stopPropagation(); setEditing(null); }}
+                        style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#fff', color: '#64748b', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
                     </div>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ fontSize: 14, fontWeight: 700, color: qtyColor(qty), minWidth: 20, textAlign: "right" }}>{qty}</span>
-                      <button onClick={() => { setEditing(item.id); setEditVal(String(qty)); }} style={{ padding: "3px 9px", borderRadius: 6, border: "1px solid #e2e8f0", background: "#f8fafc", color: "#475569", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Edit</button>
-                    </div>
+                    <span style={{ fontSize: 18, fontWeight: 800, color: qtyColorVal, lineHeight: 1 }}>{qty} <span style={{ fontSize: 9, fontWeight: 500, color: '#94a3b8' }}>{item.unit}</span></span>
                   )}
                 </div>
               );
             };
             return (
-              <div style={{ flex: 1, overflowY: "auto", padding: "8px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
-                {Object.entries(groups).map(([cat, catItems]) => (
-                  <React.Fragment key={cat}>
-                    {cat && (
-                      <div style={{ padding: "5px 8px", background: "#f1f5f9", borderRadius: 6, marginTop: 4, marginBottom: 2 }}>
-                        <span style={{ fontSize: 10, fontWeight: 700, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.06em" }}>{cat}</span>
-                      </div>
-                    )}
-                    {catItems.map(renderItem)}
-                  </React.Fragment>
-                ))}
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
+                {hasCategories && (
+                  <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '6px 10px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                    <button onClick={() => setActiveCat('all')} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeCat === 'all' ? '#2563eb' : '#fff', color: activeCat === 'all' ? '#fff' : '#64748b', border: '1px solid ' + (activeCat === 'all' ? '#2563eb' : '#e2e8f0') }}>
+                      All ({items.length})
+                    </button>
+                    {Object.keys(groups).map(cat => (
+                      <button key={cat} onClick={() => setActiveCat(cat)} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeCat === cat ? '#2563eb' : '#fff', color: activeCat === cat ? '#fff' : '#64748b', border: '1px solid ' + (activeCat === cat ? '#2563eb' : '#e2e8f0') }}>
+                        {cat} ({groups[cat].length})
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gridAutoRows: 'minmax(64px, auto)', gap: 4, padding: '6px 8px', overflowY: 'auto', alignContent: 'start' }}>
+                  {visibleItems.map(item => renderCard(item))}
+                </div>
               </div>
             );
           };
@@ -5457,32 +5478,74 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   );
                 };
 
+                const MFG_PILL_ORDER = ["Certainteed", "Owens Corning", "Johns Manville", "Foam", "Blown", "Other"];
+                const [activeMfg, setActiveMfg] = React.useState('all');
+                const allMfgItems = mfgGroups.map(g => g.items).flat();
+                const visibleMfgItems = activeMfg === 'all' ? allMfgItems : (mfgGroups.find(g => g.mfg === activeMfg)?.items || []);
+
+                const renderMatCard = (item) => {
+                  const qty = getQty(item.id);
+                  const status = stockStatus(qty);
+                  const sc = stockColors[status];
+                  const borderColor = sc.bar;
+                  const qtyColorVal = sc.text;
+                  const displayQty = isFoam(item.id) ? qty.toFixed(2) : qty;
+                  const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
+                  const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
+                  return (
+                    <div key={item.id}
+                      style={{
+                        background: '#fff',
+                        borderRadius: 6,
+                        padding: '6px 8px',
+                        border: '1px solid #e2e8f0',
+                        borderLeftColor: borderColor,
+                        borderLeftWidth: 3,
+                        display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
+                        minHeight: 64,
+                        boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
+                        position: 'relative',
+                      }}>
+                      <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.id.toUpperCase()}</span>
+                      <span style={{ fontSize: 11, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>{item.name}</span>
+                      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 2 }}>
+                        <span style={{ fontSize: 16, fontWeight: 800, color: qtyColorVal, lineHeight: 1 }}>{displayQty} <span style={{ fontSize: 9, fontWeight: 500, color: '#94a3b8' }}>{item.unit}</span></span>
+                        {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '1px 4px' }}>{pcsQty}pc</span> : null}
+                        <InventoryEditCell
+                          itemId={item.id}
+                          qty={qty}
+                          isFoam={isFoam(item.id)}
+                          bblToGals={bblToGals}
+                          galsToBbl={galsToBbl}
+                          pcsItem={pcsItem}
+                          pcsQty={pcsQty}
+                          onUpdateInventory={onUpdateInventory}
+                        />
+                      </div>
+                    </div>
+                  );
+                };
+
                 return (
-                  <div style={{ flex: 1, overflow: "auto", padding: "8px 10px" }}>
-                    {allEmpty ? (
-                      <div style={{ textAlign: "center", padding: "48px 16px", color: lk.textMuted, fontSize: 13 }}>No items match your current filters</div>
-                    ) : mfgGroups.map(({ mfg, items }) => {
-                      const outCount = items.filter(i => getQty(i.id) === 0).length;
-                      const lowCount = items.filter(i => { const q = getQty(i.id); return q > 0 && q <= 2; }).length;
-                      return (
-                        <div key={mfg} style={{ marginBottom: 8 }}>
-                          {/* Manufacturer header */}
-                          <div style={{ padding: "5px 10px", background: "#e8edf5", borderRadius: "6px 6px 0 0", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                            <span style={{ fontSize: 11, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: "0.8px" }}>
-                              {mfg} <span style={{ fontWeight: 500, fontSize: 10, color: "#64748b", textTransform: "none", letterSpacing: 0 }}>({items.length})</span>
-                            </span>
-                            <span style={{ display: "flex", gap: 4 }}>
-                              {outCount > 0 && <span style={{ fontSize: 9, fontWeight: 700, background: "#fef2f2", color: "#dc2626", border: "1px solid #fecaca", borderRadius: 99, padding: "1px 5px" }}>{outCount} OUT</span>}
-                              {lowCount > 0 && <span style={{ fontSize: 9, fontWeight: 700, background: "#fffbeb", color: "#d97706", border: "1px solid #fde68a", borderRadius: 99, padding: "1px 5px" }}>{lowCount} LOW</span>}
-                            </span>
-                          </div>
-                          <div style={{ border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 6px 6px", overflow: "hidden", background: lk.cardBg }}>
-                            {items.map(item => renderItemRow(item))}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <>
+                    {/* Manufacturer filter pills */}
+                    <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '6px 10px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+                      <button onClick={() => setActiveMfg('all')} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeMfg === 'all' ? '#2563eb' : '#fff', color: activeMfg === 'all' ? '#fff' : '#64748b', border: '1px solid ' + (activeMfg === 'all' ? '#2563eb' : '#e2e8f0') }}>
+                        All ({allMfgItems.length})
+                      </button>
+                      {mfgGroups.map(({ mfg, items: gItems }) => (
+                        <button key={mfg} onClick={() => setActiveMfg(mfg)} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeMfg === mfg ? '#2563eb' : '#fff', color: activeMfg === mfg ? '#fff' : '#64748b', border: '1px solid ' + (activeMfg === mfg ? '#2563eb' : '#e2e8f0') }}>
+                          {mfg} ({gItems.length})
+                        </button>
+                      ))}
+                    </div>
+                    {/* Dense card grid */}
+                    <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gridAutoRows: 'minmax(64px, auto)', gap: 4, padding: '6px 8px', overflowY: 'auto', alignContent: 'start' }}>
+                      {allEmpty ? (
+                        <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px 16px', color: lk.textMuted, fontSize: 13 }}>No items match your current filters</div>
+                      ) : visibleMfgItems.map(item => renderMatCard(item))}
+                    </div>
+                  </>
                 );
               })()}
 
