@@ -4630,6 +4630,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [editCrewSearch, setEditCrewSearch] = useState("");
   const [truckFilter, setTruckFilter] = useState(null);
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
+  const [dayFilter, setDayFilter] = useState(null);
+  const [expandedDays, setExpandedDays] = useState({});
+  const [crewMemberFilter, setCrewMemberFilter] = useState(null);
   const [showOngoing, setShowOngoing] = useState(false);
   const [showCheckHistory, setShowCheckHistory] = useState(false);
   const [showUsageTrends, setShowUsageTrends] = useState(false);
@@ -5086,6 +5089,36 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
 
+            {/* ─── WEEK STRIP ─── */}
+            {(() => {
+              const today = new Date();
+              const dow = today.getDay(); // 0=Sun
+              // Start of week = Monday
+              const startOfWeek = new Date(today);
+              startOfWeek.setDate(today.getDate() - ((dow + 6) % 7));
+              const dayAbbrs = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+              return (
+                <div style={{ display: "flex", gap: 6, marginBottom: 14, overflowX: "auto", paddingBottom: 4 }}>
+                  {dayAbbrs.map((abbr, i) => {
+                    const d = new Date(startOfWeek);
+                    d.setDate(startOfWeek.getDate() + i);
+                    const dateStr = d.toISOString().slice(0, 10);
+                    const count = activeJobs.filter(j => j.date === dateStr).length;
+                    const isToday = dateStr === today.toISOString().slice(0, 10);
+                    const isSelected = dayFilter === dateStr;
+                    const pillBg = count === 0 ? "#e5e7eb" : count <= 3 ? "#dcfce7" : count <= 6 ? "#fef9c3" : "#fee2e2";
+                    const pillColor = count === 0 ? "#6b7280" : count <= 3 ? "#15803d" : count <= 6 ? "#854d0e" : "#dc2626";
+                    return (
+                      <button key={dateStr} onClick={() => setDayFilter(isSelected ? null : dateStr)} style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "8px 10px", borderRadius: 10, border: isToday ? "2px solid #2563eb" : isSelected ? "2px solid #7c3aed" : "2px solid transparent", background: isSelected ? "#ede9fe" : pillBg, cursor: "pointer", fontFamily: "inherit", minWidth: 52, flexShrink: 0 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: isSelected ? "#7c3aed" : pillColor }}>{abbr} {d.getDate()}</span>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: isSelected ? "#7c3aed" : pillColor }}>{count}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+
             {(() => { const uncheckedCount = activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes").length; return (
             <SectionHeader title={scheduleView === "energySeal" ? "Energy Seal Schedule" : "Schedule"} right={<>
               {uncheckedCount > 0 && <button onClick={() => setShowUncheckedOnly(!showUncheckedOnly)} style={{ padding: "6px 12px", border: "1px solid " + (showUncheckedOnly ? t.danger : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showUncheckedOnly ? t.dangerBg : "#fff", color: showUncheckedOnly ? t.danger : t.textMuted }}>{showUncheckedOnly ? "Show All" : uncheckedCount + " Unchecked"}</button>}
@@ -5124,58 +5157,27 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
             {(() => {
-              const displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
+              let displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
+              if (dayFilter) displayJobs = displayJobs.filter(j => j.date === dayFilter);
+              if (crewMemberFilter) displayJobs = displayJobs.filter(j => (j.crewMemberIds || []).includes(crewMemberFilter));
+              if (truckFilter) displayJobs = displayJobs.filter(j => j.truckId === truckFilter);
               if (displayJobs.length === 0) return <EmptyState text={showUncheckedOnly ? "All jobs have been checked." : "No active jobs."} />;
-              const unassignedCrew = displayJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
-              // Group jobs by their assigned crew member combo (sorted IDs joined as key)
-              const crewGroupMap = {};
-              displayJobs.forEach((j) => {
-                const ids = (j.crewMemberIds || []).filter(Boolean).sort();
-                const key = ids.length > 0 ? ids.join(",") : "_unassigned";
-                if (!crewGroupMap[key]) {
-                  const names = ids.map(id => members.find(m => m.id === id)?.name).filter(Boolean);
-                  crewGroupMap[key] = { key, names, jobs: [] };
-                }
-                crewGroupMap[key].jobs.push(j);
-              });
-              const crewGroups = Object.values(crewGroupMap).sort((a, b) => {
-                if (a.key === "_unassigned") return 1;
-                if (b.key === "_unassigned") return -1;
-                return (a.names[0] || "").localeCompare(b.names[0] || "");
-              }).filter((g) => !truckFilter || g.jobs.some(j => j.truckId === truckFilter));
-              return <>
-                {unassignedCrew.length > 0 && (
-                  <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px", display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ fontSize: "18px" }}>⚠️</span>
-                    <div>
-                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#92400e" }}>{unassignedCrew.length} job{unassignedCrew.length !== 1 ? "s" : ""} with no employees assigned</div>
-                      <div style={{ fontSize: "11px", color: "#78350f", marginTop: "2px" }}>{unassignedCrew.map(j => j.builder || j.address).join(", ")}</div>
-                    </div>
-                  </div>
-                )}
-                {crewGroups.map((group) => (
-                <div key={group.key} style={{ marginBottom: "20px" }}>
-                  {(() => {
-                    const headerName = group.names.length > 0 ? group.names.join(" and ") : "Unassigned";
-                    return (
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
-                        <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{headerName}</div>
 
-                        <Badge>{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
-                      </div>
-                    );
-                  })()}
-                  {group.jobs.map((job) => {
+              // ─── Helper to render a single job card ───
+              const renderJobCard = (job) => {
                     const latest = getLatestUpdate(job.id);
                     const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
                     const jobStatusUpdates = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     const jobPmUpds = pmUpdates.filter((p) => p.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     const isChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
-                    const partialCheck = job.jobCheckedAM === "Yes" || job.jobCheckedPM === "Yes";
                     const isExpanded = !!expandedJobs[job.id];
+                    const latestUpd = jobStatusUpdates[0];
+                    const jobIsActive = !latestUpd || (latestUpd.status !== "completed");
+                    const noCrew = (job.crewMemberIds || []).filter(Boolean).length === 0;
+                    const uncheckedActive = jobIsActive && (job.jobCheckedAM !== "Yes" || job.jobCheckedPM !== "Yes");
+                    const matCostBadge = job.closedOut ? calcJobMaterialCost(job) : null;
                     return (
-                      <Card key={job.id} style={{ marginLeft: "8px", padding: "14px 16px" }}>
-
+                      <Card key={job.id} style={{ marginLeft: dayFilter ? 0 : "8px", padding: "14px 16px" }}>
                         {/* Top row — customer + expand toggle */}
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", cursor: "pointer" }} onClick={() => toggleJobExpand(job.id)}>
                           <div style={{ flex: 1, minWidth: 0 }}>
@@ -5187,7 +5189,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             <span style={{ fontSize: "14px", color: t.textMuted, lineHeight: 1 }}>{isExpanded ? "▲" : "▼"}</span>
                           </div>
                         </div>
-
                         {/* Pill row — always visible */}
                         <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "10px", flexWrap: "wrap" }}>
                           {job.amGeoTag
@@ -5198,14 +5199,19 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             : <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>}
                           <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "2px" }}>{job.type}</span>
                           {job.jobCategory && <span style={{ fontSize: "11px", fontWeight: 600, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}
+                          {/* Warning badges */}
+                          {noCrew && <span title="No crew assigned" style={{ fontSize: 13 }}>🚫</span>}
+                          {uncheckedActive && <span title="Not fully checked" style={{ fontSize: 13 }}>⚠️</span>}
+                          {/* Revenue badge */}
+                          {job.revenue ? <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: "20px", background: "#dcfce7", color: "#15803d" }}>${Number(job.revenue).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span> : null}
+                          {/* Material cost badge (closed out jobs) */}
+                          {matCostBadge > 0 && <span style={{ fontSize: "11px", fontWeight: 700, padding: "3px 8px", borderRadius: "20px", background: "#fef3c7", color: "#92400e" }}>Mat: ${matCostBadge.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>}
                           <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>{new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
                         </div>
-
                         {/* Expanded detail */}
                         {isExpanded && (
                           <>
                             {job.notes && <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "10px", fontStyle: "italic", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>{job.notes}</div>}
-
                             <div style={{ display: "flex", gap: "16px", marginTop: "12px", flexWrap: "wrap" }}>
                               <div style={{ flex: "1 1 45%", minWidth: "200px" }}>
                                 <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600, paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>Crew Updates</div>
@@ -5240,12 +5246,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 ))}
                               </div>
                             </div>
-
                             {/* Quick crew assignment */}
                             {(() => {
                               const assignedIds = (job.crewMemberIds || []).filter(Boolean);
-                              const latestUpd = jobStatusUpdates[0];
-                              const isActive = latestUpd && (latestUpd.status === "in_progress" || latestUpd.status === "completed");
+                              const isActive2 = latestUpd && (latestUpd.status === "in_progress" || latestUpd.status === "completed");
                               return (
                                 <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
                                   <div style={{ fontSize: "11px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px" }}>Assigned Crew</div>
@@ -5257,7 +5261,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                           {m.name}
                                           <button onClick={async () => {
                                             const newIds = assignedIds.filter(i => i !== id);
-                                            if (isActive && onAddJobUpdate) await onAddJobUpdate({ jobId: job.id, type: "crew_removed", removedMemberId: id, date: todayCST(), timestamp: new Date().toISOString() });
+                                            if (isActive2 && onAddJobUpdate) await onAddJobUpdate({ jobId: job.id, type: "crew_removed", removedMemberId: id, date: todayCST(), timestamp: new Date().toISOString() });
                                             await onEditJob(job.id, { ...job, crewMemberIds: newIds });
                                           }} style={{ background: "none", border: "none", cursor: "pointer", color: "#93c5fd", fontSize: "12px", lineHeight: 1, padding: 0, fontFamily: "inherit" }} title="Remove from job">×</button>
                                         </span>
@@ -5266,7 +5270,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                     {members.filter(m => !assignedIds.includes(m.id)).map(m => (
                                       <button key={m.id} onClick={async () => {
                                         const newIds = [...assignedIds, m.id];
-                                        if (isActive && onAddJobUpdate) await onAddJobUpdate({ jobId: job.id, type: "crew_added", addedMemberId: m.id, date: todayCST(), timestamp: new Date().toISOString() });
+                                        if (isActive2 && onAddJobUpdate) await onAddJobUpdate({ jobId: job.id, type: "crew_added", addedMemberId: m.id, date: todayCST(), timestamp: new Date().toISOString() });
                                         await onEditJob(job.id, { ...job, crewMemberIds: newIds });
                                       }} style={{ fontSize: "11px", fontWeight: 500, background: "transparent", color: t.textMuted, padding: "3px 8px", borderRadius: "14px", border: "1px dashed " + t.border, cursor: "pointer", fontFamily: "inherit" }} title={"Add " + m.name}>+ {m.name.split(" ")[0]}</button>
                                     ))}
@@ -5306,12 +5310,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 </div>
                               );
                             })()}
-
                             {/* Photos section */}
                             <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
                               <JobPhotosSection job={job} canDelete={["Johnny","Jordan","Skip","Duck","Carolyn"].includes(adminName)} uploaderName={adminName} emptyText="No photos yet — crew will upload from their jobs" />
                             </div>
-
                             {/* Action row */}
                             <div style={{ display: "flex", gap: "8px", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid " + t.borderLight }}>
                               <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>PM Note</Button>
@@ -5323,9 +5325,120 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                         )}
                       </Card>
                     );
-                  })}
+              };
+
+              // ─── Crew sidebar data ───
+              const todayStr2 = new Date().toISOString().slice(0, 10);
+              const startOfWeek2 = (() => { const d = new Date(); d.setDate(d.getDate() - ((d.getDay() + 6) % 7)); return d.toISOString().slice(0, 10); })();
+              const endOfWeek2 = (() => { const d = new Date(); d.setDate(d.getDate() + (6 - ((d.getDay() + 6) % 7))); return d.toISOString().slice(0, 10); })();
+
+              const crewSidebar = (
+                <div style={{ width: 220, flexShrink: 0, position: "sticky", top: 80, alignSelf: "flex-start", display: "none" }} className="crew-sidebar-desktop">
+                  <style>{`@media(min-width:768px){.crew-sidebar-desktop{display:block!important;}}`}</style>
+                  <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, overflow: "hidden" }}>
+                    <div style={{ padding: "10px 14px", borderBottom: "1px solid " + t.border, fontSize: 13, fontWeight: 700, color: t.text }}>👥 Crew Today</div>
+                    {members.map(m => {
+                      const todayCount = activeJobs.filter(j => (j.crewMemberIds || []).includes(m.id) && j.date === todayStr2).length;
+                      const weekCount = activeJobs.filter(j => (j.crewMemberIds || []).includes(m.id) && j.date >= startOfWeek2 && j.date <= endOfWeek2).length;
+                      const dotColor = todayCount === 0 ? "#d1d5db" : todayCount <= 2 ? "#16a34a" : todayCount === 3 ? "#ca8a04" : "#dc2626";
+                      const isSelected = crewMemberFilter === m.id;
+                      return (
+                        <button key={m.id} onClick={() => setCrewMemberFilter(isSelected ? null : m.id)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "9px 14px", background: isSelected ? t.accentBg : "transparent", border: "none", borderBottom: "1px solid " + t.borderLight, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                          <span style={{ width: 9, height: 9, borderRadius: "50%", background: dotColor, flexShrink: 0, display: "inline-block" }} />
+                          <span style={{ flex: 1, fontSize: 13, fontWeight: isSelected ? 700 : 500, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{m.name.split(" ")[0]}</span>
+                          <span style={{ fontSize: 11, color: t.textMuted, flexShrink: 0 }}>{todayCount}d · {weekCount}w</span>
+                        </button>
+                      );
+                    })}
+                    {crewMemberFilter && <button onClick={() => setCrewMemberFilter(null)} style={{ width: "100%", padding: "8px 14px", fontSize: 11, color: t.accent, background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>✕ Clear filter</button>}
+                  </div>
                 </div>
-              ))}</>
+              );
+
+              const unassignedCrew = displayJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
+
+              // ─── DAY FILTER MODE: group by date ───
+              if (dayFilter) {
+                const dayJobCount = displayJobs.length;
+                const dayCrewIds = new Set(displayJobs.flatMap(j => (j.crewMemberIds || []).filter(Boolean)));
+                const capPct = Math.min((dayJobCount / 8) * 100, 100);
+                const capColor = capPct < 50 ? "#16a34a" : capPct < 80 ? "#ca8a04" : "#dc2626";
+                const dayLabel = new Date(dayFilter + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+                return (
+                  <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ marginBottom: 12 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontSize: 14, fontWeight: 700, color: t.text }}>{dayLabel}</span>
+                          <Badge>{dayJobCount} job{dayJobCount !== 1 ? "s" : ""}</Badge>
+                          <Badge>{dayCrewIds.size} crew</Badge>
+                        </div>
+                        <div style={{ height: 5, borderRadius: 3, background: t.borderLight, overflow: "hidden", marginBottom: 8 }}>
+                          <div style={{ height: "100%", width: capPct + "%", background: capColor, borderRadius: 3, transition: "width 0.3s" }} />
+                        </div>
+                      </div>
+                      {unassignedCrew.length > 0 && (
+                        <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ fontSize: "18px" }}>⚠️</span>
+                          <div>
+                            <div style={{ fontSize: "13px", fontWeight: 700, color: "#92400e" }}>{unassignedCrew.length} job{unassignedCrew.length !== 1 ? "s" : ""} with no employees assigned</div>
+                            <div style={{ fontSize: "11px", color: "#78350f", marginTop: "2px" }}>{unassignedCrew.map(j => j.builder || j.address).join(", ")}</div>
+                          </div>
+                        </div>
+                      )}
+                      {displayJobs.map(job => renderJobCard(job))}
+                    </div>
+                    {crewSidebar}
+                  </div>
+                );
+              }
+
+              // ─── DEFAULT MODE: group by crew ───
+              const crewGroupMap = {};
+              displayJobs.forEach((j) => {
+                const ids = (j.crewMemberIds || []).filter(Boolean).sort();
+                const key = ids.length > 0 ? ids.join(",") : "_unassigned";
+                if (!crewGroupMap[key]) {
+                  const names = ids.map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+                  crewGroupMap[key] = { key, names, jobs: [] };
+                }
+                crewGroupMap[key].jobs.push(j);
+              });
+              const crewGroups = Object.values(crewGroupMap).sort((a, b) => {
+                if (a.key === "_unassigned") return 1;
+                if (b.key === "_unassigned") return -1;
+                return (a.names[0] || "").localeCompare(b.names[0] || "");
+              });
+              return (
+                <div style={{ display: "flex", gap: 16, alignItems: "flex-start" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                {unassignedCrew.length > 0 && (
+                  <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                    <span style={{ fontSize: "18px" }}>⚠️</span>
+                    <div>
+                      <div style={{ fontSize: "13px", fontWeight: 700, color: "#92400e" }}>{unassignedCrew.length} job{unassignedCrew.length !== 1 ? "s" : ""} with no employees assigned</div>
+                      <div style={{ fontSize: "11px", color: "#78350f", marginTop: "2px" }}>{unassignedCrew.map(j => j.builder || j.address).join(", ")}</div>
+                    </div>
+                  </div>
+                )}
+                {crewGroups.map((group) => (
+                <div key={group.key} style={{ marginBottom: "20px" }}>
+                  {(() => {
+                    const headerName = group.names.length > 0 ? group.names.join(" and ") : "Unassigned";
+                    return (
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
+                        <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{headerName}</div>
+                        <Badge>{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
+                      </div>
+                    );
+                  })()}
+                  {group.jobs.map(job => renderJobCard(job))}
+                </div>
+              ))}
+                  </div>
+                  {crewSidebar}
+                </div>
+              );
             })()}
               </div>{/* end left column */}
 
