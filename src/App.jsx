@@ -167,7 +167,7 @@ const PROJECT_TOOLS_ITEMS = [
   { id: "pt_ppe_3m_filters",    name: "3M Triangular Filters",                 unit: "units", category: "PPE" },
   { id: "pt_ppe_bullard_filt",  name: "Bullard Filters",                       unit: "units", category: "PPE" },
   { id: "pt_ppe_bullard_resp",  name: "Bullard Respirator",                    unit: "units", category: "PPE" },
-  { id: "pt_ppe_curry_comb",    name: "Curry Combs",                           unit: "units", category: "PPE" },
+  { id: "pt_ppe_curry_comb",    name: "Curry Combs",                           unit: "units", category: "Hand Tools" },
   { id: "pt_ppe_earplugs",      name: "Ear Plugs (case)",                      unit: "cases", category: "PPE" },
   { id: "pt_ppe_head_socks",    name: "Head Socks Black (box)",                unit: "boxes", category: "PPE" },
   { id: "pt_ppe_honeywell",     name: "Honeywell Filters",                     unit: "units", category: "PPE" },
