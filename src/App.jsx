@@ -4379,9 +4379,231 @@ async function generateJobPDF(job, updates, pmUpdates, members) {
   doc2.save(`IST_Report_${safeName}_${job.date || "unknown"}.pdf`);
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools }) {
+// ─── WMO weather code → emoji / description ───
+function wmoEmoji(code) {
+  if (code === 0) return "☀️";
+  if (code <= 3) return "🌤️";
+  if (code === 45 || code === 48) return "🌫️";
+  if (code >= 51 && code <= 67) return "🌧️";
+  if (code >= 71 && code <= 77) return "❄️";
+  if (code >= 80 && code <= 82) return "🌦️";
+  if (code >= 95 && code <= 99) return "⛈️";
+  return "🌤️";
+}
+function wmoDesc(code) {
+  if (code === 0) return "Clear sky";
+  if (code <= 3) return "Partly cloudy";
+  if (code === 45 || code === 48) return "Foggy";
+  if (code >= 51 && code <= 55) return "Drizzle";
+  if (code >= 56 && code <= 57) return "Freezing drizzle";
+  if (code >= 61 && code <= 65) return "Rain";
+  if (code >= 66 && code <= 67) return "Freezing rain";
+  if (code >= 71 && code <= 77) return "Snow";
+  if (code >= 80 && code <= 82) return "Rain showers";
+  if (code >= 95 && code <= 99) return "Thunderstorm";
+  return "Cloudy";
+}
+
+function WeatherTab({ jobs, trucks }) {
+  const geocacheRef = React.useRef({});
+  const [weatherData, setWeatherData] = React.useState({});
+  const [loadingSet, setLoadingSet] = React.useState(new Set());
+  const [dispatchOpen, setDispatchOpen] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  const activeJobs = (jobs || []).filter(j => !j.closedOut);
+  const todayLabel = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const todayISO = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
+
+  const fetchWeatherForAddress = React.useCallback(async (address) => {
+    if (!address) return;
+    setLoadingSet(prev => { const s = new Set(prev); s.add(address); return s; });
+    try {
+      let lat, lon;
+      if (geocacheRef.current[address]) {
+        ({ lat, lon } = geocacheRef.current[address]);
+      } else {
+        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(address)}&count=1&language=en&format=json`);
+        const geoData = await geoRes.json();
+        if (!geoData.results?.length) throw new Error("Not found");
+        lat = geoData.results[0].latitude;
+        lon = geoData.results[0].longitude;
+        geocacheRef.current[address] = { lat, lon };
+      }
+      const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation_probability,weathercode,windspeed_10m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago&forecast_days=2`);
+      const wxData = await wxRes.json();
+      setWeatherData(prev => ({ ...prev, [address]: wxData }));
+    } catch {
+      setWeatherData(prev => ({ ...prev, [address]: { error: true } }));
+    } finally {
+      setLoadingSet(prev => { const s = new Set(prev); s.delete(address); return s; });
+    }
+  }, []);
+
+  const fetchedRef = React.useRef(new Set());
+  React.useEffect(() => {
+    const unique = [...new Set(activeJobs.map(j => j.address).filter(Boolean))];
+    unique.forEach(addr => {
+      if (!fetchedRef.current.has(addr) && !weatherData[addr]) {
+        fetchedRef.current.add(addr);
+        fetchWeatherForAddress(addr);
+      }
+    });
+  });
+
+  const getHoursForToday = (wx) => {
+    if (!wx || wx.error || !wx.hourly) return [];
+    return (wx.hourly.time || []).map((t, i) => ({
+      time: t, temp: wx.hourly.temperature_2m[i],
+      precip: wx.hourly.precipitation_probability[i],
+      code: wx.hourly.weathercode[i], wind: wx.hourly.windspeed_10m[i],
+    })).filter(h => {
+      if (!h.time.startsWith(todayISO)) return false;
+      const hr = parseInt(h.time.slice(11, 13), 10);
+      return hr >= 6 && hr <= 18;
+    });
+  };
+
+  const getCurrentConditions = (wx) => {
+    if (!wx || wx.error || !wx.hourly) return null;
+    const now = new Date();
+    const chicagoNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
+    const chiISO = `${todayISO}T${String(chicagoNow.getHours()).padStart(2, "0")}:00`;
+    const idx = (wx.hourly.time || []).findIndex(t => t === chiISO);
+    if (idx < 0) return null;
+    return { temp: wx.hourly.temperature_2m[idx], code: wx.hourly.weathercode[idx], wind: wx.hourly.windspeed_10m[idx], precip: wx.hourly.precipitation_probability[idx] };
+  };
+
+  const precipColor = (pct) => pct < 20 ? "#16a34a" : pct < 50 ? "#ca8a04" : "#dc2626";
+
+  const buildDispatchText = () => {
+    const lines = [`MORNING DISPATCH — ${todayLabel}`, "================================"];
+    const truckGroups = {};
+    activeJobs.forEach(job => {
+      const key = job.truckId || "__unassigned";
+      if (!truckGroups[key]) truckGroups[key] = [];
+      truckGroups[key].push(job);
+    });
+    Object.entries(truckGroups).forEach(([truckId, groupJobs]) => {
+      const truck = trucks.find(t => t.id === truckId);
+      const label = truck ? (truck.members || truck.name) : "Unassigned";
+      lines.push(`\n${label}`);
+      lines.push(`Jobs: ${groupJobs.length}`);
+      const advisories = new Set();
+      groupJobs.forEach(job => {
+        const wx = weatherData[job.address];
+        const cur = getCurrentConditions(wx);
+        const hours = getHoursForToday(wx);
+        const wxStr = cur ? `${Math.round(cur.temp)}°F, ${wmoDesc(cur.code)}` : "weather unavailable";
+        lines.push(`  • ${job.address || "No address"} — ${job.type || "N/A"} (${wxStr})`);
+        if (hours.some(h => h.precip > 60)) advisories.add("⚠️ Rain likely — check before dispatching");
+        if (hours.some(h => h.temp < 40)) advisories.add("🧊 Cold — spray foam may be affected");
+      });
+      if (advisories.size > 0) lines.push(`Weather advisory: ${[...advisories].join("; ")}`);
+    });
+    return lines.join("\n");
+  };
+
+  return (
+    <div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+        <div>
+          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>☁️ Weather — Job Sites</h2>
+          <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{todayLabel}</div>
+        </div>
+      </div>
+
+      {activeJobs.length === 0 && (
+        <div style={{ textAlign: "center", padding: "60px 20px", color: "#94a3b8", fontSize: 15 }}>No active jobs.</div>
+      )}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        {activeJobs.map(job => {
+          const wx = weatherData[job.address];
+          const loading = loadingSet.has(job.address);
+          const hours = getHoursForToday(wx);
+          const cur = getCurrentConditions(wx);
+          const hasRain = hours.some(h => h.precip > 60);
+          const hasCold = hours.some(h => h.temp < 40);
+          return (
+            <div key={job.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+              <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid #f1f5f9" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 700, fontSize: 14, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={job.address}>{job.address || "No address"}</div>
+                    <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{job.builder || "No customer"}</div>
+                  </div>
+                  {job.type && <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, background: "#dbeafe", color: "#1d4ed8", borderRadius: 6, padding: "3px 8px" }}>{job.type}</span>}
+                </div>
+              </div>
+              {hasRain && <div style={{ padding: "8px 16px", background: "#fee2e2", color: "#b91c1c", fontSize: 13, fontWeight: 600 }}>⚠️ Rain likely — check before dispatching</div>}
+              {hasCold && <div style={{ padding: "8px 16px", background: "#fef3c7", color: "#92400e", fontSize: 13, fontWeight: 600 }}>🧊 Cold — spray foam may be affected</div>}
+              <div style={{ padding: "12px 16px" }}>
+                {loading && <div style={{ color: "#94a3b8", fontSize: 13, padding: "8px 0" }}>Loading weather...</div>}
+                {!loading && wx?.error && <div style={{ color: "#ef4444", fontSize: 13 }}>Could not load weather for this address.</div>}
+                {!loading && cur && (
+                  <div style={{ display: "flex", gap: 20, alignItems: "center", marginBottom: hours.length > 0 ? 12 : 0 }}>
+                    <div style={{ fontSize: 36, lineHeight: 1 }}>{wmoEmoji(cur.code)}</div>
+                    <div>
+                      <div style={{ fontSize: 28, fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{Math.round(cur.temp)}°F</div>
+                      <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>{wmoDesc(cur.code)} · 💨 {Math.round(cur.wind)} mph</div>
+                    </div>
+                  </div>
+                )}
+                {!loading && hours.length > 0 && (
+                  <div style={{ display: "flex", overflowX: "auto", gap: 8, paddingBottom: 4 }}>
+                    {hours.map((h, i) => {
+                      const hr = parseInt(h.time.slice(11, 13), 10);
+                      const ampm = hr >= 12 ? "PM" : "AM";
+                      const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+                      return (
+                        <div key={i} style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "8px 10px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0", minWidth: 54 }}>
+                          <div style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>{h12}{ampm}</div>
+                          <div style={{ fontSize: 16 }}>{wmoEmoji(h.code)}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{Math.round(h.temp)}°</div>
+                          <div style={{ fontSize: 10, fontWeight: 700, color: precipColor(h.precip) }}>{h.precip}%</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {activeJobs.length > 0 && (
+        <div style={{ marginTop: 28, background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+          <button onClick={() => setDispatchOpen(p => !p)} style={{ width: "100%", padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", borderBottom: dispatchOpen ? "1px solid #e2e8f0" : "none" }}>
+            <span style={{ fontWeight: 700, fontSize: 15, color: "#0f172a" }}>📋 Morning Dispatch Brief</span>
+            <span style={{ fontSize: 16, color: "#64748b" }}>{dispatchOpen ? "▲" : "▼"}</span>
+          </button>
+          {dispatchOpen && (
+            <div style={{ padding: 16 }}>
+              <pre style={{ background: "#f8fafc", borderRadius: 8, padding: 14, fontSize: 12, color: "#1e293b", overflowX: "auto", whiteSpace: "pre-wrap", fontFamily: "monospace", lineHeight: 1.6, margin: 0 }}>{buildDispatchText()}</pre>
+              <button onClick={() => { navigator.clipboard.writeText(buildDispatchText()).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2500); }); }} style={{ marginTop: 12, padding: "10px 20px", background: copied ? "#16a34a" : "#2563eb", color: "#fff", border: "none", borderRadius: 8, cursor: "pointer", fontFamily: "inherit", fontWeight: 700, fontSize: 13, transition: "background 0.2s" }}>
+                {copied ? "✅ Copied!" : "📋 Copy to Clipboard"}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
+  // Builders DB state
+  const [builderSearchQuery, setBuilderSearchQuery] = useState("");
+  const [showAddBuilder, setShowAddBuilder] = useState(false);
+  const [editingBuilder, setEditingBuilder] = useState(null);
+  const [builderForm, setBuilderForm] = useState({ name: "", contact: "", address: "", notes: "", tags: [] });
+  const [expandedBuilders, setExpandedBuilders] = useState({});
+  const [quickRevenueJobId, setQuickRevenueJobId] = useState(null);
+  const [quickRevenueVal, setQuickRevenueVal] = useState("");
   const [showAddJob, setShowAddJob] = useState(false);
   const [showTakeoffImport, setShowTakeoffImport] = useState(false);
   const [takeoffQuotes, setTakeoffQuotes] = useState([]);
@@ -4393,7 +4615,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [truckDetailView, setTruckDetailView] = useState(null);
   const [showAdminTicketForm, setShowAdminTicketForm] = useState(false);
   const [adminTicketForm, setAdminTicketForm] = useState({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
-  const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "" });
+  const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "" });
+  const [builderSearch, setBuilderSearch] = useState("");
+  const [showBuilderDropdown, setShowBuilderDropdown] = useState(false);
   const [addCrewSearch, setAddCrewSearch] = useState("");
   const [truckForm, setTruckForm] = useState({ name: "", members: "" });
   const [activeTicket, setActiveTicket] = useState(null);
@@ -4402,7 +4626,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [ticketFilter, setTicketFilter] = useState("active");
   const [ticketTypeTab, setTicketTypeTab] = useState("equipment");
   const [editingJob, setEditingJob] = useState(null);
-  const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", crewMemberIds: [], date: "", notes: "", jobCategory: "" });
+  const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", crewMemberIds: [], date: "", notes: "", jobCategory: "", revenue: "" });
   const [editCrewSearch, setEditCrewSearch] = useState("");
   const [truckFilter, setTruckFilter] = useState(null);
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
@@ -4497,7 +4721,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
-  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); onAddJob({ ...jobForm, crewMemberIds: cleanCrew }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "" }); setAddCrewSearch(""); setShowAddJob(false); };
+  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null; onAddJob({ ...jobForm, crewMemberIds: cleanCrew, revenue: revenueVal }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "" }); setAddCrewSearch(""); setBuilderSearch(""); setShowBuilderDropdown(false); setShowAddJob(false); };
 
   const openTakeoffImport = async () => {
     setShowTakeoffImport(true);
@@ -4535,7 +4759,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     onReorderTruck(b.id, a.order ?? idx);
   };
   const handleTicketUpdate = () => { onUpdateTicket(activeTicket.id, { status: ticketStatus, adminNote: ticketNote }); onLogAction("Updated ticket for " + activeTicket.truckName + " to " + ticketStatus); setActiveTicket(null); setTicketStatus("acknowledged"); setTicketNote(""); };
-  const openEditJob = (job) => { setEditingJob(job); setEditCrewSearch(""); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", crewMemberIds: (job.crewMemberIds || []).filter(Boolean), date: job.date, notes: job.notes || "", jobCategory: job.jobCategory || "" }); };
+  const openEditJob = (job) => { setEditingJob(job); setEditCrewSearch(""); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", crewMemberIds: (job.crewMemberIds || []).filter(Boolean), date: job.date, notes: job.notes || "", jobCategory: job.jobCategory || "", revenue: job.revenue != null ? String(job.revenue) : "" }); };
   const handleSaveEdit = async () => {
     const cleanCrew = (editForm.crewMemberIds || []).filter(Boolean);
     const oldCrew = (editingJob.crewMemberIds || []).filter(Boolean);
@@ -4557,7 +4781,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         }
       }
     }
-    await onEditJob(editingJob.id, { ...editForm, crewMemberIds: cleanCrew });
+    const revenueVal = editForm.revenue !== "" ? parseFloat(editForm.revenue) : null;
+    await onEditJob(editingJob.id, { ...editForm, crewMemberIds: cleanCrew, revenue: revenueVal });
     onLogAction("Edited job: " + editForm.address);
     setEditingJob(null);
   };
@@ -4656,6 +4881,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     inventory: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"/></svg>,
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
     tools: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>,
+    builders: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+    weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
   };
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule", badge: needsCheckJobs.length },
@@ -4665,7 +4892,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     { key: "tools", label: "Tools" },
     { key: "inventory", label: "Inventory" },
     { key: "roster", label: "Roster" },
+    { key: "builders", label: "Builders" },
     { key: "log", label: "Log" },
+    { key: "weather", label: "Weather" },
   ];
 
   return (
@@ -5923,6 +6152,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             ))}
           </>
         )}
+
+        {view === "weather" && (
+          <WeatherTab jobs={jobs} trucks={trucks} />
+        )}
       </div>
 
       {showTakeoffImport && (
@@ -5956,7 +6189,51 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           <div style={{ marginBottom: "12px" }}>
             <button onClick={openTakeoffImport} style={{ width: "100%", padding: "10px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", color: "#1d4ed8", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📋 Import from Takeoff</button>
           </div>
-          <Input label="Builder / Customer" placeholder="e.g. Smith Residence, ABC Builders" value={jobForm.builder} onChange={(e) => setJobForm({ ...jobForm, builder: e.target.value })} inputMode="text" autoComplete="off" />
+          {/* Builder / Customer with typeahead */}
+          <div style={{ marginBottom: "16px", position: "relative" }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Builder / Customer</label>
+            <input
+              type="text"
+              placeholder="e.g. Smith Residence, ABC Builders"
+              value={jobForm.builder}
+              onChange={(e) => {
+                setJobForm({ ...jobForm, builder: e.target.value });
+                setBuilderSearch(e.target.value);
+                setShowBuilderDropdown(true);
+              }}
+              onFocus={() => { setBuilderSearch(jobForm.builder); setShowBuilderDropdown(true); }}
+              onBlur={() => setTimeout(() => setShowBuilderDropdown(false), 150)}
+              inputMode="text"
+              autoComplete="off"
+              style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }}
+            />
+            {showBuilderDropdown && (builders || []).filter(b => b.name.toLowerCase().includes((builderSearch || "").toLowerCase())).length > 0 && (
+              <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: "#fff", border: "1px solid " + t.border, borderRadius: "0 0 8px 8px", zIndex: 1000, boxShadow: "0 4px 12px rgba(0,0,0,0.1)", maxHeight: 200, overflowY: "auto" }}>
+                {(builders || []).filter(b => b.name.toLowerCase().includes((builderSearch || "").toLowerCase())).slice(0, 6).map(b => {
+                  const bJobs = jobs.filter(j => (j.builder || "").toLowerCase() === b.name.toLowerCase());
+                  return (
+                    <div key={b.id} onMouseDown={() => { setJobForm({ ...jobForm, builder: b.name }); setBuilderSearch(b.name); setShowBuilderDropdown(false); }} style={{ padding: "10px 12px", cursor: "pointer", borderBottom: "1px solid " + t.borderLight }} onMouseEnter={e => e.currentTarget.style.background = t.bg} onMouseLeave={e => e.currentTarget.style.background = "#fff"}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: t.text }}>{b.name}</div>
+                      <div style={{ fontSize: 11, color: t.textMuted }}>{b.contact && <span>{b.contact} · </span>}{bJobs.length} job{bJobs.length !== 1 ? "s" : ""}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {/* Show selected builder summary */}
+            {jobForm.builder && (() => {
+              const matched = (builders || []).find(b => b.name.toLowerCase() === jobForm.builder.toLowerCase());
+              if (!matched) return null;
+              const bJobs = jobs.filter(j => (j.builder || "").toLowerCase() === matched.name.toLowerCase());
+              const totalRev = bJobs.reduce((s, j) => s + (j.revenue || 0), 0);
+              const lastJob = bJobs.sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+              return (
+                <div style={{ marginTop: 6, padding: "8px 10px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 6, fontSize: 12, color: "#1d4ed8" }}>
+                  🏗️ <strong>{matched.name}</strong>{matched.contact && <span> · {matched.contact}</span>} · {bJobs.length} jobs{totalRev > 0 && <span> · ${totalRev.toLocaleString()} total rev</span>}{lastJob && <span> · Last: {lastJob.date}</span>}
+                </div>
+              );
+            })()}
+          </div>
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} inputMode="text" autoComplete="street-address" />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
           <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
@@ -5993,6 +6270,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <input type="date" value={jobForm.date} onChange={(e) => setJobForm({ ...jobForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <TextArea label="Office Notes (visible to crew)" placeholder="Special instructions, materials needed..." value={jobForm.notes} onChange={(e) => setJobForm({ ...jobForm, notes: e.target.value })} />
+          <div style={{ marginBottom: "16px" }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Job Revenue / Quote $ <span style={{ fontWeight: 400, color: t.textMuted }}>(optional)</span></label>
+            <input type="number" min="0" step="0.01" placeholder="e.g. 2500" value={jobForm.revenue} onChange={(e) => setJobForm({ ...jobForm, revenue: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Job Category</label>
             <div style={{ display: "flex", gap: "16px" }}>
@@ -6253,6 +6534,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <TextArea label="Office Notes (visible to crew)" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
+          <div style={{ marginBottom: "16px" }}>
+            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Job Revenue / Quote $ <span style={{ fontWeight: 400, color: t.textMuted }}>(optional)</span></label>
+            <input type="number" min="0" step="0.01" placeholder="e.g. 2500" value={editForm.revenue} onChange={(e) => setEditForm({ ...editForm, revenue: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          </div>
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Job Category</label>
             <div style={{ display: "flex", gap: "16px" }}>
