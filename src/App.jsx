@@ -38,70 +38,71 @@ const STATUS_OPTIONS = [
 ];
 
 const INVENTORY_ITEMS = [
-  // Foam
-  { id: "oc_a",       name: "Ambit Open Cell A",       unit: "bbl",   category: "Foam" },
-  { id: "oc_b",       name: "Ambit Open Cell B",       unit: "bbl",   category: "Foam" },
-  { id: "cc_a",       name: "Ambit Closed Cell A",     unit: "bbl",   category: "Foam" },
-  { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam" },
-  { id: "env_oc_a",   name: "Enverge Open Cell A",     unit: "bbl",   category: "Foam" },
-  { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam" },
-  { id: "free_env_oc_a", name: "FREE Enverge Open Cell A", unit: "bbl", category: "Foam" },
-  { id: "free_env_oc_b", name: "FREE Enverge Open Cell B", unit: "bbl", category: "Foam" },
-  { id: "env_cc_a",   name: "Enverge Closed Cell A",   unit: "bbl",   category: "Foam" },
-  { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam" },
-  // Blown
-  { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown" },
-  { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown" },
-  { id: "blown_cel",       name: "Blown Cellulose",  unit: "bags",  category: "Blown" },
-  // Certainteed R11
-  { id: "r11_15_8_t",     name: 'R11 x 15" x 93" (8ft)', pcsPerTube: 16, sqftPerTube: 155,    unit: "tubes", category: "Certainteed R11", hasPieces: true },
+  // Foam — cost per bbl (open cell ~48 gal @ $0.85/gal ≈ $41; closed cell ~50 gal @ $1.20/gal ≈ $60)
+  { id: "oc_a",       name: "Ambit Open Cell A",       unit: "bbl",   category: "Foam", cost: 41 },
+  { id: "oc_b",       name: "Ambit Open Cell B",       unit: "bbl",   category: "Foam", cost: 41 },
+  { id: "cc_a",       name: "Ambit Closed Cell A",     unit: "bbl",   category: "Foam", cost: 60 },
+  { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam", cost: 60 },
+  { id: "env_oc_a",   name: "Enverge Open Cell A",     unit: "bbl",   category: "Foam", cost: 41 },
+  { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam", cost: 41 },
+  { id: "free_env_oc_a", name: "FREE Enverge Open Cell A", unit: "bbl", category: "Foam", cost: 0 },
+  { id: "free_env_oc_b", name: "FREE Enverge Open Cell B", unit: "bbl", category: "Foam", cost: 0 },
+  { id: "env_cc_a",   name: "Enverge Closed Cell A",   unit: "bbl",   category: "Foam", cost: 60 },
+  { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam", cost: 60 },
+  // Blown — cost per bag
+  { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown", cost: 14 },
+  { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown", cost: 14 },
+  { id: "blown_cel",       name: "Blown Cellulose",  unit: "bags",  category: "Blown", cost: 14 },
+  // Certainteed R11 — cost per tube ~$22
+  { id: "r11_15_8_t",     name: 'R11 x 15" x 93" (8ft)', pcsPerTube: 16, sqftPerTube: 155,    unit: "tubes", category: "Certainteed R11", hasPieces: true, cost: 22 },
   { id: "r11_15_8_pcs",   name: 'R11 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R11", isPieces: true, parentId: "r11_15_8_t" },
-  // Certainteed R13
-  { id: "r13_15_8_t",     name: 'R13 x 15" x 93" (8ft)', pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Certainteed R13", hasPieces: true },
+  // Certainteed R13 — cost per tube ~$24
+  { id: "r13_15_8_t",     name: 'R13 x 15" x 93" (8ft)', pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: 24 },
   { id: "r13_15_8_pcs",   name: 'R13 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_8_t" },
 
-  { id: "oc_r13_15_8_t",   name: "Owens Corning R13 x 15\" x 93\" (8ft)", pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Owens Corning R13", hasPieces: true },
+  { id: "oc_r13_15_8_t",   name: "Owens Corning R13 x 15\" x 93\" (8ft)", pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Owens Corning R13", hasPieces: true, cost: 24 },
   { id: "oc_r13_15_8_pcs", name: "Owens Corning R13 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_8_t" },
 
-  { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\" (8ft)", pcsPerTube: 9,  sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true },
+  // Owens Corning R19 — cost per tube ~$28
+  { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\" (8ft)", pcsPerTube: 9,  sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: 28 },
   { id: "oc_r19_15_8_pcs", name: "Owens Corning R19 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R19", isPieces: true, parentId: "oc_r19_15_8_t" },
-  { id: "r13_15_9_t",     name: 'R13 x 15" x 105" (9ft)',pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Certainteed R13", hasPieces: true },
+  { id: "r13_15_9_t",     name: 'R13 x 15" x 105" (9ft)',pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: 24 },
   { id: "r13_15_9_pcs",   name: 'R13 x 15" x 105" (9ft)',unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_9_t" },
-  { id: "r13_24_8_t",     name: 'R13 x 24" x 96"',       pcsPerTube: 11, sqftPerTube: 176,    unit: "tubes", category: "Certainteed R13", hasPieces: true },
+  { id: "r13_24_8_t",     name: 'R13 x 24" x 96"',       pcsPerTube: 11, sqftPerTube: 176,    unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: 24 },
   { id: "r13_24_8_pcs",   name: 'R13 x 24" x 96"',       unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_24_8_t" },
-  // Certainteed R19
-  { id: "r19_15_8_t",     name: 'R19 x 15" x 93" (8ft)', pcsPerTube: 9,  sqftPerTube: 87.19,  unit: "tubes", category: "Certainteed R19", hasPieces: true },
+  // Certainteed R19 — cost per tube ~$28
+  { id: "r19_15_8_t",     name: 'R19 x 15" x 93" (8ft)', pcsPerTube: 9,  sqftPerTube: 87.19,  unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: 28 },
   { id: "r19_15_8_pcs",   name: 'R19 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_15_8_t" },
-  { id: "r19_19_8_t",     name: 'R19 x 19.25" x 48"',    pcsPerTube: 18, sqftPerTube: 115.5,  unit: "tubes", category: "Certainteed R19", hasPieces: true },
+  { id: "r19_19_8_t",     name: 'R19 x 19.25" x 48"',    pcsPerTube: 18, sqftPerTube: 115.5,  unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: 28 },
   { id: "r19_19_8_pcs",   name: 'R19 x 19.25" x 48"',    unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_19_8_t" },
-  { id: "r19_24_8_t",     name: 'R19 x 24" x 96"',       pcsPerTube: 9,  sqftPerTube: 144,    unit: "tubes", category: "Certainteed R19", hasPieces: true },
+  { id: "r19_24_8_t",     name: 'R19 x 24" x 96"',       pcsPerTube: 9,  sqftPerTube: 144,    unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: 28 },
   { id: "r19_24_8_pcs",   name: 'R19 x 24" x 96"',       unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_24_8_t" },
-  // Certainteed R30
-  { id: "r30_15_t",       name: 'R30 x 16" x 48"',       pcsPerTube: 11, sqftPerTube: 58.67,  unit: "tubes", category: "Certainteed R30", hasPieces: true },
+  // Certainteed R30 — cost per tube ~$32
+  { id: "r30_15_t",       name: 'R30 x 16" x 48"',       pcsPerTube: 11, sqftPerTube: 58.67,  unit: "tubes", category: "Certainteed R30", hasPieces: true, cost: 32 },
   { id: "r30_15_pcs",     name: 'R30 x 16" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_15_t" },
-  { id: "r30_24_t",       name: 'R30 x 24" x 48"',       pcsPerTube: 11, sqftPerTube: 88,     unit: "tubes", category: "Certainteed R30", hasPieces: true },
+  { id: "r30_24_t",       name: 'R30 x 24" x 48"',       pcsPerTube: 11, sqftPerTube: 88,     unit: "tubes", category: "Certainteed R30", hasPieces: true, cost: 32 },
   { id: "r30_24_pcs",     name: 'R30 x 24" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_24_t" },
-  // Johns Manville R11
-  { id: "jm_r11_15_8_t",   name: 'JM R11 x 15" x 93"',    pcsPerTube: 16, sqftPerTube: 155.00, unit: "tubes", category: "Johns Manville R11", hasPieces: true },
+  // Johns Manville R11 — cost per tube ~$22
+  { id: "jm_r11_15_8_t",   name: 'JM R11 x 15" x 93"',    pcsPerTube: 16, sqftPerTube: 155.00, unit: "tubes", category: "Johns Manville R11", hasPieces: true, cost: 22 },
   { id: "jm_r11_15_8_pcs", name: 'JM R11 x 15" x 93"',    unit: "pcs", category: "Johns Manville R11", isPieces: true, parentId: "jm_r11_15_8_t" },
-  // Johns Manville R13
-  { id: "jm_r13_15_8_t",   name: 'JM R13 x 15" x 93"',    pcsPerTube: 11, sqftPerTube: 106.56, unit: "tubes", category: "Johns Manville R13", hasPieces: true },
+  // Johns Manville R13 — cost per tube ~$24
+  { id: "jm_r13_15_8_t",   name: 'JM R13 x 15" x 93"',    pcsPerTube: 11, sqftPerTube: 106.56, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: 24 },
   { id: "jm_r13_15_8_pcs", name: 'JM R13 x 15" x 93"',    unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_15_8_t" },
-  { id: "jm_r13_15_9_t",   name: 'JM R13 x 15" x 105"',   pcsPerTube: 11, sqftPerTube: 120.31, unit: "tubes", category: "Johns Manville R13", hasPieces: true },
+  { id: "jm_r13_15_9_t",   name: 'JM R13 x 15" x 105"',   pcsPerTube: 11, sqftPerTube: 120.31, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: 24 },
   { id: "jm_r13_15_9_pcs", name: 'JM R13 x 15" x 105"',   unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_15_9_t" },
-  { id: "jm_r13_23_8_t",   name: 'JM R13 x 23" x 93"',    pcsPerTube: 11, sqftPerTube: 163.39, unit: "tubes", category: "Johns Manville R13", hasPieces: true },
+  { id: "jm_r13_23_8_t",   name: 'JM R13 x 23" x 93"',    pcsPerTube: 11, sqftPerTube: 163.39, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: 24 },
   { id: "jm_r13_23_8_pcs", name: 'JM R13 x 23" x 93"',    unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_23_8_t" },
-  // Johns Manville R19
-  { id: "jm_r19_15_8_t",   name: 'JM R19 x 15" x 93"',    pcsPerTube: 9,  sqftPerTube: 87.18,  unit: "tubes", category: "Johns Manville R19", hasPieces: true },
+  // Johns Manville R19 — cost per tube ~$28
+  { id: "jm_r19_15_8_t",   name: 'JM R19 x 15" x 93"',    pcsPerTube: 9,  sqftPerTube: 87.18,  unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: 28 },
   { id: "jm_r19_15_8_pcs", name: 'JM R19 x 15" x 93"',    unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_15_8_t" },
-  { id: "jm_r19_19_8_t",   name: 'JM R19 x 19.25" x 48"', pcsPerTube: 18, sqftPerTube: 115.50, unit: "tubes", category: "Johns Manville R19", hasPieces: true },
+  { id: "jm_r19_19_8_t",   name: 'JM R19 x 19.25" x 48"', pcsPerTube: 18, sqftPerTube: 115.50, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: 28 },
   { id: "jm_r19_19_8_pcs", name: 'JM R19 x 19.25" x 48"', unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_19_8_t" },
-  { id: "jm_r19_24_8_t",   name: 'JM R19 x 24" x 48"',    pcsPerTube: 18, sqftPerTube: 144.00, unit: "tubes", category: "Johns Manville R19", hasPieces: true },
+  { id: "jm_r19_24_8_t",   name: 'JM R19 x 24" x 48"',    pcsPerTube: 18, sqftPerTube: 144.00, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: 28 },
   { id: "jm_r19_24_8_pcs", name: 'JM R19 x 24" x 48"',    unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_24_8_t" },
-  // Johns Manville R30
-  { id: "jm_r30_16_t",     name: 'JM R30 x 16" x 48"',    pcsPerTube: 11, sqftPerTube: 58.66,  unit: "tubes", category: "Johns Manville R30", hasPieces: true },
+  // Johns Manville R30 — cost per tube ~$32
+  { id: "jm_r30_16_t",     name: 'JM R30 x 16" x 48"',    pcsPerTube: 11, sqftPerTube: 58.66,  unit: "tubes", category: "Johns Manville R30", hasPieces: true, cost: 32 },
   { id: "jm_r30_16_pcs",   name: 'JM R30 x 16" x 48"',    unit: "pcs", category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_16_t" },
-  { id: "jm_r30_24_t",     name: 'JM R30 x 24" x 48"',    pcsPerTube: 11, sqftPerTube: 88.00,  unit: "tubes", category: "Johns Manville R30", hasPieces: true },
+  { id: "jm_r30_24_t",     name: 'JM R30 x 24" x 48"',    pcsPerTube: 11, sqftPerTube: 88.00,  unit: "tubes", category: "Johns Manville R30", hasPieces: true, cost: 32 },
   { id: "jm_r30_24_pcs",   name: 'JM R30 x 24" x 48"',    unit: "pcs", category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_24_t" },
   { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Lambswool" },
   // Rockwool
@@ -110,6 +111,26 @@ const INVENTORY_ITEMS = [
   { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool", hasPieces: true },
   { id: "rw_6_pcs",  name: 'Rockwool 6"',        unit: "pcs",   category: "Rockwool", isPieces: true, parentId: "rw_6_t" },
 ];
+
+// Helper: compute material cost for a materialsUsed map
+const calcMaterialCost = (materialsUsed) => {
+  if (!materialsUsed) return 0;
+  return Object.entries(materialsUsed).reduce((sum, [id, qty]) => {
+    const item = INVENTORY_ITEMS.find(i => i.id === id);
+    return sum + (item?.cost || 0) * (parseFloat(qty) || 0);
+  }, 0);
+};
+
+// Helper: compute cost across all daily logs + materialsUsed
+const calcJobMaterialCost = (job) => {
+  let total = 0;
+  if ((job.dailyMaterialLogs || []).length > 0) {
+    job.dailyMaterialLogs.forEach(log => { total += calcMaterialCost(log.materials); });
+  } else {
+    total += calcMaterialCost(job.materialsUsed);
+  }
+  return total;
+};
 const FOAM_GUN_PARTS = [
   // ── Drill Bits ──
   { id: "fgp_drill_47",        name: "#47 Drill Bits",              unit: "pcs",   category: "Drill Bits" },
@@ -4365,6 +4386,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
   const [showOngoing, setShowOngoing] = useState(false);
   const [showCheckHistory, setShowCheckHistory] = useState(false);
+  const [showUsageTrends, setShowUsageTrends] = useState(false);
   const [needsCheckExpanded, setNeedsCheckExpanded] = useState(false);
   const [checkPanelTab, setCheckPanelTab] = useState("needs"); // "needs" | "recent"
   const [recentlyCheckedExpanded, setRecentlyCheckedExpanded] = useState(false);
@@ -4389,6 +4411,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [foamPartsQtys, setFoamPartsQtys] = useState({});
   const [projectToolsQtys, setProjectToolsQtys] = useState({});
   const [showEodSummary, setShowEodSummary] = useState(false);
+  const [expandedTruckSections, setExpandedTruckSections] = useState({}); // truckId -> { loads, returns }
+  const toggleTruckSection = (truckId, section) => setExpandedTruckSections(prev => ({ ...prev, [truckId]: { ...(prev[truckId] || {}), [section]: !(prev[truckId] || {})[section] } }));
   const [showReconcile, setShowReconcile] = useState(false);
   const [toasts, dismissToast] = useJobUpdateToasts(updates, jobs);
 
@@ -5301,6 +5325,103 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               ))}
                             </div>
                         }
+                      </div>
+                    );
+                  })()}
+
+                  {/* 7-day usage + load/return history */}
+                  {(() => {
+                    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                    const truckLoads7 = (loadLog || []).filter(r => r.truckId === tr.id && new Date(r.timestamp).getTime() >= sevenDaysAgo);
+                    const allLoads = (loadLog || []).filter(r => r.truckId === tr.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const allReturns = (returnLog || []).filter(r => r.truckId === tr.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+                    // Aggregate 7-day usage by item
+                    const usage7 = {};
+                    truckLoads7.forEach(r => { Object.entries(r.items || {}).forEach(([k, v]) => { usage7[k] = (usage7[k] || 0) + (parseFloat(v) || 0); }); });
+                    const usage7Entries = Object.entries(usage7).filter(([, v]) => v > 0);
+                    const maxUsage = Math.max(...usage7Entries.map(([, v]) => v), 1);
+                    const totalLoaded7 = usage7Entries.reduce((s, [, v]) => s + v, 0);
+
+                    const fmtTs = (ts) => { try { return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Chicago" }); } catch { return ts; } };
+                    const itemLabel = (k) => { const found = INVENTORY_ITEMS.find(i => i.id === k); return found ? found.name : k; };
+
+                    const sectState = expandedTruckSections[tr.id] || {};
+
+                    return (
+                      <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
+                        {/* 7-day usage bar chart */}
+                        {usage7Entries.length > 0 && (
+                          <div style={{ marginBottom: 12 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>7-Day Usage</div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, background: t.accentBg, borderRadius: 6, padding: "2px 8px" }}>Total: {totalLoaded7.toFixed(1)}</div>
+                            </div>
+                            {usage7Entries.map(([k, v]) => (
+                              <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                <div style={{ fontSize: 11, color: t.textMuted, width: 130, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{itemLabel(k)}</div>
+                                <div style={{ flex: 1, background: t.borderLight, borderRadius: 4, height: 8, overflow: "hidden" }}>
+                                  <div style={{ width: Math.round((v / maxUsage) * 100) + "%", height: "100%", background: t.accent, borderRadius: 4, transition: "width 0.3s" }} />
+                                </div>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: t.text, width: 40, textAlign: "right", flexShrink: 0 }}>{v % 1 === 0 ? v : v.toFixed(1)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Load history accordion */}
+                        <div style={{ marginBottom: 8 }}>
+                          <button onClick={() => toggleTruckSection(tr.id, "loads")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: "4px 0", fontFamily: "inherit" }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Load History (last 10)</span>
+                            <span style={{ fontSize: 12, color: t.textMuted }}>{sectState.loads ? "▲" : "▼"}</span>
+                          </button>
+                          {sectState.loads && (
+                            <div style={{ marginTop: 6 }}>
+                              {allLoads.slice(0, 10).length === 0 ? (
+                                <div style={{ fontSize: 12, color: t.textMuted }}>No load history.</div>
+                              ) : allLoads.slice(0, 10).map((r, i) => (
+                                <div key={r.id || i} style={{ padding: "6px 0", borderBottom: "1px solid " + t.borderLight, fontSize: 12 }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                                    <span style={{ fontWeight: 600, color: t.text }}>{fmtTs(r.timestamp)}</span>
+                                    {(r.crewName || r.notes) && <span style={{ color: t.textMuted, fontSize: 11 }}>{r.crewName || r.notes}</span>}
+                                  </div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                    {Object.entries(r.items || {}).filter(([, v]) => (parseFloat(v) || 0) > 0).map(([k, v]) => (
+                                      <span key={k} style={{ fontSize: 11, background: t.accentBg, color: t.accent, padding: "2px 7px", borderRadius: 4 }}>{itemLabel(k)}: {parseFloat(v) % 1 === 0 ? parseFloat(v) : parseFloat(v).toFixed(1)}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Return history accordion */}
+                        <div>
+                          <button onClick={() => toggleTruckSection(tr.id, "returns")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: "4px 0", fontFamily: "inherit" }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Return History (last 5)</span>
+                            <span style={{ fontSize: 12, color: t.textMuted }}>{sectState.returns ? "▲" : "▼"}</span>
+                          </button>
+                          {sectState.returns && (
+                            <div style={{ marginTop: 6 }}>
+                              {allReturns.slice(0, 5).length === 0 ? (
+                                <div style={{ fontSize: 12, color: t.textMuted }}>No return history.</div>
+                              ) : allReturns.slice(0, 5).map((r, i) => (
+                                <div key={r.id || i} style={{ padding: "6px 0", borderBottom: "1px solid " + t.borderLight, fontSize: 12 }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                                    <span style={{ fontWeight: 600, color: t.text }}>{fmtTs(r.timestamp)}</span>
+                                    {(r.crewName || r.notes) && <span style={{ color: t.textMuted, fontSize: 11 }}>{r.crewName || r.notes}</span>}
+                                  </div>
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                    {Object.entries(r.items || {}).filter(([, v]) => (parseFloat(v) || 0) > 0).map(([k, v]) => (
+                                      <span key={k} style={{ fontSize: 11, background: "#f0fdf4", color: "#16a34a", padding: "2px 7px", borderRadius: 4 }}>{itemLabel(k)}: {parseFloat(v) % 1 === 0 ? parseFloat(v) : parseFloat(v).toFixed(1)}</span>
+                                    ))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     );
                   })()}
