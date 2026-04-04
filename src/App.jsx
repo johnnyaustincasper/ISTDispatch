@@ -1779,6 +1779,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("home");
   const [truckTab, setTruckTab] = useState("truck"); // "truck" | "loadHistory"
+  const [selectedTruckId, setSelectedTruckId] = useState(truck?.id || null);
   const [tsWeekOffset, setTsWeekOffset] = useState(0);
   const [expandedJobCards, setExpandedJobCards] = useState({});
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -3457,7 +3458,6 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       {/* MY ITEMS TAB */}
       {tab === "myitems" && (() => {
         const myCheckouts = toolCheckouts.filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
-        const [selectedTruckId, setSelectedTruckId] = React.useState(truck?.id || null);
         const selectedTruck = (trucks || []).find(tr => tr.id === selectedTruckId) || truck;
         const selectedInv = (allTruckInventory || {})[selectedTruckId] || {};
         const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (selectedInv[i.id] || 0) > 0);
