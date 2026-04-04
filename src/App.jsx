@@ -3505,7 +3505,11 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* MY ITEMS TAB */}
       {tab === "myitems" && (() => {
-        const ALL_TOOL_ITEMS = [...FOAM_GUN_PARTS, ...PROJECT_TOOLS_ITEMS];
+        const ALL_TOOL_ITEMS = [
+          ...FOAM_GUN_PARTS,
+          ...PROJECT_TOOLS_ITEMS,
+          ...(tools || []).map(t2 => ({ id: "tool__" + t2.id, name: t2.name, unit: "pcs", category: t2.category || "Tools" })),
+        ];
         const visibleTrucks = trucks.filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         const selectedTruck = visibleTrucks.find(tr => tr.id === truckInvCounts.__selectedTruckId) || visibleTrucks[0] || null;
         const selTruckId = selectedTruck?.id || null;
