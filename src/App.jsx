@@ -1756,7 +1756,7 @@ function DailyBrief({ crewName, todayJobs, onDismiss }) {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, allTruckInventory = {}, trucks = [], tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
   const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -2705,6 +2705,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             crewMemberName={crewName}
             truckInventory={truckInventory}
             truck={truck}
+            allTruckInventory={allTruckInventory}
+            trucks={trucks}
             onDeltaAdjustTruck={onDeltaAdjustTruck}
             foamPartsInventory={foamPartsInventory || []}
             projectToolsInventory={projectToolsInventory || []}
@@ -3299,7 +3301,7 @@ function SimpleInvList({ items, invData, onUpdate, readOnly = false }) {
   );
 }
 
-function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, allTruckInventory = {}, trucks = [], onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
   const [tab, setTab] = useState("inventory");
   const [showAddTool, setShowAddTool] = useState(false);
   const [editingTool, setEditingTool] = useState(null);
@@ -3444,6 +3446,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       {/* Tabs */}
       <div style={{ display: "flex", gap: 2, marginBottom: 16, flexWrap: "wrap", background: t.bg, borderRadius: "10px", padding: "4px" }}>
         {!isOffice && crewMemberName && <button style={tabStyle(tab === "myitems")} onClick={() => setTab("myitems")}>My Items</button>}
+        {!isOffice && <button style={tabStyle(tab === "trucks")} onClick={() => setTab("trucks")}>Trucks</button>}
         <button style={tabStyle(tab === "inventory")} onClick={() => setTab("inventory")}>Inventory</button>
         {isOffice && <button style={tabStyle(tab === "foam_parts")} onClick={() => setTab("foam_parts")}>Foam Gun Parts</button>}
         {isOffice && <button style={tabStyle(tab === "project_tools")} onClick={() => setTab("project_tools")}>Tools & Accessories</button>}
@@ -3453,6 +3456,50 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
         </button>}
         {isOffice && <button style={tabStyle(tab === "report")} onClick={() => setTab("report")}>Employee Report</button>}
       </div>
+
+      {/* TRUCKS TAB */}
+      {tab === "trucks" && (() => {
+        const isFoamItem = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+        const visibleTrucks = trucks.filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        return (
+          <div>
+            {visibleTrucks.length === 0 && <EmptyState text="No trucks found." />}
+            {visibleTrucks.map(tr => {
+              const ti = allTruckInventory[tr.id] || {};
+              const loaded = INVENTORY_ITEMS.filter(i => !i.isPieces && (ti[i.id] || 0) > 0);
+              const ocS        = Math.min(ti["oc_a"]||0, ti["oc_b"]||0);
+              const ccS        = Math.min(ti["cc_a"]||0, ti["cc_b"]||0);
+              const envOcS     = Math.min(ti["env_oc_a"]||0, ti["env_oc_b"]||0);
+              const envCcS     = Math.min(ti["env_cc_a"]||0, ti["env_cc_b"]||0);
+              const freeEnvOcS = Math.min(ti["free_env_oc_a"]||0, ti["free_env_oc_b"]||0);
+              return (
+                <Card key={tr.id} style={{ marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                    <div style={{ width: 36, height: 36, borderRadius: 8, background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
+                    </div>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{tr.name}</div>
+                  </div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Loaded</div>
+                  {loaded.length === 0
+                    ? <div style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded.</div>
+                    : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {ocS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit OC — {ocS.toFixed(2)} sets</span>}
+                        {ccS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit CC — {ccS.toFixed(2)} sets</span>}
+                        {envOcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge OC — {envOcS.toFixed(2)} sets</span>}
+                        {envCcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge CC — {envCcS.toFixed(2)} sets</span>}
+                        {freeEnvOcS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: "#f0fdf4", color: "#16a34a", padding: "3px 9px", borderRadius: 6 }}>FREE Enverge OC — {freeEnvOcS.toFixed(2)} sets</span>}
+                        {loaded.filter(i => !isFoamItem(i.id)).map(item => (
+                          <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>
+                        ))}
+                      </div>
+                  }
+                </Card>
+              );
+            })}
+          </div>
+        );
+      })()}
 
       {/* MY ITEMS TAB */}
       {tab === "myitems" && (() => {
@@ -11643,7 +11690,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} allTruckInventory={truckInventory} trucks={trucks} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   }
   if (role === "mechanic" && mechanicName) {
     return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
