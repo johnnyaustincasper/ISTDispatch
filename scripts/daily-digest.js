@@ -5,7 +5,7 @@
  * Uses Firestore REST API (no service account needed — rules are open).
  */
 
-const https = require("https");
+import https from "https";
 
 // ─── Config ───
 const FIREBASE_PROJECT = "insulation-services-da91a";

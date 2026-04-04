@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import ReactDOM from "react-dom";
 
 import { db, storage } from "./firebase.js";
+import { getFunctions, httpsCallable } from "firebase/functions";
+import { app } from "./firebase.js";
 import {
   collection,
   doc,
@@ -37,73 +39,79 @@ const STATUS_OPTIONS = [
   { value: "issue", label: "Issue / Need Help", color: "#b91c1c", bg: "#fee2e2" },
 ];
 
+// Material cost rates: R11=$0.26/sqft, R13=$0.32/sqft, R19=$0.38/sqft, R30=$0.75/sqft
+// Blown wool/FG/cellulose=$32/bag, OC B-side=$32/gal (48gal/bbl=$1,536), CC B-side=$44/gal (50gal/bbl=$2,200)
+const MAT_RATE = { r11: 0.26, r13: 0.32, r19: 0.38, r30: 0.75, blown: 32, oc_bbl: 1536, cc_bbl: 2200 };
+const tubeCost = (sqft, rate) => Math.round(sqft * rate * 100) / 100;
+const pcsCost  = (sqft, rate, pcs) => Math.round((sqft * rate / pcs) * 100) / 100;
+
 const INVENTORY_ITEMS = [
-  // Foam — cost per bbl (open cell ~48 gal @ $0.85/gal ≈ $41; closed cell ~50 gal @ $1.20/gal ≈ $60)
-  { id: "oc_a",       name: "Ambit Open Cell A",       unit: "bbl",   category: "Foam", cost: 41 },
-  { id: "oc_b",       name: "Ambit Open Cell B",       unit: "bbl",   category: "Foam", cost: 41 },
-  { id: "cc_a",       name: "Ambit Closed Cell A",     unit: "bbl",   category: "Foam", cost: 60 },
-  { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam", cost: 60 },
-  { id: "env_oc_a",   name: "Enverge Open Cell A",     unit: "bbl",   category: "Foam", cost: 41 },
-  { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam", cost: 41 },
+  // Foam — A-side $0 (not priced), B-side only: OC 48gal×$32=$1,536/bbl, CC 50gal×$44=$2,200/bbl
+  { id: "oc_a",       name: "Ambit Open Cell A",       unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "oc_b",       name: "Ambit Open Cell B",       unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
+  { id: "cc_a",       name: "Ambit Closed Cell A",     unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
+  { id: "env_oc_a",   name: "Enverge Open Cell A",     unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
   { id: "free_env_oc_a", name: "FREE Enverge Open Cell A", unit: "bbl", category: "Foam", cost: 0 },
   { id: "free_env_oc_b", name: "FREE Enverge Open Cell B", unit: "bbl", category: "Foam", cost: 0 },
-  { id: "env_cc_a",   name: "Enverge Closed Cell A",   unit: "bbl",   category: "Foam", cost: 60 },
-  { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam", cost: 60 },
-  // Blown — cost per bag
-  { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown", cost: 14 },
-  { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown", cost: 14 },
-  { id: "blown_cel",       name: "Blown Cellulose",  unit: "bags",  category: "Blown", cost: 14 },
-  // Certainteed R11 — cost per tube ~$22
-  { id: "r11_15_8_t",     name: 'R11 x 15" x 93" (8ft)', pcsPerTube: 16, sqftPerTube: 155,    unit: "tubes", category: "Certainteed R11", hasPieces: true, cost: 22 },
-  { id: "r11_15_8_pcs",   name: 'R11 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R11", isPieces: true, parentId: "r11_15_8_t" },
-  // Certainteed R13 — cost per tube ~$24
-  { id: "r13_15_8_t",     name: 'R13 x 15" x 93" (8ft)', pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: 24 },
-  { id: "r13_15_8_pcs",   name: 'R13 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_8_t" },
+  { id: "env_cc_a",   name: "Enverge Closed Cell A",   unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
+  // Blown — $32/bag
+  { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown", cost: MAT_RATE.blown },
+  { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown", cost: MAT_RATE.blown },
+  { id: "blown_cel",       name: "Blown Cellulose",              unit: "bags", category: "Blown", cost: MAT_RATE.blown },
+  // Certainteed R11 ($0.26/sqft)
+  { id: "r11_15_8_t",     name: 'R11 x 15" x 93" (8ft)', pcsPerTube: 16, sqftPerTube: 155,    unit: "tubes", category: "Certainteed R11", hasPieces: true, cost: tubeCost(155, MAT_RATE.r11) },
+  { id: "r11_15_8_pcs",   name: 'R11 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R11", isPieces: true, parentId: "r11_15_8_t", cost: pcsCost(155, MAT_RATE.r11, 16) },
+  // Certainteed R13 ($0.32/sqft)
+  { id: "r13_15_8_t",     name: 'R13 x 15" x 93" (8ft)', pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: tubeCost(125.94, MAT_RATE.r13) },
+  { id: "r13_15_8_pcs",   name: 'R13 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_8_t", cost: pcsCost(125.94, MAT_RATE.r13, 13) },
 
-  { id: "oc_r13_15_8_t",   name: "Owens Corning R13 x 15\" x 93\" (8ft)", pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Owens Corning R13", hasPieces: true, cost: 24 },
-  { id: "oc_r13_15_8_pcs", name: "Owens Corning R13 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_8_t" },
+  { id: "oc_r13_15_8_t",   name: "Owens Corning R13 x 15\" x 93\" (8ft)", pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Owens Corning R13", hasPieces: true, cost: tubeCost(125.94, MAT_RATE.r13) },
+  { id: "oc_r13_15_8_pcs", name: "Owens Corning R13 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_8_t", cost: pcsCost(125.94, MAT_RATE.r13, 13) },
 
-  // Owens Corning R19 — cost per tube ~$28
-  { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\" (8ft)", pcsPerTube: 9,  sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: 28 },
-  { id: "oc_r19_15_8_pcs", name: "Owens Corning R19 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R19", isPieces: true, parentId: "oc_r19_15_8_t" },
-  { id: "r13_15_9_t",     name: 'R13 x 15" x 105" (9ft)',pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: 24 },
-  { id: "r13_15_9_pcs",   name: 'R13 x 15" x 105" (9ft)',unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_9_t" },
-  { id: "r13_24_8_t",     name: 'R13 x 24" x 96"',       pcsPerTube: 11, sqftPerTube: 176,    unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: 24 },
-  { id: "r13_24_8_pcs",   name: 'R13 x 24" x 96"',       unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_24_8_t" },
-  // Certainteed R19 — cost per tube ~$28
-  { id: "r19_15_8_t",     name: 'R19 x 15" x 93" (8ft)', pcsPerTube: 9,  sqftPerTube: 87.19,  unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: 28 },
-  { id: "r19_15_8_pcs",   name: 'R19 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_15_8_t" },
-  { id: "r19_19_8_t",     name: 'R19 x 19.25" x 48"',    pcsPerTube: 18, sqftPerTube: 115.5,  unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: 28 },
-  { id: "r19_19_8_pcs",   name: 'R19 x 19.25" x 48"',    unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_19_8_t" },
-  { id: "r19_24_8_t",     name: 'R19 x 24" x 96"',       pcsPerTube: 9,  sqftPerTube: 144,    unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: 28 },
-  { id: "r19_24_8_pcs",   name: 'R19 x 24" x 96"',       unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_24_8_t" },
-  // Certainteed R30 — cost per tube ~$32
-  { id: "r30_15_t",       name: 'R30 x 16" x 48"',       pcsPerTube: 11, sqftPerTube: 58.67,  unit: "tubes", category: "Certainteed R30", hasPieces: true, cost: 32 },
-  { id: "r30_15_pcs",     name: 'R30 x 16" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_15_t" },
-  { id: "r30_24_t",       name: 'R30 x 24" x 48"',       pcsPerTube: 11, sqftPerTube: 88,     unit: "tubes", category: "Certainteed R30", hasPieces: true, cost: 32 },
-  { id: "r30_24_pcs",     name: 'R30 x 24" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_24_t" },
-  // Johns Manville R11 — cost per tube ~$22
-  { id: "jm_r11_15_8_t",   name: 'JM R11 x 15" x 93"',    pcsPerTube: 16, sqftPerTube: 155.00, unit: "tubes", category: "Johns Manville R11", hasPieces: true, cost: 22 },
-  { id: "jm_r11_15_8_pcs", name: 'JM R11 x 15" x 93"',    unit: "pcs", category: "Johns Manville R11", isPieces: true, parentId: "jm_r11_15_8_t" },
-  // Johns Manville R13 — cost per tube ~$24
-  { id: "jm_r13_15_8_t",   name: 'JM R13 x 15" x 93"',    pcsPerTube: 11, sqftPerTube: 106.56, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: 24 },
-  { id: "jm_r13_15_8_pcs", name: 'JM R13 x 15" x 93"',    unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_15_8_t" },
-  { id: "jm_r13_15_9_t",   name: 'JM R13 x 15" x 105"',   pcsPerTube: 11, sqftPerTube: 120.31, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: 24 },
-  { id: "jm_r13_15_9_pcs", name: 'JM R13 x 15" x 105"',   unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_15_9_t" },
-  { id: "jm_r13_23_8_t",   name: 'JM R13 x 23" x 93"',    pcsPerTube: 11, sqftPerTube: 163.39, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: 24 },
-  { id: "jm_r13_23_8_pcs", name: 'JM R13 x 23" x 93"',    unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_23_8_t" },
-  // Johns Manville R19 — cost per tube ~$28
-  { id: "jm_r19_15_8_t",   name: 'JM R19 x 15" x 93"',    pcsPerTube: 9,  sqftPerTube: 87.18,  unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: 28 },
-  { id: "jm_r19_15_8_pcs", name: 'JM R19 x 15" x 93"',    unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_15_8_t" },
-  { id: "jm_r19_19_8_t",   name: 'JM R19 x 19.25" x 48"', pcsPerTube: 18, sqftPerTube: 115.50, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: 28 },
-  { id: "jm_r19_19_8_pcs", name: 'JM R19 x 19.25" x 48"', unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_19_8_t" },
-  { id: "jm_r19_24_8_t",   name: 'JM R19 x 24" x 48"',    pcsPerTube: 18, sqftPerTube: 144.00, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: 28 },
-  { id: "jm_r19_24_8_pcs", name: 'JM R19 x 24" x 48"',    unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_24_8_t" },
-  // Johns Manville R30 — cost per tube ~$32
-  { id: "jm_r30_16_t",     name: 'JM R30 x 16" x 48"',    pcsPerTube: 11, sqftPerTube: 58.66,  unit: "tubes", category: "Johns Manville R30", hasPieces: true, cost: 32 },
-  { id: "jm_r30_16_pcs",   name: 'JM R30 x 16" x 48"',    unit: "pcs", category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_16_t" },
-  { id: "jm_r30_24_t",     name: 'JM R30 x 24" x 48"',    pcsPerTube: 11, sqftPerTube: 88.00,  unit: "tubes", category: "Johns Manville R30", hasPieces: true, cost: 32 },
-  { id: "jm_r30_24_pcs",   name: 'JM R30 x 24" x 48"',    unit: "pcs", category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_24_t" },
+  // Owens Corning R19 ($0.38/sqft)
+  { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\" (8ft)", pcsPerTube: 9, sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: tubeCost(87.19, MAT_RATE.r19) },
+  { id: "oc_r19_15_8_pcs", name: "Owens Corning R19 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R19", isPieces: true, parentId: "oc_r19_15_8_t", cost: pcsCost(87.19, MAT_RATE.r19, 9) },
+  { id: "r13_15_9_t",     name: 'R13 x 15" x 105" (9ft)', pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: tubeCost(142.19, MAT_RATE.r13) },
+  { id: "r13_15_9_pcs",   name: 'R13 x 15" x 105" (9ft)', unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_9_t", cost: pcsCost(142.19, MAT_RATE.r13, 13) },
+  { id: "r13_24_8_t",     name: 'R13 x 24" x 96"',         pcsPerTube: 11, sqftPerTube: 176,    unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: tubeCost(176, MAT_RATE.r13) },
+  { id: "r13_24_8_pcs",   name: 'R13 x 24" x 96"',         unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_24_8_t", cost: pcsCost(176, MAT_RATE.r13, 11) },
+  // Certainteed R19 ($0.38/sqft)
+  { id: "r19_15_8_t",     name: 'R19 x 15" x 93" (8ft)', pcsPerTube: 9,  sqftPerTube: 87.19,  unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: tubeCost(87.19, MAT_RATE.r19) },
+  { id: "r19_15_8_pcs",   name: 'R19 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_15_8_t", cost: pcsCost(87.19, MAT_RATE.r19, 9) },
+  { id: "r19_19_8_t",     name: 'R19 x 19.25" x 48"',    pcsPerTube: 18, sqftPerTube: 115.5,  unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: tubeCost(115.5, MAT_RATE.r19) },
+  { id: "r19_19_8_pcs",   name: 'R19 x 19.25" x 48"',    unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_19_8_t", cost: pcsCost(115.5, MAT_RATE.r19, 18) },
+  { id: "r19_24_8_t",     name: 'R19 x 24" x 96"',       pcsPerTube: 9,  sqftPerTube: 144,    unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: tubeCost(144, MAT_RATE.r19) },
+  { id: "r19_24_8_pcs",   name: 'R19 x 24" x 96"',       unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_24_8_t", cost: pcsCost(144, MAT_RATE.r19, 9) },
+  // Certainteed R30 ($0.75/sqft)
+  { id: "r30_15_t",       name: 'R30 x 16" x 48"',       pcsPerTube: 11, sqftPerTube: 58.67,  unit: "tubes", category: "Certainteed R30", hasPieces: true, cost: tubeCost(58.67, MAT_RATE.r30) },
+  { id: "r30_15_pcs",     name: 'R30 x 16" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_15_t", cost: pcsCost(58.67, MAT_RATE.r30, 11) },
+  { id: "r30_24_t",       name: 'R30 x 24" x 48"',       pcsPerTube: 11, sqftPerTube: 88,     unit: "tubes", category: "Certainteed R30", hasPieces: true, cost: tubeCost(88, MAT_RATE.r30) },
+  { id: "r30_24_pcs",     name: 'R30 x 24" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_24_t", cost: pcsCost(88, MAT_RATE.r30, 11) },
+  // Johns Manville R11 ($0.26/sqft)
+  { id: "jm_r11_15_8_t",   name: 'JM R11 x 15" x 93"',    pcsPerTube: 16, sqftPerTube: 155.00, unit: "tubes", category: "Johns Manville R11", hasPieces: true, cost: tubeCost(155, MAT_RATE.r11) },
+  { id: "jm_r11_15_8_pcs", name: 'JM R11 x 15" x 93"',    unit: "pcs", category: "Johns Manville R11", isPieces: true, parentId: "jm_r11_15_8_t", cost: pcsCost(155, MAT_RATE.r11, 16) },
+  // Johns Manville R13 ($0.32/sqft)
+  { id: "jm_r13_15_8_t",   name: 'JM R13 x 15" x 93"',    pcsPerTube: 11, sqftPerTube: 106.56, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: tubeCost(106.56, MAT_RATE.r13) },
+  { id: "jm_r13_15_8_pcs", name: 'JM R13 x 15" x 93"',    unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_15_8_t", cost: pcsCost(106.56, MAT_RATE.r13, 11) },
+  { id: "jm_r13_15_9_t",   name: 'JM R13 x 15" x 105"',   pcsPerTube: 11, sqftPerTube: 120.31, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: tubeCost(120.31, MAT_RATE.r13) },
+  { id: "jm_r13_15_9_pcs", name: 'JM R13 x 15" x 105"',   unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_15_9_t", cost: pcsCost(120.31, MAT_RATE.r13, 11) },
+  { id: "jm_r13_23_8_t",   name: 'JM R13 x 23" x 93"',    pcsPerTube: 11, sqftPerTube: 163.39, unit: "tubes", category: "Johns Manville R13", hasPieces: true, cost: tubeCost(163.39, MAT_RATE.r13) },
+  { id: "jm_r13_23_8_pcs", name: 'JM R13 x 23" x 93"',    unit: "pcs", category: "Johns Manville R13", isPieces: true, parentId: "jm_r13_23_8_t", cost: pcsCost(163.39, MAT_RATE.r13, 11) },
+  // Johns Manville R19 ($0.38/sqft)
+  { id: "jm_r19_15_8_t",   name: 'JM R19 x 15" x 93"',    pcsPerTube: 9,  sqftPerTube: 87.18,  unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: tubeCost(87.18, MAT_RATE.r19) },
+  { id: "jm_r19_15_8_pcs", name: 'JM R19 x 15" x 93"',    unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_15_8_t", cost: pcsCost(87.18, MAT_RATE.r19, 9) },
+  { id: "jm_r19_19_8_t",   name: 'JM R19 x 19.25" x 48"', pcsPerTube: 18, sqftPerTube: 115.50, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: tubeCost(115.5, MAT_RATE.r19) },
+  { id: "jm_r19_19_8_pcs", name: 'JM R19 x 19.25" x 48"', unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_19_8_t", cost: pcsCost(115.5, MAT_RATE.r19, 18) },
+  { id: "jm_r19_24_8_t",   name: 'JM R19 x 24" x 48"',    pcsPerTube: 18, sqftPerTube: 144.00, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: tubeCost(144, MAT_RATE.r19) },
+  { id: "jm_r19_24_8_pcs", name: 'JM R19 x 24" x 48"',    unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_24_8_t", cost: pcsCost(144, MAT_RATE.r19, 18) },
+  // Johns Manville R30 ($0.75/sqft)
+  { id: "jm_r30_16_t",     name: 'JM R30 x 16" x 48"',    pcsPerTube: 11, sqftPerTube: 58.66,  unit: "tubes", category: "Johns Manville R30", hasPieces: true, cost: tubeCost(58.66, MAT_RATE.r30) },
+  { id: "jm_r30_16_pcs",   name: 'JM R30 x 16" x 48"',    unit: "pcs", category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_16_t", cost: pcsCost(58.66, MAT_RATE.r30, 11) },
+  { id: "jm_r30_24_t",     name: 'JM R30 x 24" x 48"',    pcsPerTube: 11, sqftPerTube: 88.00,  unit: "tubes", category: "Johns Manville R30", hasPieces: true, cost: tubeCost(88, MAT_RATE.r30) },
+  { id: "jm_r30_24_pcs",   name: 'JM R30 x 24" x 48"',    unit: "pcs", category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_24_t", cost: pcsCost(88, MAT_RATE.r30, 11) },
   { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Lambswool" },
   // Rockwool
   { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool", hasPieces: true },
@@ -157,27 +165,33 @@ const FOAM_GUN_PARTS = [
   { id: "fgp_valve_spring",    name: "Check Valve Spring",        unit: "units", category: "Parts & Valves" },
 ];
 
+// Items moved to Tools tab (check-in/check-out). Seeded into Firestore on first load.
+const MIGRATED_TO_TOOLS = [
+  { name: "DeWalt Drill w/ Batteries x2 + Charger", category: "Power Tools" },
+  { name: "Mitool Drill w/ Battery + Charger",       category: "Power Tools" },
+  { name: "Hilti Drill",                             category: "Power Tools" },
+  { name: "Corded Drill Kobalt (Paint Mixer)",       category: "Power Tools" },
+  { name: "Hilti Skill Saw",                         category: "Power Tools" },
+  { name: "Foam Wall Saw",                           category: "Power Tools" },
+  { name: "Foamzall (Rebuilt)",                      category: "Power Tools" },
+  { name: "DeWalt Grinder",                          category: "Power Tools" },
+  { name: "Hilti DX5",                               category: "Power Tools" },
+  { name: "Hilti Nuron Charger",                     category: "Power Tools" },
+  { name: "DeWalt Light",                            category: "Power Tools" },
+  { name: "Pump (Needs Rebuild)",                    category: "Power Tools" },
+  { name: "Box Utility Knives",                      category: "Hand Tools" },
+  { name: "Framing Hammer",                          category: "Hand Tools" },
+  { name: "Level",                                   category: "Hand Tools" },
+  { name: "Nut Driver",                              category: "Hand Tools" },
+  { name: "Socket Set (Craftsman)",                  category: "Hand Tools" },
+  { name: "Speed Square",                            category: "Hand Tools" },
+  { name: "Curry Combs",                             category: "Hand Tools" },
+  { name: "Extension Cord 100ft",                    category: "Other" },
+  { name: "Fresh Air Hoses",                         category: "Other" },
+  { name: "Headlamps",                               category: "Other" },
+];
+
 const PROJECT_TOOLS_ITEMS = [
-  // ── Power Tools ──
-  { id: "pt_drill_dewalt",      name: "DeWalt Drill w/ Batteries x2 + Charger", unit: "units", category: "Power Tools" },
-  { id: "pt_drill_mitool",      name: "Mitool Drill w/ Battery + Charger",       unit: "units", category: "Power Tools" },
-  { id: "pt_drill_hilti",       name: "Hilti Drill",                             unit: "units", category: "Power Tools" },
-  { id: "pt_drill_kobalt",      name: "Corded Drill Kobalt (Paint Mixer)",       unit: "units", category: "Power Tools" },
-  { id: "pt_saw_hilti",         name: "Hilti Skill Saw",                         unit: "units", category: "Power Tools" },
-  { id: "pt_saw_foam",          name: "Foam Wall Saw",                           unit: "units", category: "Power Tools" },
-  { id: "pt_foamzall",          name: "Foamzall (Rebuilt)",                      unit: "units", category: "Power Tools" },
-  { id: "pt_grinder_dewalt",    name: "DeWalt Grinder",                         unit: "units", category: "Power Tools" },
-  { id: "pt_hilti_dx5",         name: "Hilti DX5",                              unit: "units", category: "Power Tools" },
-  { id: "pt_hilti_nuron_chgr",  name: "Hilti Nuron Charger",                    unit: "units", category: "Power Tools" },
-  { id: "pt_light_dewalt",      name: "DeWalt Light",                           unit: "units", category: "Power Tools" },
-  { id: "pt_pump_rebuild",      name: "Pump (Needs Rebuild)",                   unit: "units", category: "Power Tools" },
-  // ── Hand Tools ──
-  { id: "pt_knife_utility_box", name: "Box Utility Knives",                     unit: "units", category: "Hand Tools" },
-  { id: "pt_hammer_framing",    name: "Framing Hammer",                         unit: "units", category: "Hand Tools" },
-  { id: "pt_level",             name: "Level",                                  unit: "units", category: "Hand Tools" },
-  { id: "pt_nut_driver",        name: "Nut Driver",                             unit: "units", category: "Hand Tools" },
-  { id: "pt_socket_set",        name: "Socket Set (Craftsman)",                 unit: "units", category: "Hand Tools" },
-  { id: "pt_speed_square",      name: "Speed Square",                           unit: "units", category: "Hand Tools" },
   // ── Tape & Caulk ──
   { id: "pt_tape_caution",      name: "Caution Tape",                           unit: "rolls", category: "Tape & Caulk" },
   { id: "pt_tape_duct",         name: "Duct Tape",                              unit: "rolls", category: "Tape & Caulk" },
@@ -189,7 +203,7 @@ const PROJECT_TOOLS_ITEMS = [
   { id: "pt_ppe_3m_filters",    name: "3M Triangular Filters",                 unit: "units", category: "PPE" },
   { id: "pt_ppe_bullard_filt",  name: "Bullard Filters",                       unit: "units", category: "PPE" },
   { id: "pt_ppe_bullard_resp",  name: "Bullard Respirator",                    unit: "units", category: "PPE" },
-  { id: "pt_ppe_curry_comb",    name: "Curry Combs",                           unit: "units", category: "Hand Tools" },
+
   { id: "pt_ppe_earplugs",      name: "Ear Plugs (case)",                      unit: "cases", category: "PPE" },
   { id: "pt_ppe_head_socks",    name: "Head Socks Black (box)",                unit: "boxes", category: "PPE" },
   { id: "pt_ppe_honeywell",     name: "Honeywell Filters",                     unit: "units", category: "PPE" },
@@ -206,10 +220,7 @@ const PROJECT_TOOLS_ITEMS = [
   { id: "pt_sup_air_chutes",    name: "Air Chutes (bundle)",                   unit: "bundles", category: "Supplies & Accessories" },
   { id: "pt_sup_locks_keys",    name: "BX Locks & Keys (Interior Door)",       unit: "sets",  category: "Supplies & Accessories" },
   { id: "pt_sup_energy_seal",   name: "Energy Seal (cans)",                    unit: "cans",  category: "Supplies & Accessories" },
-  { id: "pt_sup_ext_cord_100",  name: "Extension Cord 100ft",                 unit: "units", category: "Supplies & Accessories" },
-  { id: "pt_sup_air_hose",      name: "Fresh Air Hoses",                       unit: "units", category: "Supplies & Accessories" },
   { id: "pt_sup_garbage_bags",  name: "Hefty Garbage Bags",                    unit: "boxes", category: "Supplies & Accessories" },
-  { id: "pt_sup_headlamps",     name: "Headlamps",                             unit: "units", category: "Supplies & Accessories" },
   { id: "pt_sup_poly_10mil",    name: "Poly 10mil (rolls)",                   unit: "rolls", category: "Supplies & Accessories" },
   { id: "pt_sup_poly_2mil",     name: "Poly 2mil (sheets)",                   unit: "units", category: "Supplies & Accessories" },
   // ── Fasteners ──
@@ -234,6 +245,23 @@ const calcTubeDeductions = (tubeItem, fullTubesUsed, loosePiecesUsed, truckInv) 
   return result;
 };
 
+// MATERIAL_COSTS used in quick-cost lookups (mirrors INVENTORY_ITEMS costs)
+// Foam: A-side $0, B-side OC=$1,536/bbl (48gal×$32), CC=$2,200/bbl (50gal×$44)
+const MATERIAL_COSTS = {
+  oc_a: 0,    oc_b: MAT_RATE.oc_bbl,
+  cc_a: 0,    cc_b: MAT_RATE.cc_bbl,
+  env_oc_a: 0, env_oc_b: MAT_RATE.oc_bbl,
+  env_cc_a: 0, env_cc_b: MAT_RATE.cc_bbl,
+  free_env_oc_a: 0, free_env_oc_b: 0,
+  blown_fg: MAT_RATE.blown, blown_fg_jm: MAT_RATE.blown, blown_cel: MAT_RATE.blown,
+};
+
+function getUnreadNotes(jobId, updates) {
+  const readRaw = localStorage.getItem(`ist_read_notes_${jobId}`);
+  const read = readRaw ? JSON.parse(readRaw) : [];
+  return (updates || []).filter(u => u.jobId === jobId && u.notes && u.crewName && !read.includes(u.id));
+}
+
 const TICKET_PRIORITIES = [
   { value: "low", label: "Low — Can Wait", color: "#1d4ed8", bg: "#dbeafe" },
   { value: "medium", label: "Medium — Needs Attention", color: "#b45309", bg: "#fef3c7" },
@@ -247,6 +275,7 @@ const TICKET_STATUSES = [
   { value: "resolved", label: "Resolved", color: "#15803d", bg: "#dcfce7" },
 ];
 const OFFICE_PROFILES = ["Skip", "Jordan", "Johnny", "Duck", "Carolyn"];
+const MECHANIC_PROFILES = ["Turrell", "Nick"];
 
 const todayCST = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 const tsToCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
@@ -254,6 +283,22 @@ const todayStr = todayCST; // alias
 const naturalSort = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 const timeStr = () => new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 const dateStr = (iso) => { try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
+const mapsUrl = (addr) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`;
+
+function haversineKm(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+function kmToMiles(km) { return km * 0.621371; }
+function getGeocache(addr) {
+  try {
+    const cache = JSON.parse(sessionStorage.getItem("ist_geocache") || "{}");
+    return cache[addr] || null;
+  } catch { return null; }
+}
 
 // ─── Theme ───
 const t = {
@@ -456,6 +501,10 @@ const kbStyles = `
     from { opacity: 0; transform: translateX(40px); }
     to { opacity: 1; transform: translateX(0); }
   }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
   .kb-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center; }
   .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
   .kb-content { animation: authFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) both; }
@@ -520,8 +569,270 @@ function RoleSelect({ onSelect }) {
           <div style={{ fontSize: "16px", fontWeight: 600, color: "#fff" }}>Field Crew</div>
           <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)", marginTop: "4px" }}>View jobs & send updates</div>
         </div>
+        <div className="kb-card" onClick={() => onSelect("mechanic")} style={{ flex: "1 1 160px", textAlign: "center", padding: "32px 20px", cursor: "pointer", borderRadius: "12px" }}>
+          <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+            <svg width="20" height="20" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+          </div>
+          <div style={{ fontSize: "16px", fontWeight: 600, color: "#fff" }}>Mechanic</div>
+          <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)", marginTop: "4px" }}>Truck hub & service records</div>
+        </div>
       </div>
     </AuthShell>
+  );
+}
+
+function MechanicLogin({ onLogin, onBack }) {
+  const [selected, setSelected] = useState(null);
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [mode, setMode] = useState(null);
+  const [error, setError] = useState("");
+  const [storedHash, setStoredHash] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const hashPin = (p) => { let h = 0; const s = p + "ist_salt"; for (let i = 0; i < s.length; i++) { h = ((h << 5) - h) + s.charCodeAt(i); h |= 0; } return String(h); };
+
+  const handleSelect = async (name) => {
+    if (loading) return;
+    setSelected(name); setPin(""); setConfirmPin(""); setError(""); setLoading(true);
+    try {
+      const snap = await getDoc(doc(db, "pins", "mechanic_" + name.toLowerCase()));
+      if (snap.exists()) { setStoredHash(snap.data().hash); setMode("enter"); }
+      else { setMode("create"); }
+    } catch { setMode("create"); }
+    finally { setLoading(false); }
+  };
+
+  const handleEnterPin = () => {
+    if (hashPin(pin) === storedHash) { onLogin(selected); }
+    else { setError("Incorrect PIN. Try again."); setPin(""); }
+  };
+
+  const handleCreatePin = async () => {
+    if (pin.length !== 4 || !/^\d{4}$/.test(pin)) { setError("PIN must be exactly 4 digits."); return; }
+    if (pin !== confirmPin) { setError("PINs don't match."); return; }
+    await setDoc(doc(db, "pins", "mechanic_" + selected.toLowerCase()), { hash: hashPin(pin), user: selected });
+    onLogin(selected);
+  };
+
+  const pinInput = (val, onChange, onEnter, label) => (
+    <>
+      <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>{label}</label>
+      <input type="password" inputMode="numeric" maxLength={4} placeholder="----" value={val}
+        onChange={e => { onChange(e.target.value.replace(/\D/g, "").slice(0, 4)); setError(""); }}
+        onKeyDown={e => e.key === "Enter" && onEnter && onEnter()}
+        autoFocus={label.includes("Enter")}
+        style={{ width: "100%", padding: 14, background: "#fff", border: "1px solid " + t.border, borderRadius: 8, color: t.text, fontSize: 24, fontFamily: "inherit", textAlign: "center", letterSpacing: 12, outline: "none", boxSizing: "border-box", marginBottom: 14 }} />
+    </>
+  );
+
+  if (selected && mode === "enter") return (
+    <AuthShell>
+      <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.text, fontSize: 13, cursor: "pointer", marginBottom: 24, padding: 0, fontFamily: "inherit" }}>← Back</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 8, background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700 }}>{selected[0]}</div>
+        <div><div style={{ fontSize: 18, fontWeight: 600, color: t.text }}>{selected}</div><div style={{ fontSize: 13, color: t.textMuted }}>Enter your 4-digit PIN</div></div>
+      </div>
+      {pinInput(pin, setPin, handleEnterPin, "Enter PIN")}
+      {error && <div style={{ color: t.danger, fontSize: 13, marginTop: -8, marginBottom: 8, textAlign: "center" }}>{error}</div>}
+      <Button onClick={handleEnterPin} disabled={pin.length !== 4} style={{ width: "100%" }}>Log In</Button>
+    </AuthShell>
+  );
+
+  if (selected && mode === "create") return (
+    <AuthShell>
+      <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.text, fontSize: 13, cursor: "pointer", marginBottom: 24, padding: 0, fontFamily: "inherit" }}>← Back</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+        <div style={{ width: 40, height: 40, borderRadius: 8, background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700 }}>{selected[0]}</div>
+        <div style={{ fontSize: 18, fontWeight: 600, color: t.text }}>{selected}</div>
+      </div>
+      <p style={{ color: "rgba(0,0,0,0.5)", fontSize: 13.5, margin: "0 0 20px" }}>First time? Set up a 4-digit PIN.</p>
+      {pinInput(pin, setPin, null, "Create PIN")}
+      {pinInput(confirmPin, setConfirmPin, handleCreatePin, "Confirm PIN")}
+      {error && <div style={{ color: t.danger, fontSize: 13, marginTop: -8, marginBottom: 8, textAlign: "center" }}>{error}</div>}
+      <Button onClick={handleCreatePin} disabled={pin.length !== 4 || confirmPin.length !== 4} style={{ width: "100%" }}>Set PIN & Log In</Button>
+    </AuthShell>
+  );
+
+  return (
+    <AuthShell wide kiosk>
+      <button onClick={onBack} style={{ background: "none", border: "none", color: t.text, fontSize: 13, cursor: "pointer", marginBottom: 24, padding: 0, fontFamily: "inherit" }}>← Back</button>
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
+        <div style={{ fontSize: 24, fontWeight: 800, color: "#fff" }}>🔧 Mechanic Login</div>
+        <div style={{ color: "rgba(0,0,0,0.5)", fontSize: 13.5, marginTop: 6 }}>Select your name to log in</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {MECHANIC_PROFILES.map(name => (
+          <button key={name} onClick={() => handleSelect(name)}
+            style={{ padding: "18px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 17, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
+            {name}
+          </button>
+        ))}
+      </div>
+    </AuthShell>
+  );
+}
+
+function MechanicDashboard({ mechanicName, trucks, tickets, onSubmitTicket, onUpdateTicket, onReorderTruck, onLogout }) {
+  const [selectedTruck, setSelectedTruck] = useState(null);
+  const [noteForm, setNoteForm] = useState({ mileage: "", serviceType: "", notes: "", priority: "normal" });
+  const [showNoteForm, setShowNoteForm] = useState(false);
+  const [expandedTruck, setExpandedTruck] = useState(null);
+
+  const mechTickets = (tickets || []).filter(tk => tk.ticketType === "equipment" || tk.ticketType === "mechanic");
+  const openIssues = mechTickets.filter(tk => tk.status !== "resolved");
+
+  const handleSubmitNote = async () => {
+    if (!selectedTruck || !noteForm.notes.trim()) return;
+    await onSubmitTicket({
+      truckId: selectedTruck.id,
+      truckName: selectedTruck.name,
+      submittedBy: mechanicName,
+      description: noteForm.notes.trim(),
+      priority: noteForm.priority,
+      ticketType: "mechanic",
+      mileage: noteForm.mileage.trim(),
+      serviceType: noteForm.serviceType.trim(),
+      status: "open",
+      timestamp: new Date().toISOString(),
+    });
+    setNoteForm({ mileage: "", serviceType: "", notes: "", priority: "normal" });
+    setShowNoteForm(false);
+    setSelectedTruck(null);
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: t.bg }}>
+      {/* Header */}
+      <div style={{ background: t.accent, padding: "16px 20px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: "#fff" }}>🔧 Mechanic Hub</div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.7)", marginTop: 2 }}>{mechanicName}</div>
+        </div>
+        <button onClick={onLogout} style={{ background: "rgba(255,255,255,0.15)", border: "none", borderRadius: 8, padding: "8px 14px", color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>Sign Out</button>
+      </div>
+
+      <div style={{ padding: "20px 16px", maxWidth: 700, margin: "0 auto" }}>
+
+        {/* Open Issues Banner */}
+        {openIssues.length > 0 && (
+          <div style={{ background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 10, padding: "12px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 10 }}>
+            <span style={{ fontSize: 20 }}>⚠️</span>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: "#c2410c" }}>{openIssues.length} open truck issue{openIssues.length !== 1 ? "s" : ""}</div>
+              <div style={{ fontSize: 12, color: "#9a3412" }}>{openIssues.map(tk => tk.truckName || "Unknown").join(", ")}</div>
+            </div>
+          </div>
+        )}
+
+        {/* Truck Cards */}
+        <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 12 }}>Fleet</div>
+        {trucks.length === 0 && <div style={{ color: t.textMuted, fontSize: 13 }}>No trucks found.</div>}
+        {[...trucks].sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).map((truck, idx, arr) => {
+          const truckTickets = mechTickets.filter(tk => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+          const openCount = truckTickets.filter(tk => tk.status !== "resolved").length;
+          const isExpanded = expandedTruck === truck.id;
+          return (
+            <Card key={truck.id} style={{ marginBottom: 12, borderLeft: openCount > 0 ? "3px solid #f97316" : "3px solid #22c55e" }}>
+              {/* Truck header */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setExpandedTruck(isExpanded ? null : truck.id)}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{truck.vehicleName || truck.members || truck.name}</div>
+                  {truck.vehicleName && (truck.year || truck.make) && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{[truck.year, truck.make, truck.model].filter(Boolean).join(" ")}</div>}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {openCount > 0 && <Badge color="#c2410c" bg="#fff7ed">⚠️ {openCount} issue{openCount !== 1 ? "s" : ""}</Badge>}
+                  {openCount === 0 && <Badge color="#15803d" bg="#dcfce7">✓ Clear</Badge>}
+                  {onReorderTruck && (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 2 }} onClick={e => e.stopPropagation()}>
+                      <button disabled={idx === 0} onClick={() => { const prev = arr[idx - 1]; onReorderTruck(truck.id, prev.order ?? idx - 1); onReorderTruck(prev.id, truck.order ?? idx); }} style={{ background: "none", border: "1px solid " + t.border, borderRadius: 4, width: 22, height: 18, cursor: idx === 0 ? "default" : "pointer", opacity: idx === 0 ? 0.3 : 1, color: t.textMuted, fontSize: 10, lineHeight: 1, padding: 0 }}>▲</button>
+                      <button disabled={idx === arr.length - 1} onClick={() => { const next = arr[idx + 1]; onReorderTruck(truck.id, next.order ?? idx + 1); onReorderTruck(next.id, truck.order ?? idx); }} style={{ background: "none", border: "1px solid " + t.border, borderRadius: 4, width: 22, height: 18, cursor: idx === arr.length - 1 ? "default" : "pointer", opacity: idx === arr.length - 1 ? 0.3 : 1, color: t.textMuted, fontSize: 10, lineHeight: 1, padding: 0 }}>▼</button>
+                    </div>
+                  )}
+                  <span style={{ color: t.textMuted, fontSize: 13 }}>{isExpanded ? "▲" : "▼"}</span>
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div style={{ marginTop: 14, borderTop: "1px solid " + t.borderLight, paddingTop: 14 }}>
+                  {/* Log a service note button */}
+                  <button onClick={() => { setSelectedTruck(truck); setShowNoteForm(true); }}
+                    style={{ width: "100%", padding: "11px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", marginBottom: 14 }}>
+                    + Log Service Note
+                  </button>
+
+                  {/* Service history */}
+                  {truckTickets.length === 0
+                    ? <div style={{ fontSize: 13, color: t.textMuted }}>No service records yet.</div>
+                    : truckTickets.map(tk => {
+                        const statusColor = tk.status === "resolved" ? "#15803d" : tk.priority === "critical" ? "#b91c1c" : "#b45309";
+                        const statusBg = tk.status === "resolved" ? "#dcfce7" : tk.priority === "critical" ? "#fee2e2" : "#fef3c7";
+                        return (
+                          <div key={tk.id} style={{ padding: "12px", background: t.bg, borderRadius: 8, marginBottom: 8, border: "1px solid " + t.borderLight }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8, marginBottom: 6 }}>
+                              <div style={{ flex: 1 }}>
+                                {tk.serviceType && <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 3 }}>{tk.serviceType}</div>}
+                                <div style={{ fontSize: 13, color: t.text, lineHeight: 1.4 }}>{tk.description}</div>
+                                {tk.mileage && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 4 }}>📍 {tk.mileage} mi</div>}
+                              </div>
+                              <Badge color={statusColor} bg={statusBg}>{tk.status === "resolved" ? "✓ Done" : "Open"}</Badge>
+                            </div>
+                            <div style={{ fontSize: 11, color: t.textMuted, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                              <span>By {tk.submittedBy}</span>
+                              <span>{new Date(tk.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                            </div>
+                            {tk.status !== "resolved" && onUpdateTicket && (
+                              <button onClick={() => onUpdateTicket(tk.id, { status: "resolved", resolvedAt: new Date().toISOString(), resolvedBy: mechanicName })}
+                                style={{ marginTop: 8, padding: "7px 14px", background: "#15803d", border: "none", borderRadius: 6, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                                ✓ Mark Resolved
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })
+                  }
+                </div>
+              )}
+            </Card>
+          );
+        })}
+      </div>
+
+      {/* Log Service Note Modal */}
+      {showNoteForm && selectedTruck && (
+        <Modal title={"Service Note — " + selectedTruck.name} onClose={() => { setShowNoteForm(false); setSelectedTruck(null); }}>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: t.textSecondary, marginBottom: 5 }}>Service Type</label>
+            <input placeholder="e.g. Oil Change, Brake Repair, Inspection" value={noteForm.serviceType} onChange={e => setNoteForm(f => ({ ...f, serviceType: e.target.value }))}
+              style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: t.textSecondary, marginBottom: 5 }}>Mileage (optional)</label>
+            <input placeholder="e.g. 84,200" value={noteForm.mileage} onChange={e => setNoteForm(f => ({ ...f, mileage: e.target.value }))}
+              style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }} />
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: t.textSecondary, marginBottom: 5 }}>Priority</label>
+            <select value={noteForm.priority} onChange={e => setNoteForm(f => ({ ...f, priority: e.target.value }))}
+              style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}>
+              <option value="low">Low — FYI / scheduled</option>
+              <option value="normal">Normal — needs attention soon</option>
+              <option value="high">High — do not delay</option>
+              <option value="critical">Critical — truck out of service</option>
+            </select>
+          </div>
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 600, color: t.textSecondary, marginBottom: 5 }}>Notes *</label>
+            <textarea placeholder="Describe the service or issue..." value={noteForm.notes} onChange={e => setNoteForm(f => ({ ...f, notes: e.target.value }))} rows={4}
+              style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 14, fontFamily: "inherit", outline: "none", boxSizing: "border-box", resize: "vertical" }} />
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <button onClick={() => { setShowNoteForm(false); setSelectedTruck(null); }} style={{ flex: 1, padding: "11px", background: "none", border: "1px solid " + t.border, borderRadius: 8, color: t.textMuted, fontWeight: 600, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+            <button onClick={handleSubmitNote} disabled={!noteForm.notes.trim()} style={{ flex: 2, padding: "11px", background: noteForm.notes.trim() ? t.accent : t.textMuted, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 14, cursor: noteForm.notes.trim() ? "pointer" : "not-allowed", fontFamily: "inherit" }}>Submit Note</button>
+          </div>
+        </Modal>
+      )}
+    </div>
   );
 }
 
@@ -1078,7 +1389,375 @@ function DailyProcedureCard() {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout }) {
+function SuppliesCheckoutView({ truck, crewName, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+  const [suppliesTab, setSuppliesTab] = useState("projectTools");
+  const [suppliesSearch, setSuppliesSearch] = useState("");
+  const [cart, setCart] = useState([]);
+  const [itemQtys, setItemQtys] = useState({});
+  const [checkingOut, setCheckingOut] = useState(false);
+  const [checkoutSuccess, setCheckoutSuccess] = useState(false);
+  const [checkoutReceipt, setCheckoutReceipt] = useState(null);
+
+  const currentItems = suppliesTab === "foamParts" ? FOAM_GUN_PARTS : PROJECT_TOOLS_ITEMS;
+  const currentInv = suppliesTab === "foamParts" ? (foamPartsInventory || []) : (projectToolsInventory || []);
+  const getStock = (itemId) => { const r = currentInv.find(r => r.itemId === itemId); return r ? r.qty : 0; };
+  const filtered = suppliesSearch.trim()
+    ? currentItems.filter(i => i.name.toLowerCase().includes(suppliesSearch.toLowerCase()) || (i.category||"").toLowerCase().includes(suppliesSearch.toLowerCase()))
+    : currentItems;
+
+  const getQty = (itemId) => itemQtys[itemId] || 1;
+  const setQty = (itemId, v) => setItemQtys(prev => ({ ...prev, [itemId]: Math.max(1, v) }));
+
+  const addToCart = (item) => {
+    const qty = getQty(item.id);
+    setCart(prev => {
+      const existing = prev.find(c => c.itemId === item.id);
+      if (existing) return prev.map(c => c.itemId === item.id ? { ...c, qty: c.qty + qty } : c);
+      return [...prev, { itemId: item.id, itemName: item.name, qty, unit: item.unit, category: item.category || "", collection: suppliesTab === "foamParts" ? "foamParts" : "projectTools" }];
+    });
+  };
+
+  const handleCheckout = async () => {
+    if (!cart.length || checkingOut) return;
+    setCheckingOut(true);
+    try {
+      const receiptItems = [...cart];
+      await onSuppliesCheckout(cart, crewName, truck?.id, truck?.name);
+      setCart([]);
+      setItemQtys({});
+      setCheckoutReceipt({ items: receiptItems, timestamp: new Date().toISOString() });
+    } catch (e) { console.error(e); }
+    setCheckingOut(false);
+  };
+
+  if (checkoutReceipt) {
+    return (
+      <div style={{ padding: "8px 0" }}>
+        <div style={{ textAlign: "center", fontSize: "28px", marginBottom: "8px" }}>✅</div>
+        <div style={{ textAlign: "center", fontSize: "20px", fontWeight: 800, color: t.text, marginBottom: "4px" }}>Checked Out!</div>
+        <div style={{ textAlign: "center", fontSize: "12px", color: t.textMuted, marginBottom: "20px" }}>
+          {new Date(checkoutReceipt.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}
+        </div>
+        <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: "10px", padding: "14px", marginBottom: "20px" }}>
+          {checkoutReceipt.items.map((item, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", fontSize: "14px", color: t.text, padding: "6px 0", borderBottom: i < checkoutReceipt.items.length - 1 ? "1px solid " + t.borderLight : "none" }}>
+              <span>{item.itemName}</span>
+              <span style={{ fontWeight: 700, color: t.accent }}>{item.qty} {item.unit}</span>
+            </div>
+          ))}
+        </div>
+        <button onClick={() => setCheckoutReceipt(null)} style={{ width: "100%", padding: "14px", borderRadius: "10px", border: "none", background: t.accent, color: "#fff", fontWeight: 700, fontSize: "16px", cursor: "pointer", fontFamily: "inherit" }}>Done</button>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ paddingBottom: cart.length > 0 ? 120 : 0 }}>
+      {checkoutSuccess && (
+        <div style={{ background: "#dcfce7", border: "1px solid #86efac", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 14, fontWeight: 600, color: "#15803d", textAlign: "center" }}>✅ Checked out!</div>
+      )}
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        {[{ id: "projectTools", label: "Tools & Supplies" }, { id: "foamParts", label: "Foam Gun Parts" }].map(tab => (
+          <button key={tab.id} onClick={() => { setSuppliesTab(tab.id); setSuppliesSearch(""); }} style={{
+            flex: 1, padding: "9px 12px", borderRadius: 8, border: "1px solid " + (suppliesTab === tab.id ? t.accent : t.border),
+            background: suppliesTab === tab.id ? t.accent : t.surface, color: suppliesTab === tab.id ? "#fff" : t.text,
+            fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit"
+          }}>{tab.label}</button>
+        ))}
+      </div>
+      <input placeholder="Search items..." value={suppliesSearch} onChange={e => setSuppliesSearch(e.target.value)}
+        style={{ width: "100%", boxSizing: "border-box", padding: "10px 12px", border: "1px solid " + t.border, borderRadius: 8, fontSize: 13, fontFamily: "inherit", marginBottom: 12, background: t.surface, color: t.text }} />
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {filtered.map(item => {
+          const stock = getStock(item.id);
+          const qty = getQty(item.id);
+          const inCart = cart.find(c => c.itemId === item.id);
+          return (
+            <div key={item.id} style={{ background: t.surface, border: "1px solid " + (inCart ? t.accent : t.border), borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: t.text, lineHeight: 1.3 }}>{item.name}</div>
+                <div style={{ display: "flex", gap: 8, marginTop: 4, flexWrap: "wrap" }}>
+                  {item.category && <span style={{ fontSize: 11, color: t.textMuted, background: t.bg, border: "1px solid " + t.borderLight, borderRadius: 4, padding: "1px 6px" }}>{item.category}</span>}
+                  <span style={{ fontSize: 11, color: stock <= 0 ? "#ef4444" : "#15803d", fontWeight: 600 }}>In Stock: {stock} {item.unit}</span>
+                </div>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                <button onClick={() => setQty(item.id, qty - 1)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + t.border, background: t.bg, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: t.text }}>−</button>
+                <span style={{ minWidth: 24, textAlign: "center", fontSize: 14, fontWeight: 600, color: t.text }}>{qty}</span>
+                <button onClick={() => setQty(item.id, qty + 1)} style={{ width: 28, height: 28, borderRadius: 6, border: "1px solid " + t.border, background: t.bg, cursor: "pointer", fontSize: 16, display: "flex", alignItems: "center", justifyContent: "center", color: t.text }}>+</button>
+                <button onClick={() => addToCart(item)} style={{ marginLeft: 4, padding: "6px 10px", borderRadius: 7, border: "none", background: t.accent, color: "#fff", fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>✓ Add</button>
+              </div>
+            </div>
+          );
+        })}
+        {filtered.length === 0 && <div style={{ textAlign: "center", color: t.textMuted, fontSize: 14, padding: 32 }}>No items found.</div>}
+      </div>
+      {cart.length > 0 && (
+        <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, background: t.surface, borderTop: "2px solid " + t.accent, padding: "12px 16px", zIndex: 100, boxShadow: "0 -4px 24px rgba(0,0,0,0.12)" }}>
+          <div style={{ maxWidth: 600, margin: "0 auto" }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>Cart</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 10, maxHeight: 80, overflowY: "auto" }}>
+              {cart.map(c => (
+                <div key={c.itemId} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: t.text }}>
+                  <span>{c.itemName}</span>
+                  <span style={{ fontWeight: 600, color: t.accent }}>{c.qty} {c.unit}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <button onClick={() => setCart([])} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Clear</button>
+              <button onClick={handleCheckout} disabled={checkingOut} style={{ flex: 1, padding: "10px", borderRadius: 8, border: "none", background: checkingOut ? t.textMuted : t.accent, color: "#fff", fontWeight: 700, fontSize: 14, cursor: checkingOut ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+                {checkingOut ? "Checking out..." : `Check Out ${cart.reduce((s, c) => s + c.qty, 0)} items`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CheckoutLogView({ suppliesCheckouts }) {
+  const [coSearch, setCoSearch] = React.useState("");
+  const [coDateFilter, setCoDateFilter] = React.useState("today");
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const weekAgo = new Date(now - 7 * 86400000).toISOString();
+  const checkouts = suppliesCheckouts || [];
+  const filtered = checkouts.filter(c => {
+    if (coDateFilter === "today" && (!c.timestamp || c.timestamp.slice(0,10) !== todayStr)) return false;
+    if (coDateFilter === "week" && (!c.timestamp || c.timestamp < weekAgo)) return false;
+    if (coSearch.trim()) {
+      const q = coSearch.toLowerCase();
+      if (!(c.itemName||"").toLowerCase().includes(q) && !(c.checkedOutBy||"").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+  const todayCheckouts = checkouts.filter(c => c.timestamp && c.timestamp.slice(0,10) === todayStr);
+  const todayQty = todayCheckouts.reduce((s, c) => s + (c.qty || 0), 0);
+  const fmtTs = (ts) => { if (!ts) return ""; const d = new Date(ts); return d.toLocaleDateString("en-US",{month:"short",day:"numeric"}) + ", " + d.toLocaleTimeString("en-US",{hour:"numeric",minute:"2-digit"}); };
+  const exportCSV = () => {
+    const rows = [["Timestamp","Checked Out By","Truck","Item","Qty","Unit","Category","Collection"]];
+    filtered.forEach(c => rows.push([c.timestamp||"",c.checkedOutBy||"",c.truckName||"",c.itemName||"",c.qty||0,c.unit||"",c.category||"",c.collection||""]));
+    const csv = rows.map(r => r.map(v => '"' + String(v).replace(/"/g,'""') + '"').join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = "supplies-checkouts.csv"; a.click();
+    URL.revokeObjectURL(url);
+  };
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+        <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: "10px 16px", minWidth: 140 }}>
+          <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Today's Checkouts</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: t.accent, marginTop: 2 }}>{todayCheckouts.length}</div>
+        </div>
+        <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: "10px 16px", minWidth: 140 }}>
+          <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Items Today</div>
+          <div style={{ fontSize: 24, fontWeight: 800, color: t.accent, marginTop: 2 }}>{todayQty}</div>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        <input placeholder="Search by item or person..." value={coSearch} onChange={e => setCoSearch(e.target.value)}
+          style={{ flex: 1, minWidth: 180, padding: "8px 12px", border: "1px solid " + t.border, borderRadius: 8, fontSize: 13, fontFamily: "inherit", background: t.surface, color: t.text }} />
+        {[{ id: "today", label: "Today" }, { id: "week", label: "This Week" }, { id: "all", label: "All" }].map(f => (
+          <button key={f.id} onClick={() => setCoDateFilter(f.id)} style={{
+            padding: "8px 14px", borderRadius: 8, border: "1px solid " + (coDateFilter === f.id ? t.accent : t.border),
+            background: coDateFilter === f.id ? t.accent : t.surface, color: coDateFilter === f.id ? "#fff" : t.text,
+            fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit"
+          }}>{f.label}</button>
+        ))}
+        <button onClick={exportCSV} style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid " + t.border, background: t.bg, color: t.text, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>⬇ Export CSV</button>
+      </div>
+      {filtered.length === 0 ? (
+        <div style={{ textAlign: "center", color: t.textMuted, fontSize: 14, padding: 40 }}>No checkouts found.</div>
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: t.bg }}>
+                {["Time","Who","Truck","Item","Qty","Category"].map(h => (
+                  <th key={h} style={{ textAlign: "left", padding: "8px 10px", borderBottom: "2px solid " + t.border, whiteSpace: "nowrap", fontWeight: 700, color: t.textSecondary, fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map((c, i) => (
+                <tr key={c.id || i} style={{ background: i % 2 === 0 ? t.surface : t.bg }}>
+                  <td style={{ padding: "8px 10px", borderBottom: "1px solid " + t.borderLight, color: t.textMuted, whiteSpace: "nowrap", fontSize: 12 }}>{fmtTs(c.timestamp)}</td>
+                  <td style={{ padding: "8px 10px", borderBottom: "1px solid " + t.borderLight, fontWeight: 600, color: t.text }}>{c.checkedOutBy || "—"}</td>
+                  <td style={{ padding: "8px 10px", borderBottom: "1px solid " + t.borderLight, color: t.textMuted }}>{c.truckName || "—"}</td>
+                  <td style={{ padding: "8px 10px", borderBottom: "1px solid " + t.borderLight, color: t.text }}>{c.itemName}</td>
+                  <td style={{ padding: "8px 10px", borderBottom: "1px solid " + t.borderLight, fontWeight: 600, color: t.accent, whiteSpace: "nowrap" }}>{c.qty} {c.unit}</td>
+                  <td style={{ padding: "8px 10px", borderBottom: "1px solid " + t.borderLight, color: t.textMuted }}>{c.category || "—"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Daily Brief Modal ───
+function DailyBrief({ crewName, todayJobs, onDismiss }) {
+  const todayISO = new Date().toLocaleDateString("en-CA");
+  const hour = new Date().toLocaleString("en-US", { timeZone: "America/Chicago", hour: "numeric", hour12: false });
+  const h = parseInt(hour, 10);
+  const greeting = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
+
+  const [wxMap, setWxMap] = React.useState({});
+  const [loadingSet, setLoadingSet] = React.useState(new Set());
+
+  // Fetch weather for each job address sequentially
+  React.useEffect(() => {
+    const addresses = [...new Set(todayJobs.map(j => j.address).filter(Boolean))];
+    let cancelled = false;
+    (async () => {
+      for (const addr of addresses) {
+        if (cancelled) break;
+        setLoadingSet(prev => { const s = new Set(prev); s.add(addr); return s; });
+        try {
+          // Check sessionStorage cache first
+          const cacheKey = `ist_geocache`;
+          let geocache = {};
+          try { geocache = JSON.parse(sessionStorage.getItem(cacheKey) || "{}"); } catch {}
+          let lat, lon;
+          if (geocache[addr]) {
+            ({ lat, lon } = geocache[addr]);
+          } else {
+            const searchAddr = /oklahoma|,\s*ok\b/i.test(addr) ? addr : `${addr}, Oklahoma`;
+            const gRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchAddr)}&format=json&limit=1&countrycodes=us`, { headers: { "Accept-Language": "en", "User-Agent": "ISTDispatch/1.0" } });
+            const gData = await gRes.json();
+            if (!gData.length) throw new Error("geocode failed");
+            lat = parseFloat(gData[0].lat); lon = parseFloat(gData[0].lon);
+            geocache[addr] = { lat, lon };
+            try { sessionStorage.setItem(cacheKey, JSON.stringify(geocache)); } catch {}
+          }
+          const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode,windspeed_10m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago&forecast_days=1`);
+          const wxRaw = await wxRes.json();
+          // Find current hour conditions
+          const nowMs = Date.now();
+          let cur = null;
+          const hours = (wxRaw.hourly?.time || []).map((t, i) => ({ time: t, temp: wxRaw.hourly.temperature_2m[i], feelsLike: wxRaw.hourly.apparent_temperature[i], precip: wxRaw.hourly.precipitation_probability[i] ?? 0, wind: wxRaw.hourly.windspeed_10m[i], code: wxRaw.hourly.weathercode[i] }));
+          for (const h2 of hours) { if (new Date(h2.time).getTime() <= nowMs) cur = h2; else break; }
+          if (!cur && hours.length) cur = hours[0];
+          // Work shift range (6am-7pm)
+          const workHours = hours.filter(h2 => { const hr = parseInt(h2.time.slice(11,13),10); return h2.time.startsWith(todayISO) && hr >= 6 && hr <= 19; });
+          const hiTemp = workHours.length ? Math.round(Math.max(...workHours.map(h2 => h2.temp))) : null;
+          const loTemp = workHours.length ? Math.round(Math.min(...workHours.map(h2 => h2.temp))) : null;
+          const rainRisk = workHours.some(h2 => h2.precip > 50);
+          const windRisk = workHours.some(h2 => h2.wind > 25);
+          const coldRisk = workHours.some(h2 => h2.temp < 40);
+          if (!cancelled) setWxMap(prev => ({ ...prev, [addr]: { cur, hiTemp, loTemp, rainRisk, windRisk, coldRisk, ok: true } }));
+        } catch {
+          if (!cancelled) setWxMap(prev => ({ ...prev, [addr]: { error: true } }));
+        } finally {
+          if (!cancelled) setLoadingSet(prev => { const s = new Set(prev); s.delete(addr); return s; });
+          await new Promise(r => setTimeout(r, 1100));
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const getHour = () => new Date().toLocaleTimeString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit", hour12: true });
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)", display: "flex", flexDirection: "column", overflowY: "auto" }}>
+      {/* Header */}
+      <div style={{ padding: "40px 24px 20px", textAlign: "center" }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "2px", marginBottom: 8 }}>{getHour()} · {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
+        <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", lineHeight: 1.2 }}>{greeting},</div>
+        <div style={{ fontSize: 34, fontWeight: 900, color: "#60a5fa", lineHeight: 1.2, marginTop: 4 }}>{crewName} 👋</div>
+        <div style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", marginTop: 12 }}>
+          {todayJobs.length === 0 ? "No jobs assigned for today." : `You have ${todayJobs.length} job${todayJobs.length !== 1 ? "s" : ""} today.`}
+        </div>
+      </div>
+
+      {/* Job cards */}
+      <div style={{ flex: 1, padding: "0 16px 16px" }}>
+        {todayJobs.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "40px 0", color: "rgba(255,255,255,0.4)", fontSize: 15 }}>Check back later or contact the office.</div>
+        ) : todayJobs.map((job, idx) => {
+          const wx = wxMap[job.address];
+          const isLoading = loadingSet.has(job.address);
+          return (
+            <div key={job.id} style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 16, marginBottom: 12, overflow: "hidden", backdropFilter: "blur(8px)" }}>
+              {/* Job header */}
+              <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>Job {idx + 1}</div>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>{job.builder || "No customer"}</div>
+                    <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", marginTop: 3 }}>📍 {job.address || "No address"}</div>
+                  </div>
+                  {job.type && <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, background: "rgba(96,165,250,0.2)", color: "#93c5fd", borderRadius: 8, padding: "4px 10px", border: "1px solid rgba(96,165,250,0.3)" }}>{job.type}</span>}
+                </div>
+                {job.notes && <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.5)", fontStyle: "italic", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8 }}>📝 {job.notes}</div>}
+              </div>
+
+              {/* Weather section */}
+              <div style={{ padding: "12px 16px" }}>
+                {isLoading && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
+                    <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid rgba(96,165,250,0.4)", borderTopColor: "#60a5fa", animation: "spin 0.8s linear infinite" }} />
+                    Loading weather...
+                  </div>
+                )}
+                {!isLoading && wx?.error && <div style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Weather unavailable for this address.</div>}
+                {!isLoading && wx?.ok && wx.cur && (
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+                      <div style={{ fontSize: 36 }}>{nwsEmoji(nwsForecastFromCode(wx.cur.code))}</div>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                          <span style={{ fontSize: 28, fontWeight: 800, color: "#fff" }}>{Math.round(wx.cur.temp)}°F</span>
+                          {wx.cur.feelsLike != null && Math.abs(wx.cur.feelsLike - wx.cur.temp) >= 3 && (
+                            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Feels {Math.round(wx.cur.feelsLike)}°</span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>
+                          {nwsForecastFromCode(wx.cur.code)} · 💨 {Math.round(wx.cur.wind)} mph
+                          {wx.hiTemp != null && <span> · ↑{wx.hiTemp}° ↓{wx.loTemp}°</span>}
+                        </div>
+                      </div>
+                    </div>
+                    {/* Advisories */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                      {wx.rainRisk && <div style={{ fontSize: 12, fontWeight: 600, color: "#fca5a5", background: "rgba(220,38,38,0.15)", borderRadius: 6, padding: "5px 10px" }}>⚠️ Rain expected — confirm with office before heading out</div>}
+                      {wx.coldRisk && <div style={{ fontSize: 12, fontWeight: 600, color: "#fde68a", background: "rgba(180,83,9,0.2)", borderRadius: 6, padding: "5px 10px" }}>🧊 Below 40°F — spray foam performance affected</div>}
+                      {wx.windRisk && <div style={{ fontSize: 12, fontWeight: 600, color: "#93c5fd", background: "rgba(37,99,235,0.2)", borderRadius: 6, padding: "5px 10px" }}>💨 High winds — overspray risk, take precautions</div>}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Materials placeholder */}
+              <div style={{ padding: "10px 16px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "1px" }}>📦 Materials Needed</div>
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", marginTop: 4, fontStyle: "italic" }}>Auto-estimate coming soon — check with office.</div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* CTA */}
+      <div style={{ padding: "16px 24px 40px", textAlign: "center" }}>
+        <button onClick={onDismiss} style={{ width: "100%", maxWidth: 360, padding: "16px", borderRadius: 14, background: "#2563eb", border: "none", color: "#fff", fontSize: 16, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 24px rgba(37,99,235,0.5)", letterSpacing: "0.3px" }}>
+          Let's Get It 🚀
+        </button>
+      </div>
+
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+  const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const assignedByMember = crewMemberId && (j.crewMemberIds || []).includes(crewMemberId);
@@ -1086,10 +1765,34 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
     return !latest || latest.status !== "completed";
   });
+  const todayJobs = myJobs.filter(j => j.date === todayISO);
+
+  // Daily brief: show once per day per crew member
+  const briefKey = `ist_brief_seen_${crewMemberId || crewName}_${todayISO}`;
+  const [showBrief, setShowBrief] = useState(() => {
+    try { return sessionStorage.getItem(briefKey) !== "1"; } catch { return true; }
+  });
+  const dismissBrief = () => {
+    try { sessionStorage.setItem(briefKey, "1"); } catch {}
+    setShowBrief(false);
+  };
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("home");
   const [truckTab, setTruckTab] = useState("truck"); // "truck" | "loadHistory"
   const [tsWeekOffset, setTsWeekOffset] = useState(0);
+  const [expandedJobCards, setExpandedJobCards] = useState({});
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
+  const [closeoutConfirm, setCloseoutConfirm] = useState(null); // { job, materialsUsed, skipMaterials }
+  const [crewLocation, setCrewLocation] = useState(null);
+  const [wrapUpToast, setWrapUpToast] = useState(false);
+  React.useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => setCrewLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
+        () => {}
+      );
+    }
+  }, []);
   const [activeJob, setActiveJob] = useState(null);
   const [materialCountJob, setMaterialCountJob] = useState(null);
   const [materialQtys, setMaterialQtys] = useState({});
@@ -1216,9 +1919,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       });
       return Object.keys(used).length > 0 ? used : null;
     })();
-    // Deduct used materials from truck
+    // Deduct closeout materials from truck — but only items NOT already logged via daily logs
+    // Daily logs already deducted via handleDeltaAdjustTruck, so we only deduct the NEW delta here
     if (materialsUsed && truck?.id) {
-      onDeductFromTruck(truck.id, materialsUsed);
+      const dailyLogged = {};
+      (closeoutJob.job?.dailyMaterialLogs || []).forEach(log => {
+        Object.entries(log.materials || {}).forEach(([id, qty]) => {
+          dailyLogged[id] = (dailyLogged[id] || 0) + qty;
+        });
+      });
+      const netNew = {};
+      Object.entries(materialsUsed).forEach(([id, qty]) => {
+        const alreadyLogged = dailyLogged[id] || 0;
+        const extra = Math.max(0, qty - alreadyLogged);
+        if (extra > 0) netNew[id] = extra;
+      });
+      if (Object.keys(netNew).length > 0) onDeductFromTruck(truck.id, netNew);
     }
     onSubmitUpdate({ jobId: job.id, truckId: truck.id, crewName, status: s, eta: e, notes: n, timestamp: new Date().toISOString(), timeStr: timeStr() });
     onCloseOutJob(job.id, materialsUsed);
@@ -1263,6 +1979,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
   return (
     <div style={{ minHeight: "100dvh", background: t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
+      {showBrief && <DailyBrief crewName={crewName} todayJobs={todayJobs} onDismiss={dismissBrief} />}
+      {wrapUpToast && (
+        <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 80px)", left: "50%", transform: "translateX(-50%)", background: "#15803d", color: "#fff", padding: "12px 24px", borderRadius: "99px", fontSize: "15px", fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap" }}>
+          ✅ Job wrapped up!
+        </div>
+      )}
       <div className="glass-header" style={{ padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
           <svg width="130" height="36" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -1288,7 +2010,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               ‹ Back
             </button>
             <span style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>
-              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : ""}
+              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : crewView === "supplies" ? "Supplies" : ""}
             </span>
           </div>
         )}
@@ -1339,14 +2061,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
               </svg>
             ),
+            supplies: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3"/>
+              </svg>
+            ),
           };
           const navItems = [
-            { key: "jobs",        label: "Jobs",          sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs" },
-            { key: "truck",       label: "My Truck",      sub: "Inventory & load" },
-            { key: "history",     label: "Calendar",      sub: "Job history" },
-            { key: "timesheet",   label: "Timesheet",     sub: "Track your time" },
-            { key: "tickets",     label: "Tickets",       sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
-            { key: "tools",       label: "Tools",         sub: "Checkout & return" },
+            { key: "jobs",      label: "Jobs",      sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs", badge: myJobs.length > 0 ? myJobs.length : null },
+            { key: "truck",     label: "My Truck",  sub: "Inventory & load" },
+            { key: "history",   label: "Calendar",  sub: "Job history" },
+            { key: "tickets",   label: "Tickets",   sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
+            { key: "tools",     label: "Tools",     sub: "Checkout & return" },
+            { key: "supplies",  label: "Supplies",  sub: "Check out consumables" },
           ];
           return (
             <div className="tab-view-enter">
@@ -1377,97 +2104,188 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         {crewView === "jobs" && (
           <div className="tab-view-enter">
             <SectionHeader title="Your Jobs" />
+            {/* Truck Inventory Summary Strip */}
+            {(() => {
+              const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
+              if (truckItems.length === 0) return (
+                <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "13px", color: "#92400e" }}>
+                  🚛 Truck is empty — load up before heading out.
+                </div>
+              );
+              const sorted = [...truckItems].sort((a, b) => (truckInventory[b.id] || 0) - (truckInventory[a.id] || 0));
+              const shown = sorted.slice(0, 5);
+              const extra = sorted.length - 5;
+              return (
+                <div style={{ background: "rgba(255,255,255,0.72)", border: "1px solid " + t.border, borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "12px", color: t.text }}>
+                  <span style={{ fontWeight: 700 }}>🚛 On Your Truck: </span>
+                  {shown.map((item, i) => (
+                    <span key={item.id}>{item.name}: <strong>{truckInventory[item.id]} {item.unit}</strong>{i < shown.length - 1 || extra > 0 ? " | " : ""}</span>
+                  ))}
+                  {extra > 0 && <span style={{ color: t.textMuted }}>+{extra} more</span>}
+                </div>
+              );
+            })()}
+            {/* Consolidated materials warning */}
+            {(() => {
+              const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
+              const todayStr = todayCST();
+              const jobsWithMissing = myJobs.map(job => {
+                const jobUpds = updates.filter(u => u.jobId === job.id);
+                const workedDays = [...new Set(jobUpds.filter(u => ["in_progress","on_site","started"].includes(u.status)).map(u => tsToCST(u.timestamp)))].sort();
+                const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
+                const missing = workedDays.filter(d => d !== todayStr && !logged.has(d));
+                return { job, missing };
+              }).filter(x => x.missing.length > 0);
+              if (jobsWithMissing.length === 0) return null;
+              const firstMissing = jobsWithMissing[0];
+              return (
+                <button onClick={() => {
+                  setDailyMaterialQtys({});
+                  setDailyMaterialsJob({ ...firstMissing.job, _forceDate: firstMissing.missing[0] });
+                }} style={{ width: "100%", textAlign: "left", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "13px", color: "#92400e", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                  ⚠️ Materials not logged for: {jobsWithMissing.map(x => x.job.builder || "Job").join(", ")} — <span style={{ textDecoration: "underline" }}>Tap to log →</span>
+                </button>
+              );
+            })()}
             {myJobs.length === 0 ? <EmptyState text="No active jobs assigned to you." sub="Check back or contact the office." /> : myJobs.map((job) => {
               const latestStatus = getLatestStatus(job.id);
               const statusObj = STATUS_OPTIONS.find((s) => s.value === latestStatus);
               const jobStatusList = getJobUpdates(job.id);
+              const isExpanded = !!expandedJobCards[job.id];
+              const jobUpds = updates.filter(u => u.jobId === job.id);
+              const workedDays = [...new Set(jobUpds.filter(u => ["in_progress","on_site","started"].includes(u.status)).map(u => tsToCST(u.timestamp)))].sort();
+              const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
+              const todayStr = todayCST();
+              const missingDays = workedDays.filter(d => d !== todayStr && !logged.has(d));
+              const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
+              // Distance
+              const geocache = getGeocache(job.address);
+              const distMi = (crewLocation && geocache) ? kmToMiles(haversineKm(crewLocation.lat, crewLocation.lon, geocache.lat, geocache.lon)) : null;
               return (
                 <Card key={job.id}>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
                     <div>
                       <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.builder || "No Customer Listed"}</div>
-                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.address}</div>
+                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>
+                        <a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: "underline" }}>{job.address}</a>
+                        {distMi !== null && <span style={{ color: t.textMuted, marginLeft: "6px", fontSize: "11px" }}>~{distMi.toFixed(1)} mi</span>}
+                      </div>
                       <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.type}</div>
                     </div>
                     <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
                   </div>
                   {job.notes && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginBottom: "10px", borderLeft: "3px solid " + t.accent }}>Office: {job.notes}</div>}
-                  {(() => {
-                    const jobUpds = updates.filter(u => u.jobId === job.id);
-                    const workedDays = [...new Set(jobUpds.filter(u => ["in_progress","on_site","started"].includes(u.status)).map(u => tsToCST(u.timestamp)))].sort();
-                    const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
-                    const todayStr = todayCST();
-                    const missing = workedDays.filter(d => d !== todayStr && !logged.has(d));
-                    if (missing.length === 0) return null;
-                    const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
-                    return (
-                      <div style={{ fontSize: "12px", color: "#b45309", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "6px", padding: "8px 10px", marginBottom: "10px" }}>
-                        ⚠️ Materials not logged for: <strong>{missing.map(fmt).join(", ")}</strong> — required before closeout
-                      </div>
-                    );
-                  })()}
-                  {(job.dailyMaterialLogs || []).length > 0 && (
-                    <div style={{ marginBottom: "10px", background: t.bg, borderRadius: "6px", padding: "8px 12px" }}>
-                      <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Materials Logged</div>
-                      {(job.dailyMaterialLogs || []).map((log, idx) => (
-                        <div key={idx} style={{ fontSize: "12px", color: t.textSecondary, paddingBottom: "4px", marginBottom: "4px", borderBottom: idx < job.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
-                          <span style={{ color: t.textMuted, marginRight: "8px" }}>{log.date}</span>
-                          {Object.entries(log.materials).map(([itemId, qty]) => {
-                            const item = INVENTORY_ITEMS.find(i => i.id === itemId);
-                            if (!item) return null;
-                            const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(itemId);
-                            const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
-                            return <span key={itemId} style={{ marginRight: "8px" }}>{item.name}: <strong>{display}</strong></span>;
+                  {missingDays.length > 0 && (
+                    <button onClick={() => {
+                      setDailyMaterialQtys({});
+                      setDailyMaterialsJob({ ...job, _forceDate: missingDays[0] });
+                    }} style={{ width: "100%", textAlign: "left", fontSize: "11px", color: "#b45309", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "6px", padding: "6px 10px", marginBottom: "10px", cursor: "pointer", fontFamily: "inherit" }}>
+                      ⚠️ Materials not logged for: <strong>{missingDays.map(fmt).join(", ")}</strong> — Tap to log →
+                    </button>
+                  )}
+                  {/* Quick action buttons */}
+                  {latestStatus !== "completed" && (
+                    <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
+                      <button onClick={() => {
+                        onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "in_progress", notes: "", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
+                      }} style={{ flex: 1, padding: "12px 8px", borderRadius: "99px", border: "none", background: "#b45309", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        🔄 In Progress
+                      </button>
+                      <button onClick={() => {
+                        onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "issue", notes: "", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
+                      }} style={{ flex: 1, padding: "12px 8px", borderRadius: "99px", border: "none", background: "#b91c1c", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        ⚠️ Issue
+                      </button>
+                      <button onClick={() => {
+                        setActiveJob(job);
+                        setStatus("completed");
+                        setEta("");
+                        setNotes("");
+                      }} style={{ flex: 1, padding: "12px 8px", borderRadius: "99px", border: "none", background: "#0f172a", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        ✅ Complete
+                      </button>
+                    </div>
+                  )}
+                  {latestStatus === "completed" && (
+                    <div style={{ marginBottom: "10px" }}>
+                      <button onClick={() => {
+                        if (!window.confirm("Reopen this job and mark it back In Progress?")) return;
+                        onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "in_progress", notes: "Reopened", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
+                      }} style={{ width: "100%", padding: "12px 8px", borderRadius: "99px", border: "2px solid #b45309", background: "transparent", color: "#b45309", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        🔓 Reopen Job
+                      </button>
+                    </div>
+                  )}
+                  {/* Collapsible details section */}
+                  {isExpanded && (
+                    <div>
+                      {(job.dailyMaterialLogs || []).length > 0 && (
+                        <div style={{ marginBottom: "10px", background: t.bg, borderRadius: "6px", padding: "8px 12px" }}>
+                          <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Materials Logged</div>
+                          {(job.dailyMaterialLogs || []).map((log, idx) => (
+                            <div key={idx} style={{ fontSize: "12px", color: t.textSecondary, paddingBottom: "4px", marginBottom: "4px", borderBottom: idx < job.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
+                              <span style={{ color: t.textMuted, marginRight: "8px" }}>{log.date}</span>
+                              {Object.entries(log.materials).map(([itemId, qty]) => {
+                                const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                                if (!item) return null;
+                                const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(itemId);
+                                const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                                return <span key={itemId} style={{ marginRight: "8px" }}>{item.name}: <strong>{display}</strong></span>;
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {jobStatusList.length > 0 && (
+                        <div style={{ marginBottom: "10px" }}>
+                          <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Update Log</div>
+                          {jobStatusList.slice(0, 3).map((u) => {
+                            const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
+                            return (
+                              <div key={u.id} style={{ fontSize: "12.5px", color: t.textSecondary, padding: "6px 0", borderBottom: "1px solid " + t.borderLight, display: "flex", gap: "8px" }}>
+                                <span style={{ color: t.textMuted, flexShrink: 0 }}>{u.timeStr}</span>
+                                <span>
+                                  <Badge color={uStatus?.color} bg={uStatus?.bg}>{uStatus?.label}</Badge>
+                                  {u.eta && <span style={{ marginLeft: "8px" }}>ETA: {u.eta}</span>}
+                                  {u.notes && <span style={{ display: "block", marginTop: "3px", color: t.textMuted }}>{u.notes}</span>}
+                                </span>
+                              </div>
+                            );
                           })}
                         </div>
-                      ))}
-                    </div>
-                  )}
-                  {jobStatusList.length > 0 && (
-                    <div style={{ marginBottom: "10px" }}>
-                      <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Update Log</div>
-                      {jobStatusList.slice(0, 3).map((u) => {
-                        const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
+                      )}
+                      <JobPhotosSection job={job} canDelete={false} uploaderName={crewName} />
+                      {(() => {
+                        const todayStr = todayCST();
+                        const existingToday = (job.dailyMaterialLogs || []).find(l => l.date === todayStr);
                         return (
-                          <div key={u.id} style={{ fontSize: "12.5px", color: t.textSecondary, padding: "6px 0", borderBottom: "1px solid " + t.borderLight, display: "flex", gap: "8px" }}>
-                            <span style={{ color: t.textMuted, flexShrink: 0 }}>{u.timeStr}</span>
-                            <span>
-                              <Badge color={uStatus?.color} bg={uStatus?.bg}>{uStatus?.label}</Badge>
-                              {u.eta && <span style={{ marginLeft: "8px" }}>ETA: {u.eta}</span>}
-                              {u.notes && <span style={{ display: "block", marginTop: "3px", color: t.textMuted }}>{u.notes}</span>}
-                            </span>
+                          <div style={{ display: "flex", gap: "8px" }}>
+                            <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
+                            <Button variant="secondary" onClick={() => {
+                              if (existingToday) {
+                                const preQtys = {};
+                                INVENTORY_ITEMS.forEach(i => {
+                                  const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(i.id);
+                                  const val = existingToday.materials[i.id];
+                                  if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
+                                });
+                                setDailyMaterialQtys(preQtys);
+                                setDailyMaterialsJob({ ...job, _existingMaterials: existingToday.materials });
+                              } else {
+                                setDailyMaterialQtys({});
+                                setDailyMaterialsJob(job);
+                              }
+                            }} style={{ flex: 1 }}>{existingToday ? "Edit Today" : "Log Materials"}</Button>
                           </div>
                         );
-                      })}
+                      })()}
                     </div>
                   )}
-                  {/* Photos section for crew */}
-                  <JobPhotosSection job={job} canDelete={false} uploaderName={crewName} />
-                  {(() => {
-                    const todayStr = todayCST();
-                    const existingToday = (job.dailyMaterialLogs || []).find(l => l.date === todayStr);
-                    return (
-                      <div style={{ display: "flex", gap: "8px" }}>
-                        <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
-                        <Button variant="secondary" onClick={() => {
-                          if (existingToday) {
-                            const preQtys = {};
-                            INVENTORY_ITEMS.forEach(i => {
-                              const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(i.id);
-                              const val = existingToday.materials[i.id];
-                              if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
-                            });
-                            setDailyMaterialQtys(preQtys);
-                            // Pass existing materials explicitly so delta calc is always accurate
-                            setDailyMaterialsJob({ ...job, _existingMaterials: existingToday.materials });
-                          } else {
-                            setDailyMaterialQtys({});
-                            setDailyMaterialsJob(job);
-                          }
-                        }} style={{ flex: 1 }}>{existingToday ? "Edit Today" : "Log Materials"}</Button>
-                      </div>
-                    );
-                  })()}
+                  {/* Toggle details */}
+                  <button onClick={() => setExpandedJobCards(prev => ({ ...prev, [job.id]: !prev[job.id] }))}
+                    style={{ width: "100%", marginTop: "10px", padding: "8px", background: "none", border: "1px solid " + t.border, borderRadius: "8px", color: t.textMuted, fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+                    {isExpanded ? "▲ Hide Details" : "▼ Details"}
+                  </button>
                 </Card>
               );
             })}
@@ -1539,7 +2357,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
                           <div>
                             <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{job.builder || "No Customer"}</div>
-                            <div style={{ fontSize: 12, color: t.textMuted }}>{job.address}</div>
+                            <div style={{ fontSize: 12, color: t.textMuted }}><a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: "underline" }}>{job.address}</a></div>
                             <div style={{ fontSize: 12, color: t.textMuted }}>{job.type}</div>
                           </div>
                           <Badge color="#15803d" bg="#dcfce7">Done</Badge>
@@ -1870,7 +2688,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           );
         })()}
 
-        {crewView === "timesheet" && <div className="tab-view-enter"><CrewTimesheetTab crewMemberId={crewMemberId} crewName={crewName} jobs={jobs} updates={updates} jobUpdates={jobUpdates} weekOffset={tsWeekOffset} setWeekOffset={setTsWeekOffset} /></div>}
+        {crewView === "timesheet" && <div className="tab-view-enter"><div style={{ textAlign: "center", padding: "48px 24px", color: t.textMuted, fontSize: "16px" }}>⏱ Time tracking coming soon — clock-in/clock-out will be available here.</div></div>}
         {crewView === "tools" && (
           <ToolsView
             isOffice={false}
@@ -1880,12 +2698,25 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             onEditTool={() => {}}
             onDeleteTool={() => {}}
             onCheckout={onToolCheckout}
-            onReturn={onToolReturn || (() => {})}
+            onReturn={onToolReturn}
             adminName={crewName}
             crewMembers={[]}
             crewMemberId={crewMemberId}
             crewMemberName={crewName}
+            truckInventory={truckInventory}
+            truck={truck}
+            onDeltaAdjustTruck={onDeltaAdjustTruck}
+            foamPartsInventory={foamPartsInventory || []}
+            projectToolsInventory={projectToolsInventory || []}
+            onUpdateFoamParts={() => {}}
+            onUpdateProjectTools={() => {}}
+            suppliesCheckouts={[]}
+            onSuppliesCheckout={() => {}}
           />
+        )}
+
+        {crewView === "supplies" && (
+          <SuppliesCheckoutView truck={truck} crewName={crewName} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={onSuppliesCheckout} />
         )}
 
 
@@ -2033,29 +2864,42 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   alert("No materials entered. Please enter at least one quantity before saving.");
                   return;
                 }
-                // Validate truck qty only for foam — fiberglass doesn't use truck loading flow
+                // Validate truck qty for foam and fiberglass
                 let valid = true;
                 if (jobType === "foam") {
-                  INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
-                    const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
-                    const newUsedPcs = item.pcsPerTube
-                      ? (used[item.id] || 0) * item.pcsPerTube + (pcsItem ? (used[pcsItem.id] || 0) : 0)
-                      : (used[item.id] || 0);
-                    const oldUsedPcs = item.pcsPerTube
-                      ? (existingDailyEntry[item.id] || 0) * item.pcsPerTube + (pcsItem ? (existingDailyEntry[pcsItem.id] || 0) : 0)
-                      : (existingDailyEntry[item.id] || 0);
-                    const delta = newUsedPcs - oldUsedPcs;
+                  INVENTORY_ITEMS.filter(i => !i.isPieces && !i.pcsPerTube).forEach(item => {
+                    const newUsed = used[item.id] || 0;
+                    const oldUsed = existingDailyEntry[item.id] || 0;
+                    const delta = newUsed - oldUsed;
                     if (delta > 0) {
-                      const onTruckPcs = item.pcsPerTube
-                        ? (truckInventory[item.id] || 0) * item.pcsPerTube + (pcsItem ? (truckInventory[pcsItem.id] || 0) : 0)
-                        : (truckInventory[item.id] || 0);
-                      if (delta > onTruckPcs) {
-                        alert("Not enough " + item.name + " on your truck.\nYou have " + onTruckPcs + " pcs available.");
+                      const onTruck = truckInventory[item.id] || 0;
+                      if (delta > onTruck) {
+                        alert("Not enough " + item.name + " on your truck.\nYou have " + onTruck + " available.");
                         valid = false;
                       }
                     }
                   });
                 }
+                // Fiberglass validation
+                INVENTORY_ITEMS.filter(i => !i.isPieces && i.pcsPerTube).forEach(item => {
+                  const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+                  const oldTubes = existingDailyEntry[item.id] || 0;
+                  const oldPcs = pcsItem ? (existingDailyEntry[pcsItem.id] || 0) : 0;
+                  const oldTotal = oldTubes * item.pcsPerTube + oldPcs;
+                  const newTubes = used[item.id] || 0;
+                  const newPcs = pcsItem ? (used[pcsItem.id] || 0) : 0;
+                  const newTotal = newTubes * item.pcsPerTube + newPcs;
+                  const delta = newTotal - oldTotal;
+                  if (delta > 0) {
+                    const truckTubes = truckInventory[item.id] || 0;
+                    const truckPcs = pcsItem ? (truckInventory[pcsItem.id] || 0) : 0;
+                    const truckTotal = truckTubes * item.pcsPerTube + truckPcs;
+                    if (delta > truckTotal) {
+                      alert(`Not enough ${item.name} on your truck. Need ${delta} more pieces than available.`);
+                      valid = false;
+                    }
+                  }
+                });
                 if (!valid) return;
                 // Delta adjust if editing existing entry, full deduct if new
                 if (isEditing) {
@@ -2183,7 +3027,63 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             })()}
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <Button variant="secondary" onClick={() => setCloseoutJob(null)} style={{ flex: 1 }}>Cancel</Button>
-              <Button onClick={() => handleCloseoutConfirm(closeoutJob.skipMaterials)} style={{ flex: 1 }}>Confirm Closeout</Button>
+              <Button onClick={() => {
+                // Build materials summary for confirmation
+                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+                const allMaterials = {};
+                if (!closeoutJob.skipMaterials) {
+                  INVENTORY_ITEMS.forEach(i => {
+                    const qty = closeoutMaterialQtys[i.id];
+                    if (qty && parseFloat(qty) > 0) {
+                      allMaterials[i.id] = isFoamId(i.id) ? Math.round(parseFloat(qty) / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(qty);
+                    }
+                  });
+                }
+                setCloseoutConfirm({ closeoutJobData: closeoutJob, materialsForConfirm: allMaterials });
+              }} style={{ flex: 1 }}>Review & Close Out</Button>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* ── CLOSEOUT CONFIRM MODAL ── */}
+      {closeoutConfirm && (() => {
+        const { closeoutJobData, materialsForConfirm } = closeoutConfirm;
+        const job = closeoutJobData.job;
+        const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+        const allMats = { ...materialsForConfirm };
+        (job.dailyMaterialLogs || []).forEach(log => {
+          Object.entries(log.materials || {}).forEach(([id, qty]) => { allMats[id] = (allMats[id] || 0) + qty; });
+        });
+        const matEntries = Object.entries(allMats).filter(([,qty]) => qty > 0);
+        return (
+          <Modal title="Confirm Close Out" onClose={() => setCloseoutConfirm(null)}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: t.text, marginBottom: 4 }}>{job.builder || "No Customer"}</div>
+            <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>{job.address}</div>
+            {matEntries.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, fontWeight: 600, marginBottom: 8 }}>Total Materials Being Logged</div>
+                {matEntries.map(([id, qty]) => {
+                  const item = INVENTORY_ITEMS.find(i => i.id === id);
+                  if (!item) return null;
+                  const display = isFoamId(id) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                  return (
+                    <div key={id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: t.text, padding: "4px 0", borderBottom: "1px solid " + t.borderLight }}>
+                      <span>{item.name}</span><strong>{display}</strong>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: 8, padding: "10px 14px", marginBottom: 20, fontSize: 13, fontWeight: 600, color: "#92400e" }}>
+              ⚠️ This cannot be undone. Once closed out, the job will be marked complete.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Button variant="secondary" onClick={() => setCloseoutConfirm(null)} style={{ flex: 1 }}>Cancel</Button>
+              <Button variant="danger" onClick={() => {
+                setCloseoutConfirm(null);
+                handleCloseoutConfirm(closeoutJobData.skipMaterials);
+              }} style={{ flex: 1 }}>Confirm Close Out</Button>
             </div>
           </Modal>
         );
@@ -2248,12 +3148,18 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 let canSave = true;
                 INVENTORY_ITEMS.filter(i => !i.isPieces && i.pcsPerTube).forEach(item => {
                   const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
-                  const oldPcs = (existing[item.id] || 0) * item.pcsPerTube + (pcsItem ? (existing[pcsItem.id] || 0) : 0);
-                  const newPcs = (used[item.id] || 0) * item.pcsPerTube + (pcsItem ? (used[pcsItem.id] || 0) : 0);
-                  const delta = newPcs - oldPcs;
+                  const oldTubes = existing[item.id] || 0;
+                  const oldPcs = pcsItem ? (existing[pcsItem.id] || 0) : 0;
+                  const oldTotal = oldTubes * item.pcsPerTube + oldPcs;
+                  const newTubes = used[item.id] || 0;
+                  const newPcs = pcsItem ? (used[pcsItem.id] || 0) : 0;
+                  const newTotal = newTubes * item.pcsPerTube + newPcs;
+                  const delta = newTotal - oldTotal;
                   if (delta > 0) {
-                    const onTruckPcs = (truckInventory[item.id] || 0) * item.pcsPerTube + (pcsItem ? (truckInventory[pcsItem.id] || 0) : 0);
-                    if (delta > onTruckPcs) { alert("Not enough " + item.name + " on your truck to add that many."); canSave = false; }
+                    const truckTubes = truckInventory[item.id] || 0;
+                    const truckPcs = pcsItem ? (truckInventory[pcsItem.id] || 0) : 0;
+                    const truckTotal = truckTubes * item.pcsPerTube + truckPcs;
+                    if (delta > truckTotal) { alert(`Not enough ${item.name} on your truck. Need ${delta} more pieces than available.`); canSave = false; }
                   }
                 });
                 if (!canSave) return;
@@ -2330,7 +3236,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 }
 
 // ─── Tools View ───
-const TOOL_CATEGORIES = ["Hand Tools", "Power Tools", "Spray Equipment", "Safety", "Cleaning", "Measuring", "Other"];
+const TOOL_CATEGORIES = ["Hand Tools", "Power Tools", "Drill Bits", "Repair Kits", "O-Rings & Seals", "Parts & Valves", "Tape & Caulk", "PPE", "Chemicals & Fluids", "Supplies & Accessories", "Fasteners", "Spray Equipment", "Safety", "Cleaning", "Measuring", "Other"];
 const TOOL_STATUSES = [
   { value: "available", label: "Available", color: "#15803d", bg: "#dcfce7" },
   { value: "checked_out", label: "Checked Out", color: "#b45309", bg: "#fef3c7" },
@@ -2363,7 +3269,58 @@ function EmployeeFlagBadge({ flag }) {
   return null;
 }
 
-function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName }) {
+function SimpleInvList({ items, invData, onUpdate, readOnly = false }) {
+  const getQ = (id) => (invData || []).find(r => r.itemId === id)?.qty || 0;
+  const [editing, setEditing] = React.useState(null);
+  const [editVal, setEditVal] = React.useState("");
+  const hasCategories = items.some(i => i.category);
+  const groups = hasCategories
+    ? items.reduce((acc, item) => { const cat = item.category || "Other"; if (!acc[cat]) acc[cat] = []; acc[cat].push(item); return acc; }, {})
+    : { "": items };
+  const [activeCat, setActiveCat] = React.useState('all');
+  const visibleItems = activeCat === 'all' ? items : (groups[activeCat] || []);
+  const renderCard = (item) => {
+    const qty = getQ(item.id);
+    const isEditing = editing === item.id;
+    const borderColor = qty === 0 ? '#ef4444' : qty <= 2 ? '#f59e0b' : '#22c55e';
+    const qtyColorVal = qty === 0 ? '#ef4444' : qty <= 2 ? '#f59e0b' : '#1e293b';
+    return (
+      <div key={item.id} onClick={() => { if (!isEditing && !readOnly) { setEditing(item.id); setEditVal(String(qty)); } }}
+        style={{ background: '#fff', borderRadius: 6, padding: '6px 8px', cursor: (isEditing || readOnly) ? 'default' : 'pointer', border: `1px solid ${isEditing ? '#2563eb' : '#e2e8f0'}`, borderLeftColor: borderColor, borderLeftWidth: 3, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: 64, boxShadow: '0 1px 2px rgba(0,0,0,0.04)', position: 'relative' }}>
+        <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.id.toUpperCase()}</span>
+        <span style={{ fontSize: 11, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>{item.name}</span>
+        {isEditing ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginTop: 2 }} onClick={e => e.stopPropagation()}>
+            <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)-1); setEditVal(String(v)); }} style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>−</button>
+            <input value={editVal} onChange={e => setEditVal(e.target.value)} onClick={e => e.stopPropagation()} style={{ width: 32, textAlign: 'center', border: '1px solid #2563eb', borderRadius: 4, fontSize: 12, padding: '1px 2px', fontFamily: 'inherit', outline: 'none' }} />
+            <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)+1); setEditVal(String(v)); }} style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
+            <button onClick={(e) => { e.stopPropagation(); const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onUpdate(item.id, v); setEditing(null); }} style={{ width: 20, height: 20, borderRadius: 4, border: 'none', background: '#2563eb', color: '#fff', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</button>
+            <button onClick={(e) => { e.stopPropagation(); setEditing(null); }} style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#fff', color: '#64748b', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
+          </div>
+        ) : (
+          <span style={{ fontSize: 18, fontWeight: 800, color: qtyColorVal, lineHeight: 1 }}>{qty} <span style={{ fontSize: 9, fontWeight: 500, color: '#94a3b8' }}>{item.unit}</span></span>
+        )}
+      </div>
+    );
+  };
+  return (
+    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
+      {hasCategories && (
+        <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '6px 10px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
+          <button onClick={() => setActiveCat('all')} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeCat === 'all' ? '#2563eb' : '#fff', color: activeCat === 'all' ? '#fff' : '#64748b', border: '1px solid ' + (activeCat === 'all' ? '#2563eb' : '#e2e8f0') }}>All ({items.length})</button>
+          {Object.keys(groups).map(cat => (
+            <button key={cat} onClick={() => setActiveCat(cat)} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeCat === cat ? '#2563eb' : '#fff', color: activeCat === cat ? '#fff' : '#64748b', border: '1px solid ' + (activeCat === cat ? '#2563eb' : '#e2e8f0') }}>{cat} ({groups[cat].length})</button>
+          ))}
+        </div>
+      )}
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gridAutoRows: 'minmax(64px, auto)', gap: 4, padding: '6px 8px', overflowY: 'auto', alignContent: 'start' }}>
+        {visibleItems.map(item => renderCard(item))}
+      </div>
+    </div>
+  );
+}
+
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
   const [tab, setTab] = useState("inventory");
   const [showAddTool, setShowAddTool] = useState(false);
   const [editingTool, setEditingTool] = useState(null);
@@ -2376,6 +3333,8 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
   const [collapsedCats, setCollapsedCats] = useState({});
   const [historyTool, setHistoryTool] = useState(null);
   const [empDetailName, setEmpDetailName] = useState(null); // employee name for detail modal
+  const [truckInvMode, setTruckInvMode] = useState(false);
+  const [truckInvCounts, setTruckInvCounts] = useState({});
   const [flagModalEmp, setFlagModalEmp] = useState(null); // { name, currentFlag, autoFlag }
   const [flagNote, setFlagNote] = useState("");
   const [flagOverride, setFlagOverride] = useState(null); // "clear" | "warning" | "flagged"
@@ -2454,7 +3413,6 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       toolName: showCheckoutModal.name,
       employeeName: checkoutForm.employeeName.trim(),
       quantity: checkoutForm.quantity || 1,
-      
       checkedOutAt: new Date().toISOString(),
       checkedOutBy: adminName || checkoutForm.employeeName,
     });
@@ -2506,12 +3464,127 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* Tabs */}
       <div style={{ display: "flex", gap: 2, marginBottom: 16, flexWrap: "wrap", background: t.bg, borderRadius: "10px", padding: "4px" }}>
+        {!isOffice && crewMemberName && <button style={tabStyle(tab === "myitems")} onClick={() => setTab("myitems")}>My Items</button>}
         <button style={tabStyle(tab === "inventory")} onClick={() => setTab("inventory")}>Inventory</button>
-        <button style={tabStyle(tab === "checkouts")} onClick={() => setTab("checkouts")}>
+        {isOffice && <button style={tabStyle(tab === "foam_parts")} onClick={() => setTab("foam_parts")}>Foam Gun Parts</button>}
+        {isOffice && <button style={tabStyle(tab === "project_tools")} onClick={() => setTab("project_tools")}>Tools & Accessories</button>}
+        {isOffice && <button style={tabStyle(tab === "checkout_log")} onClick={() => setTab("checkout_log")}>Checkout Log</button>}
+        {isOffice && <button style={tabStyle(tab === "checkouts")} onClick={() => setTab("checkouts")}>
           Checkouts {activeCheckouts.length > 0 && <span style={{ background: tab === "checkouts" ? "rgba(255,255,255,0.3)" : "#fef3c7", color: tab === "checkouts" ? "#fff" : "#b45309", borderRadius: 99, padding: "1px 6px", fontSize: 11, fontWeight: 700, marginLeft: 5 }}>{activeCheckouts.length}</span>}
-        </button>
+        </button>}
         {isOffice && <button style={tabStyle(tab === "report")} onClick={() => setTab("report")}>Employee Report</button>}
       </div>
+
+      {/* MY ITEMS TAB */}
+      {tab === "myitems" && (() => {
+        const myCheckouts = toolCheckouts.filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
+        const truckItems = truckInventory ? INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0) : [];
+
+        if (truckInvMode) {
+          // Truck inventory count mode
+          const cats = [...new Set(INVENTORY_ITEMS.filter(i => !i.isPieces).map(i => i.category))];
+          return (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>📋 Truck Inventory Count</div>
+                <button onClick={() => setTruckInvMode(false)} style={{ background: "none", border: "1px solid " + t.border, borderRadius: 6, padding: "5px 10px", fontSize: 12, color: t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>✕ Cancel</button>
+              </div>
+              {cats.map(cat => {
+                const catItems = INVENTORY_ITEMS.filter(i => !i.isPieces && i.category === cat);
+                return (
+                  <div key={cat} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>{cat}</div>
+                    {catItems.map(item => (
+                      <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name} <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 400 }}>({item.unit})</span></div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>On truck: <strong>{truckInventory?.[item.id] || 0}</strong></div>
+                          <input
+                            type="number" min="0"
+                            placeholder="Count"
+                            value={truckInvCounts[item.id] ?? ""}
+                            onChange={e => setTruckInvCounts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            style={{ width: 70, padding: "6px 8px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", textAlign: "center" }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              <button onClick={async () => {
+                if (!onDeltaAdjustTruck || !truck) return;
+                const deltas = {};
+                Object.entries(truckInvCounts).forEach(([id, val]) => {
+                  const counted = parseInt(val);
+                  if (!isNaN(counted)) {
+                    const current = truckInventory?.[id] || 0;
+                    const diff = counted - current;
+                    if (diff !== 0) deltas[id] = diff;
+                  }
+                });
+                if (Object.keys(deltas).length === 0) { alert("No changes to submit."); return; }
+                await onDeltaAdjustTruck(truck.id, deltas);
+                setTruckInvCounts({});
+                setTruckInvMode(false);
+              }} style={{ width: "100%", marginTop: 16, padding: "14px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+                ✅ Submit Count
+              </button>
+            </div>
+          );
+        }
+
+        return (
+          <div>
+            {/* Truck Inventory button */}
+            {truck && (
+              <button onClick={() => { setTruckInvCounts({}); setTruckInvMode(true); }} style={{ width: "100%", marginBottom: 16, padding: "12px", background: t.surface, border: "2px solid " + t.border, borderRadius: 8, color: t.text, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                📦 Take Truck Inventory
+              </button>
+            )}
+
+            {/* Checked-out tools */}
+            {myCheckouts.length > 0 && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>🔧 Checked-Out Tools</div>
+                {myCheckouts.map(co => {
+                  const tool = tools.find(tl => tl.id === co.toolId);
+                  return (
+                    <Card key={co.id} style={{ marginBottom: 8 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                        <div>
+                          <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName || tool?.name || "Unknown Tool"}</div>
+                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Qty: {co.quantity || 1} · Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                        </div>
+                        <Button variant="secondary" onClick={() => setReturnModal(co)} style={{ fontSize: 12, padding: "6px 12px" }}>Return</Button>
+                      </div>
+                    </Card>
+                  );
+                })}
+              </>
+            )}
+
+            {/* Truck materials */}
+            {truckItems.length > 0 && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🚛 On Truck</div>
+                {truckItems.map(item => (
+                  <Card key={item.id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
+                    </div>
+                  </Card>
+                ))}
+              </>
+            )}
+
+            {myCheckouts.length === 0 && truckItems.length === 0 && (
+              <EmptyState text="Nothing on your truck." sub="Checked-out tools and loaded materials will appear here." />
+            )}
+          </div>
+        );
+      })()}
 
       {/* INVENTORY TAB */}
       {tab === "inventory" && (() => {
@@ -2672,7 +3745,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
             // Crew sees only their own checkouts; office sees all
             const visibleCheckouts = isOffice
               ? activeCheckouts
-              : activeCheckouts.filter(c => c.employeeName === crewMemberName);
+              : activeCheckouts.filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase());
             return visibleCheckouts.length === 0
               ? <EmptyState text="No active checkouts." />
               : visibleCheckouts.sort((a, b) => new Date(b.checkedOutAt) - new Date(a.checkedOutAt)).map(co => {
@@ -2926,6 +3999,22 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       )}
 
       {/* Flag Override Modal */}
+      {tab === "foam_parts" && (
+        <div style={{ marginTop: 4 }}>
+          <SimpleInvList items={FOAM_GUN_PARTS} invData={foamPartsInventory || []} onUpdate={onUpdateFoamParts} readOnly={!isOffice} />
+        </div>
+      )}
+      {tab === "project_tools" && (
+        <div style={{ marginTop: 4 }}>
+          <SimpleInvList items={PROJECT_TOOLS_ITEMS} invData={projectToolsInventory || []} onUpdate={onUpdateProjectTools} readOnly={!isOffice} />
+        </div>
+      )}
+      {tab === "checkout_log" && isOffice && (
+        <div style={{ marginTop: 4 }}>
+          <CheckoutLogView suppliesCheckouts={suppliesCheckouts || []} />
+        </div>
+      )}
+
       {flagModalEmp && (
         <Modal title={`Flag Override — ${flagModalEmp.name}`} onClose={() => { setFlagModalEmp(null); setFlagNote(""); setFlagOverride(null); }}>
           <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>Auto-calculated flag: <strong>{flagModalEmp.autoFlag ? (flagModalEmp.autoFlag === "flagged" ? "🚨 FLAGGED" : "⚠️ WARNING") : "None"}</strong></div>
@@ -3154,6 +4243,50 @@ function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, 
           </div>
         )}
 
+        {/* Materials Summary */}
+        {(() => {
+          // Aggregate all materials across all today's jobs
+          const totals = {};
+          todayJobs.forEach(job => {
+            const mats = getAllMaterials(job);
+            Object.entries(mats).forEach(([id, qty]) => { totals[id] = (totals[id] || 0) + qty; });
+          });
+          if (Object.keys(totals).length === 0) return null;
+
+          let grandCost = 0;
+          const rows = Object.entries(totals).map(([itemId, qty]) => {
+            const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+            if (!item) return null;
+            const display = isFoam(itemId)
+              ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+              : qty + " " + item.unit;
+            const lineCost = (item.cost || 0) * qty;
+            grandCost += lineCost;
+            return { name: item.name, display, lineCost };
+          }).filter(Boolean);
+
+          return (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748b", marginBottom: 10 }}>Materials Installed Today</div>
+              <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                {rows.map((row, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 14px", borderBottom: i < rows.length - 1 ? "1px solid #e2e8f0" : "none" }}>
+                    <div>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{row.name}</span>
+                      <span style={{ fontSize: 12, color: "#64748b", marginLeft: 8 }}>{row.display}</span>
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: row.lineCost > 0 ? "#0f172a" : "#94a3b8" }}>{row.lineCost > 0 ? "$" + row.lineCost.toFixed(2) : "—"}</span>
+                  </div>
+                ))}
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#1e293b", borderTop: "2px solid #334155" }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Material Cost</span>
+                  <span style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>${grandCost.toFixed(2)}</span>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {todayJobs.length === 0 && crewNames.length === 0 && todayTickets.length === 0 && (
           <div style={{ textAlign: "center", padding: "32px", color: "#94a3b8", fontSize: 14 }}>No activity recorded today yet.</div>
         )}
@@ -3236,17 +4369,12 @@ function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckIn
   return (
     <div>
       {reconcileData.map(({ truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy }) => (
-        <div key={truck.id} style={{ marginBottom: 16, border: "1px solid " + (hasFlaggedDiscrepancy ? "#fca5a5" : "#bbf7d0"), borderRadius: 12, overflow: "hidden", background: hasFlaggedDiscrepancy ? "#fff7f7" : "#f0fdf4" }}>
-          <div style={{ padding: "12px 16px", background: hasFlaggedDiscrepancy ? "#fee2e2" : "#dcfce7", borderBottom: "1px solid " + (hasFlaggedDiscrepancy ? "#fca5a5" : "#86efac"), display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: hasFlaggedDiscrepancy ? "#991b1b" : "#14532d" }}>
-              {hasFlaggedDiscrepancy ? "⚠️ " : "✅ "}{truck.members || truck.name}
-            </div>
-            {hasFlaggedDiscrepancy && (
-              <span style={{ fontSize: 11, fontWeight: 700, background: "#dc2626", color: "#fff", padding: "2px 10px", borderRadius: 20 }}>DISCREPANCY</span>
-            )}
+        <div key={truck.id} style={{ marginBottom: 16, border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#f8fafc" }}>
+          <div style={{ padding: "12px 16px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{truck.members || truck.name}</div>
           </div>
           <div style={{ padding: "12px 16px" }}>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: Object.keys(discrepancies).length > 0 ? 12 : 0 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               {[
                 { label: "Loaded Out", items: loaded, color: "#1d4ed8" },
                 { label: "Returned", items: returned, color: "#15803d" },
@@ -3264,15 +4392,6 @@ function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckIn
                 </div>
               ))}
             </div>
-            {Object.keys(discrepancies).length > 0 && (
-              <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 8, padding: "10px 12px" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Unexplained Discrepancy</div>
-                {Object.entries(discrepancies).map(([id, qty]) => {
-                  const item = INVENTORY_ITEMS.find(i => i.id === id);
-                  return <div key={id} style={{ fontSize: 12, color: "#b91c1c", fontWeight: 600 }}>• {item?.name || id}: {fmtQty(id, qty)} unaccounted</div>;
-                })}
-              </div>
-            )}
           </div>
         </div>
       ))}
@@ -3811,8 +4930,8 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 // ─── 3D Truck Viewer ───
 
 function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, jobs, members, onClose, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onOpenCalendar }) {
-  const [tab, setTab] = useState("info"); // info | loadout | history
-  const [infoForm, setInfoForm] = useState({ description: truck.description || "", year: truck.year || "", make: truck.make || "", model: truck.model || "", notes: truck.notes || "" });
+  const [tab, setTab] = useState("loadout"); // loadout | history | materials
+  const [infoForm, setInfoForm] = useState({ vehicleName: truck.vehicleName || "", description: truck.description || "", year: truck.year || "", make: truck.make || "", model: truck.model || "", notes: truck.notes || "" });
   const [savingInfo, setSavingInfo] = useState(false);
   const [loadoutEditMode, setLoadoutEditMode] = useState(false);
   const [loadoutEdits, setLoadoutEdits] = useState({});
@@ -3912,11 +5031,12 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
   );
 
   return (
-    <Modal title={(truck.members || truck.name)} onClose={onClose}>
+    <Modal title={(truck.vehicleName || truck.members || truck.name)} onClose={onClose}>
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, background: t.surface, borderRadius: 10, padding: 4, marginBottom: 16 }}>
         {tabBtn("loadout", "📦 Loadout")}
         {tabBtn("history", "📋 History")}
+        {tabBtn("materials", "🧱 Materials")}
       </div>
 
       {/* LOADOUT TAB */}
@@ -4037,6 +5157,94 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
           <button onClick={onOpenCalendar} style={{ marginTop: 4, width: "100%", padding: "9px", borderRadius: 8, background: "none", border: "1px solid " + t.border, color: t.textMuted, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📅 Full Calendar View</button>
         </div>
       )}
+
+      {tab === "materials" && (() => {
+        // Last 7 days
+        const today = new Date();
+        const days = Array.from({ length: 7 }, (_, i) => {
+          const d = new Date(today);
+          d.setDate(d.getDate() - i);
+          return d.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+        });
+
+        // Jobs assigned to this truck
+        const truckJobs = (jobs || []).filter(j => j.truckId === truck.id);
+
+        const isFoamIdLocal = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+
+        // Build per-day data, broken out by job
+        const dayData = days.map(dateStr => {
+          let dayCost = 0;
+          const jobEntries = truckJobs.map(job => {
+            const logsForDay = (job.dailyMaterialLogs || []).filter(l => l.date === dateStr);
+            const totals = {};
+            logsForDay.forEach(log => {
+              Object.entries(log.materials || {}).forEach(([id, qty]) => { totals[id] = (totals[id] || 0) + qty; });
+            });
+            if (Object.keys(totals).length === 0) return null;
+            let jobCost = 0;
+            const rows = Object.entries(totals).map(([itemId, qty]) => {
+              const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+              if (!item) return null;
+              const display = isFoamIdLocal(itemId)
+                ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+                : qty + " " + item.unit;
+              const lineCost = (item.cost || 0) * qty;
+              jobCost += lineCost;
+              dayCost += lineCost;
+              return { name: item.name, display, lineCost };
+            }).filter(Boolean);
+            return { job, rows, jobCost };
+          }).filter(Boolean);
+
+          return { dateStr, jobEntries, dayCost };
+        }).filter(d => d.jobEntries.length > 0);
+
+        if (dayData.length === 0) return (
+          <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", textAlign: "center", padding: "24px 0" }}>No materials logged in the last 7 days.</div>
+        );
+
+        return (
+          <div>
+            {dayData.map(({ dateStr, jobEntries, dayCost }) => {
+              const label = new Date(dateStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+              return (
+                <div key={dateStr} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: 6 }}>{label}</div>
+                  {jobEntries.map(({ job, rows, jobCost }, ji) => (
+                    <div key={job.id} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, overflow: "hidden", marginBottom: ji < jobEntries.length - 1 ? 8 : 0 }}>
+                      <div style={{ padding: "8px 12px", borderBottom: "1px solid " + t.border, background: t.bg }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{job.builder || "No Customer"}</span>
+                        <span style={{ fontSize: 11, color: t.textMuted, marginLeft: 8 }}>{job.address?.split(",")[0]}</span>
+                      </div>
+                      {rows.map((row, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "7px 12px", borderBottom: i < rows.length - 1 ? "1px solid " + t.borderLight : "none" }}>
+                          <div>
+                            <span style={{ fontSize: 13, fontWeight: 500, color: t.text }}>{row.name}</span>
+                            <span style={{ fontSize: 12, color: t.textMuted, marginLeft: 8 }}>{row.display}</span>
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: row.lineCost > 0 ? t.text : t.textMuted }}>{row.lineCost > 0 ? "$" + row.lineCost.toFixed(2) : "—"}</span>
+                        </div>
+                      ))}
+                      {jobEntries.length > 1 && (
+                        <div style={{ display: "flex", justifyContent: "flex-end", padding: "5px 12px", borderTop: "1px solid " + t.borderLight }}>
+                          <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 600 }}>Job cost: <strong style={{ color: t.text }}>${jobCost.toFixed(2)}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {jobEntries.length > 1 && (
+                    <div style={{ display: "flex", justifyContent: "space-between", padding: "7px 12px", background: "#1e293b", borderRadius: "0 0 10px 10px", marginTop: -1 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: "0.4px" }}>Day Total</span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: "#fff" }}>${dayCost.toFixed(2)}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        );
+      })()}
     </Modal>
   );
 }
@@ -4270,6 +5478,50 @@ async function generateJobPDF(job, updates, pmUpdates, members) {
     y += 4;
   }
 
+  // Weather Log Section
+  if (job.weatherLog?.hours?.length) {
+    const wl = job.weatherLog;
+    const WMO_DESC = c => { if (c===0) return "Clear"; if (c<=2) return "Mostly Sunny"; if (c===3) return "Cloudy"; if (c===45||c===48) return "Foggy"; if (c>=51&&c<=65) return "Rain"; if (c>=71&&c<=77) return "Snow"; if (c>=80&&c<=82) return "Showers"; if (c>=95) return "Thunderstorm"; return "Partly Cloudy"; };
+    doc2.setFillColor(224, 242, 254);
+    doc2.roundedRect(margin, y, W - margin * 2, 7, 2, 2, "F");
+    doc2.setTextColor(3, 105, 161);
+    doc2.setFontSize(9);
+    doc2.setFont("helvetica", "bold");
+    doc2.text(`WEATHER — ${wl.date}  ↑${wl.hiTemp}°F  ↓${wl.loTemp}°F`, margin + 4, y + 5);
+    y += 11;
+    doc2.setFont("helvetica", "normal");
+    doc2.setTextColor(17, 24, 39);
+    doc2.setFontSize(8);
+    // Print hourly row (7am–4pm)
+    const hourLabels = wl.hours.map(h => {
+      const hr = parseInt(h.time.slice(11,13));
+      const ampm = hr >= 12 ? "PM" : "AM";
+      const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+      return `${h12}${ampm}`;
+    });
+    const colW = Math.min(28, (W - margin * 2 - 8) / wl.hours.length);
+    wl.hours.forEach((h, i) => {
+      const cx = margin + 4 + i * colW;
+      doc2.setFont("helvetica", "bold"); doc2.setTextColor(75, 85, 99);
+      doc2.text(hourLabels[i], cx, y);
+      doc2.setFont("helvetica", "normal"); doc2.setTextColor(17, 24, 39);
+      doc2.text(`${h.temp}°`, cx, y + 5);
+      doc2.setTextColor(h.precip > 50 ? 185 : 75, h.precip > 50 ? 28 : 85, h.precip > 50 ? 28 : 99);
+      doc2.text(`${h.precip}%`, cx, y + 10);
+      doc2.setTextColor(17, 24, 39);
+      doc2.text(`${h.wind}mph`, cx, y + 15);
+    });
+    y += 22;
+    // Overall condition summary
+    const midHour = wl.hours[Math.floor(wl.hours.length / 2)];
+    if (midHour) {
+      doc2.setFontSize(8); doc2.setTextColor(75, 85, 99);
+      doc2.text(`Conditions: ${WMO_DESC(midHour.code)} · Wind avg ${Math.round(wl.hours.reduce((s,h)=>s+h.wind,0)/wl.hours.length)} mph · Precip max ${Math.max(...wl.hours.map(h=>h.precip))}%`, margin + 4, y);
+      y += 7;
+    }
+    y += 4;
+  }
+
   // PM Notes Section
   const jobPm = (pmUpdates || []).filter(p => p.jobId === job.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
   if (jobPm.length > 0) {
@@ -4380,65 +5632,135 @@ async function generateJobPDF(job, updates, pmUpdates, members) {
 }
 
 // ─── WMO weather code → emoji / description ───
-function wmoEmoji(code) {
-  if (code === 0) return "☀️";
-  if (code <= 3) return "🌤️";
-  if (code === 45 || code === 48) return "🌫️";
-  if (code >= 51 && code <= 67) return "🌧️";
-  if (code >= 71 && code <= 77) return "❄️";
-  if (code >= 80 && code <= 82) return "🌦️";
-  if (code >= 95 && code <= 99) return "⛈️";
-  return "🌤️";
-}
-function wmoDesc(code) {
-  if (code === 0) return "Clear sky";
-  if (code <= 3) return "Partly cloudy";
+function nwsForecastFromCode(code) {
+  if (code === 0) return "Clear";
+  if (code <= 2) return "Mostly Sunny";
+  if (code === 3) return "Mostly Cloudy";
   if (code === 45 || code === 48) return "Foggy";
   if (code >= 51 && code <= 55) return "Drizzle";
-  if (code >= 56 && code <= 57) return "Freezing drizzle";
+  if (code >= 56 && code <= 57) return "Freezing Drizzle";
   if (code >= 61 && code <= 65) return "Rain";
-  if (code >= 66 && code <= 67) return "Freezing rain";
+  if (code >= 66 && code <= 67) return "Freezing Rain";
   if (code >= 71 && code <= 77) return "Snow";
-  if (code >= 80 && code <= 82) return "Rain showers";
+  if (code >= 80 && code <= 82) return "Rain Showers";
   if (code >= 95 && code <= 99) return "Thunderstorm";
-  return "Cloudy";
+  return "Partly Cloudy";
 }
+function nwsEmoji(forecast) {
+  if (!forecast) return "🌤️";
+  const f = forecast.toLowerCase();
+  if (f.includes("thunder")) return "⛈️";
+  if (f.includes("blizzard") || f.includes("snow")) return "❄️";
+  if (f.includes("freezing rain") || f.includes("sleet") || f.includes("ice")) return "🌨️";
+  if (f.includes("rain") || f.includes("shower") || f.includes("drizzle")) return "🌧️";
+  if (f.includes("fog") || f.includes("haze") || f.includes("mist")) return "🌫️";
+  if (f.includes("windy") || f.includes("breezy")) return "💨";
+  if (f.includes("mostly sunny") || f.includes("partly cloudy") || f.includes("partly sunny")) return "🌤️";
+  if (f.includes("mostly cloudy") || f.includes("overcast")) return "☁️";
+  if (f.includes("sunny") || f.includes("clear")) return "☀️";
+  if (f.includes("cloudy")) return "🌥️";
+  return "🌤️";
+}
+function nwsDesc(forecast) { return forecast || "—"; }
+// Legacy aliases for any remaining references
+function wmoEmoji(code) { return "🌤️"; }
+function wmoDesc(code) { return "—"; }
 
-function WeatherTab({ jobs, trucks }) {
-  const geocacheRef = React.useRef({});
+function WeatherTab({ jobs, trucks, updates }) {
+  // Persist geocache across renders via sessionStorage
+  const geocacheRef = React.useRef(() => {
+    try { return JSON.parse(sessionStorage.getItem("ist_geocache") || "{}"); } catch { return {}; }
+  });
+  if (typeof geocacheRef.current === "function") geocacheRef.current = geocacheRef.current();
+
+  const saveGeoCache = (addr, coords) => {
+    geocacheRef.current[addr] = coords;
+    try { sessionStorage.setItem("ist_geocache", JSON.stringify(geocacheRef.current)); } catch {}
+  };
+
   const [weatherData, setWeatherData] = React.useState({});
   const [loadingSet, setLoadingSet] = React.useState(new Set());
   const [dispatchOpen, setDispatchOpen] = React.useState(false);
   const [copied, setCopied] = React.useState(false);
+  const fetchQueueRef = React.useRef([]);
+  const fetchingRef = React.useRef(false);
 
-  const activeJobs = (jobs || []).filter(j => !j.closedOut);
   const todayLabel = new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
-  const todayISO = new Date().toLocaleDateString("en-CA"); // YYYY-MM-DD in local time
+  const todayISO = new Date().toLocaleDateString("en-CA");
+  // Only jobs scheduled for today that aren't closed out
+  const activeJobs = (jobs || []).filter(j => {
+    if (j.closedOut) return false;
+    if (j.date === todayISO) return true;
+    // Also include jobs with in-progress update today
+    return (updates || []).some(u => u.jobId === j.id && u.status === "in_progress" && (u.timestamp || "").startsWith(todayISO));
+  });
 
-  const fetchWeatherForAddress = React.useCallback(async (address) => {
-    if (!address) return;
+  // Nominatim geocode with 3 fallback strategies
+  const geocodeAddress = async (address) => {
+    if (geocacheRef.current[address]) return geocacheRef.current[address];
+    const hasOK = /oklahoma|,\s*ok\b/i.test(address);
+    const strategies = [
+      hasOK ? address : `${address}, Oklahoma`,
+      // strip apt/unit suffixes and retry
+      address.replace(/\s+(apt|unit|ste|suite|#)\s*\S+/i, "") + (hasOK ? "" : ", Oklahoma"),
+      // just the street number + street name + Tulsa OK
+      (() => { const m = address.match(/^(\d+\s+[^,]+)/); return m ? `${m[1]}, Tulsa, Oklahoma` : null; })(),
+    ].filter(Boolean);
+
+    for (const q of strategies) {
+      try {
+        const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(q)}&format=json&limit=1&countrycodes=us`, { headers: { "Accept-Language": "en", "User-Agent": "ISTDispatch/1.0 (istdispatch.com)" } });
+        const data = await res.json();
+        if (data.length) {
+          const coords = { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) };
+          saveGeoCache(address, coords);
+          return coords;
+        }
+      } catch {}
+      await new Promise(r => setTimeout(r, 1100)); // Nominatim rate limit: 1 req/sec
+    }
+    throw new Error("Geocode failed after all strategies");
+  };
+
+  const doFetch = async (address) => {
     setLoadingSet(prev => { const s = new Set(prev); s.add(address); return s; });
     try {
-      let lat, lon;
-      if (geocacheRef.current[address]) {
-        ({ lat, lon } = geocacheRef.current[address]);
-      } else {
-        const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(address)}&count=1&language=en&format=json`);
-        const geoData = await geoRes.json();
-        if (!geoData.results?.length) throw new Error("Not found");
-        lat = geoData.results[0].latitude;
-        lon = geoData.results[0].longitude;
-        geocacheRef.current[address] = { lat, lon };
-      }
-      const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=temperature_2m,precipitation_probability,weathercode,windspeed_10m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago&forecast_days=2`);
-      const wxData = await wxRes.json();
-      setWeatherData(prev => ({ ...prev, [address]: wxData }));
+      const { lat, lon } = await geocodeAddress(address);
+      const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode,windspeed_10m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago&forecast_days=2`);
+      if (!wxRes.ok) throw new Error("Weather fetch failed");
+      const wxRaw = await wxRes.json();
+      const hours = (wxRaw.hourly?.time || []).map((t, i) => ({
+        time: t,
+        temp: wxRaw.hourly.temperature_2m[i],
+        feelsLike: wxRaw.hourly.apparent_temperature[i],
+        precip: wxRaw.hourly.precipitation_probability[i] ?? 0,
+        wind: wxRaw.hourly.windspeed_10m[i],
+        forecast: nwsForecastFromCode(wxRaw.hourly.weathercode[i]),
+      }));
+      setWeatherData(prev => ({ ...prev, [address]: { nws: true, hours } }));
     } catch {
       setWeatherData(prev => ({ ...prev, [address]: { error: true } }));
     } finally {
       setLoadingSet(prev => { const s = new Set(prev); s.delete(address); return s; });
     }
+  };
+
+  // Sequential queue — respects Nominatim 1 req/sec
+  const processQueue = React.useCallback(async () => {
+    if (fetchingRef.current) return;
+    fetchingRef.current = true;
+    while (fetchQueueRef.current.length > 0) {
+      const addr = fetchQueueRef.current.shift();
+      await doFetch(addr);
+      if (fetchQueueRef.current.length > 0) await new Promise(r => setTimeout(r, 1100));
+    }
+    fetchingRef.current = false;
   }, []);
+
+  const enqueue = React.useCallback((addr) => {
+    if (!fetchQueueRef.current.includes(addr)) fetchQueueRef.current.push(addr);
+    processQueue();
+  }, [processQueue]);
 
   const fetchedRef = React.useRef(new Set());
   React.useEffect(() => {
@@ -4446,32 +5768,48 @@ function WeatherTab({ jobs, trucks }) {
     unique.forEach(addr => {
       if (!fetchedRef.current.has(addr) && !weatherData[addr]) {
         fetchedRef.current.add(addr);
-        fetchWeatherForAddress(addr);
+        enqueue(addr);
       }
     });
   });
 
+  const refreshAll = () => {
+    fetchedRef.current = new Set();
+    setWeatherData({});
+    geocacheRef.current = {};
+    try { sessionStorage.removeItem("ist_geocache"); } catch {}
+  };
+
+  const retryAddress = (addr) => {
+    fetchedRef.current.delete(addr);
+    setWeatherData(prev => { const n = { ...prev }; delete n[addr]; return n; });
+    enqueue(addr);
+  };
+
   const getHoursForToday = (wx) => {
-    if (!wx || wx.error || !wx.hourly) return [];
-    return (wx.hourly.time || []).map((t, i) => ({
-      time: t, temp: wx.hourly.temperature_2m[i],
-      precip: wx.hourly.precipitation_probability[i],
-      code: wx.hourly.weathercode[i], wind: wx.hourly.windspeed_10m[i],
-    })).filter(h => {
+    if (!wx || wx.error || !wx.nws) return [];
+    return (wx.hours || []).filter(h => {
       if (!h.time.startsWith(todayISO)) return false;
       const hr = parseInt(h.time.slice(11, 13), 10);
-      return hr >= 6 && hr <= 18;
+      return hr >= 6 && hr <= 19;
     });
   };
 
   const getCurrentConditions = (wx) => {
-    if (!wx || wx.error || !wx.hourly) return null;
-    const now = new Date();
-    const chicagoNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
-    const chiISO = `${todayISO}T${String(chicagoNow.getHours()).padStart(2, "0")}:00`;
-    const idx = (wx.hourly.time || []).findIndex(t => t === chiISO);
-    if (idx < 0) return null;
-    return { temp: wx.hourly.temperature_2m[idx], code: wx.hourly.weathercode[idx], wind: wx.hourly.windspeed_10m[idx], precip: wx.hourly.precipitation_probability[idx] };
+    if (!wx || wx.error || !wx.nws || !wx.hours?.length) return null;
+    const nowMs = Date.now();
+    let best = null;
+    for (const h of wx.hours) {
+      if (new Date(h.time).getTime() <= nowMs) best = h;
+      else break;
+    }
+    return best || wx.hours[0];
+  };
+
+  const getDayRange = (hours) => {
+    if (!hours.length) return null;
+    const temps = hours.map(h => h.temp);
+    return { hi: Math.round(Math.max(...temps)), lo: Math.round(Math.min(...temps)) };
   };
 
   const precipColor = (pct) => pct < 20 ? "#16a34a" : pct < 50 ? "#ca8a04" : "#dc2626";
@@ -4494,24 +5832,39 @@ function WeatherTab({ jobs, trucks }) {
         const wx = weatherData[job.address];
         const cur = getCurrentConditions(wx);
         const hours = getHoursForToday(wx);
-        const wxStr = cur ? `${Math.round(cur.temp)}°F, ${wmoDesc(cur.code)}` : "weather unavailable";
+        const wxStr = cur ? `${Math.round(cur.temp)}°F, ${nwsDesc(cur.forecast)}` : "weather unavailable";
         lines.push(`  • ${job.address || "No address"} — ${job.type || "N/A"} (${wxStr})`);
         if (hours.some(h => h.precip > 60)) advisories.add("⚠️ Rain likely — check before dispatching");
         if (hours.some(h => h.temp < 40)) advisories.add("🧊 Cold — spray foam may be affected");
+        if (hours.some(h => h.wind > 25)) advisories.add("💨 High winds — spray foam overspray risk");
       });
       if (advisories.size > 0) lines.push(`Weather advisory: ${[...advisories].join("; ")}`);
     });
     return lines.join("\n");
   };
 
+  const loadedCount = activeJobs.filter(j => weatherData[j.address]?.nws).length;
+  const errorCount = activeJobs.filter(j => weatherData[j.address]?.error).length;
+  const pendingCount = activeJobs.filter(j => !weatherData[j.address] || loadingSet.has(j.address)).length;
+
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>☁️ Weather — Job Sites</h2>
           <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{todayLabel}</div>
         </div>
+        <button onClick={refreshAll} style={{ padding: "8px 14px", borderRadius: 8, background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#475569", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>🔄 Refresh</button>
       </div>
+
+      {/* Status bar */}
+      {activeJobs.length > 0 && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
+          {loadedCount > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: "#15803d", background: "#dcfce7", padding: "3px 10px", borderRadius: 20 }}>✅ {loadedCount} loaded</span>}
+          {pendingCount > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: "#1d4ed8", background: "#dbeafe", padding: "3px 10px", borderRadius: 20 }}>⏳ {pendingCount} loading</span>}
+          {errorCount > 0 && <span style={{ fontSize: 12, fontWeight: 600, color: "#b91c1c", background: "#fee2e2", padding: "3px 10px", borderRadius: 20 }}>❌ {errorCount} failed</span>}
+        </div>
+      )}
 
       {activeJobs.length === 0 && (
         <div style={{ textAlign: "center", padding: "60px 20px", color: "#94a3b8", fontSize: 15 }}>No active jobs.</div>
@@ -4520,11 +5873,13 @@ function WeatherTab({ jobs, trucks }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
         {activeJobs.map(job => {
           const wx = weatherData[job.address];
-          const loading = loadingSet.has(job.address);
+          const loading = loadingSet.has(job.address) || (!wx && fetchedRef.current.has(job.address));
           const hours = getHoursForToday(wx);
           const cur = getCurrentConditions(wx);
+          const range = getDayRange(hours);
           const hasRain = hours.some(h => h.precip > 60);
           const hasCold = hours.some(h => h.temp < 40);
+          const hasWind = hours.some(h => h.wind > 25);
           return (
             <div key={job.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
               <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid #f1f5f9" }}>
@@ -4537,16 +5892,37 @@ function WeatherTab({ jobs, trucks }) {
                 </div>
               </div>
               {hasRain && <div style={{ padding: "8px 16px", background: "#fee2e2", color: "#b91c1c", fontSize: 13, fontWeight: 600 }}>⚠️ Rain likely — check before dispatching</div>}
-              {hasCold && <div style={{ padding: "8px 16px", background: "#fef3c7", color: "#92400e", fontSize: 13, fontWeight: 600 }}>🧊 Cold — spray foam may be affected</div>}
+              {hasCold && <div style={{ padding: "8px 16px", background: "#fef3c7", color: "#92400e", fontSize: 13, fontWeight: 600 }}>🧊 Cold — spray foam may be affected (below 40°F)</div>}
+              {hasWind && <div style={{ padding: "8px 16px", background: "#f0f9ff", color: "#0369a1", fontSize: 13, fontWeight: 600 }}>💨 High winds — overspray risk</div>}
               <div style={{ padding: "12px 16px" }}>
-                {loading && <div style={{ color: "#94a3b8", fontSize: 13, padding: "8px 0" }}>Loading weather...</div>}
-                {!loading && wx?.error && <div style={{ color: "#ef4444", fontSize: 13 }}>Could not load weather for this address.</div>}
+                {/* Skeleton loader */}
+                {loading && (
+                  <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 8, background: "linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                    <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                      <div style={{ height: 20, width: "40%", borderRadius: 4, background: "linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                      <div style={{ height: 14, width: "60%", borderRadius: 4, background: "linear-gradient(90deg,#f1f5f9 25%,#e2e8f0 50%,#f1f5f9 75%)", backgroundSize: "200% 100%", animation: "shimmer 1.4s infinite" }} />
+                    </div>
+                  </div>
+                )}
+                {!loading && wx?.error && (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <div style={{ color: "#ef4444", fontSize: 13 }}>⚠️ Could not load weather</div>
+                    <button onClick={() => retryAddress(job.address)} style={{ fontSize: 12, padding: "4px 10px", borderRadius: 6, background: "#fee2e2", border: "1px solid #fca5a5", color: "#b91c1c", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>Retry</button>
+                  </div>
+                )}
                 {!loading && cur && (
-                  <div style={{ display: "flex", gap: 20, alignItems: "center", marginBottom: hours.length > 0 ? 12 : 0 }}>
-                    <div style={{ fontSize: 36, lineHeight: 1 }}>{wmoEmoji(cur.code)}</div>
-                    <div>
-                      <div style={{ fontSize: 28, fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{Math.round(cur.temp)}°F</div>
-                      <div style={{ fontSize: 13, color: "#475569", marginTop: 2 }}>{wmoDesc(cur.code)} · 💨 {Math.round(cur.wind)} mph</div>
+                  <div style={{ display: "flex", gap: 16, alignItems: "center", marginBottom: hours.length > 0 ? 12 : 0, flexWrap: "wrap" }}>
+                    <div style={{ fontSize: 40, lineHeight: 1 }}>{nwsEmoji(cur.forecast)}</div>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
+                        <div style={{ fontSize: 32, fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{Math.round(cur.temp)}°F</div>
+                        {cur.feelsLike != null && Math.abs(cur.feelsLike - cur.temp) >= 3 && (
+                          <div style={{ fontSize: 13, color: "#64748b" }}>Feels {Math.round(cur.feelsLike)}°</div>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 13, color: "#475569", marginTop: 3 }}>{nwsDesc(cur.forecast)} · 💨 {Math.round(cur.wind)} mph</div>
+                      {range && <div style={{ fontSize: 12, color: "#94a3b8", marginTop: 2 }}>Today: ↑{range.hi}° / ↓{range.lo}°</div>}
                     </div>
                   </div>
                 )}
@@ -4556,10 +5932,11 @@ function WeatherTab({ jobs, trucks }) {
                       const hr = parseInt(h.time.slice(11, 13), 10);
                       const ampm = hr >= 12 ? "PM" : "AM";
                       const h12 = hr > 12 ? hr - 12 : hr === 0 ? 12 : hr;
+                      const isNow = cur && h.time === cur.time;
                       return (
-                        <div key={i} style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "8px 10px", background: "#f8fafc", borderRadius: 10, border: "1px solid #e2e8f0", minWidth: 54 }}>
-                          <div style={{ fontSize: 10, color: "#64748b", fontWeight: 600 }}>{h12}{ampm}</div>
-                          <div style={{ fontSize: 16 }}>{wmoEmoji(h.code)}</div>
+                        <div key={i} style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 3, padding: "8px 10px", background: isNow ? "#eff6ff" : "#f8fafc", borderRadius: 10, border: `1px solid ${isNow ? "#93c5fd" : "#e2e8f0"}`, minWidth: 54 }}>
+                          <div style={{ fontSize: 10, color: isNow ? "#1d4ed8" : "#64748b", fontWeight: isNow ? 800 : 600 }}>{isNow ? "NOW" : `${h12}${ampm}`}</div>
+                          <div style={{ fontSize: 16 }}>{nwsEmoji(h.forecast)}</div>
                           <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a" }}>{Math.round(h.temp)}°</div>
                           <div style={{ fontSize: 10, fontWeight: 700, color: precipColor(h.precip) }}>{h.precip}%</div>
                         </div>
@@ -4593,18 +5970,19 @@ function WeatherTab({ jobs, trucks }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   // Builders DB state
   const [builderSearchQuery, setBuilderSearchQuery] = useState("");
   const [showAddBuilder, setShowAddBuilder] = useState(false);
   const [editingBuilder, setEditingBuilder] = useState(null);
-  const [builderForm, setBuilderForm] = useState({ name: "", contact: "", address: "", notes: "", tags: [] });
+  const [builderForm, setBuilderForm] = useState({ name: "", contact: "", address: "", notes: "", tags: [], phone: "", email: "" });
   const [expandedBuilders, setExpandedBuilders] = useState({});
   const [quickRevenueJobId, setQuickRevenueJobId] = useState(null);
   const [quickRevenueVal, setQuickRevenueVal] = useState("");
   const [showAddJob, setShowAddJob] = useState(false);
+  const [scanningWorkOrder, setScanningWorkOrder] = useState(false);
   const [showTakeoffImport, setShowTakeoffImport] = useState(false);
   const [takeoffQuotes, setTakeoffQuotes] = useState([]);
   const [takeoffLoading, setTakeoffLoading] = useState(false);
@@ -4615,18 +5993,20 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [truckDetailView, setTruckDetailView] = useState(null);
   const [showAdminTicketForm, setShowAdminTicketForm] = useState(false);
   const [adminTicketForm, setAdminTicketForm] = useState({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
-  const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "" });
+  const [jobForm, setJobForm] = useState({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" });
+  const [addFinOpen, setAddFinOpen] = useState(false);
+  const [editFinOpen, setEditFinOpen] = useState(false);
   const [builderSearch, setBuilderSearch] = useState("");
   const [showBuilderDropdown, setShowBuilderDropdown] = useState(false);
   const [addCrewSearch, setAddCrewSearch] = useState("");
-  const [truckForm, setTruckForm] = useState({ name: "", members: "" });
+  const [truckForm, setTruckForm] = useState({ name: "", members: "", vehicleName: "" });
   const [activeTicket, setActiveTicket] = useState(null);
   const [ticketStatus, setTicketStatus] = useState("acknowledged");
   const [ticketNote, setTicketNote] = useState("");
   const [ticketFilter, setTicketFilter] = useState("active");
   const [ticketTypeTab, setTicketTypeTab] = useState("equipment");
   const [editingJob, setEditingJob] = useState(null);
-  const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", crewMemberIds: [], date: "", notes: "", jobCategory: "", revenue: "" });
+  const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", crewMemberIds: [], date: "", notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" });
   const [editCrewSearch, setEditCrewSearch] = useState("");
   const [truckFilter, setTruckFilter] = useState(null);
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
@@ -4654,6 +6034,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [invSort, setInvSort] = useState("category");
   const [invStatusFilter, setInvStatusFilter] = useState("all");
   const [invTab, setInvTab] = useState("materials");
+  const [jobSearch, setJobSearch] = useState("");
+  const [jobStatusFilter, setJobStatusFilter] = useState("active");
+  const [jobDateFilter, setJobDateFilter] = useState("all");
+  const [jobCrewFilter, setJobCrewFilter] = useState("");
+  const [reportStart, setReportStart] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0,10); });
+  const [reportEnd, setReportEnd] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth()+1, 0).toISOString().slice(0,10); });
   const [foamPartsQtys, setFoamPartsQtys] = useState({});
   const [projectToolsQtys, setProjectToolsQtys] = useState({});
   const [showEodSummary, setShowEodSummary] = useState(false);
@@ -4671,7 +6057,26 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
     const isCompleted = latest && latest.status === "completed";
     const truckMatch = !truckFilter || j.truckId === truckFilter;
-    const deptMatch = j.truckId ? deptTruckIds.has(j.truckId) : (scheduleView === "insulation");
+    const isEnergySeaJob = (j.type || "") === "Energy Seal" || ES_JOB_TYPES.includes(j.type);
+    if (scheduleView === "insulation" && isEnergySeaJob) return false;
+    const jobTruck = j.truckId ? trucks.find(tr => tr.id === j.truckId) : null;
+    const truckIsES = jobTruck ? jobTruck.department === "energySeal" : false;
+    // A job belongs to the ES view if its truck is an ES truck OR its job type is an ES type
+    const jobIsES = isEnergySeaJob || truckIsES;
+    if (scheduleView === "energySeal" && !jobIsES) return false;
+    if (scheduleView === "insulation" && jobIsES) return false;
+    const deptMatch = true;
+    // Job search/filter
+    if (jobSearch) {
+      const q = jobSearch.toLowerCase();
+      if (!(j.address || "").toLowerCase().includes(q) && !(j.builder || "").toLowerCase().includes(q)) return false;
+    }
+    if (jobStatusFilter === "active" && isCompleted) return false;
+    if (jobStatusFilter === "completed" && !isCompleted) return false;
+    if (jobStatusFilter === "onhold") return false; // onhold handled separately
+    if (jobDateFilter === "today") { if (j.date !== todayCST()) return false; }
+    if (jobDateFilter === "week") { const d = new Date(j.date + "T12:00:00"); const now = new Date(); const startOfWeek = new Date(now); startOfWeek.setDate(now.getDate() - now.getDay()); startOfWeek.setHours(0,0,0,0); if (d < startOfWeek) return false; }
+    if (jobCrewFilter && !(j.crewMemberIds || []).includes(jobCrewFilter)) return false;
     return !isCompleted && truckMatch && deptMatch;
   });
   const onHoldJobs = jobs.filter((j) => j.onHold);
@@ -4721,7 +6126,53 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
-  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null; onAddJob({ ...jobForm, crewMemberIds: cleanCrew, revenue: revenueVal }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "" }); setAddCrewSearch(""); setBuilderSearch(""); setShowBuilderDropdown(false); setShowAddJob(false); };
+  const handleScanWorkOrder = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setScanningWorkOrder(true);
+    try {
+      const reader = new FileReader();
+      const base64 = await new Promise((res, rej) => {
+        reader.onload = () => res(reader.result.split(',')[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const fns = getFunctions(app);
+      const scan = httpsCallable(fns, 'scanWorkOrder');
+      const { data } = await scan({ imageBase64: base64, mimeType: file.type || 'image/jpeg' });
+      const r = data.result || {};
+
+      // Fuzzy-match crew names against the members list
+      const matchedIds = [];
+      if (Array.isArray(r.crewNames) && r.crewNames.length > 0) {
+        for (const name of r.crewNames) {
+          const lower = name.toLowerCase().trim();
+          const match = members.find(m =>
+            m.name.toLowerCase().includes(lower) || lower.includes(m.name.toLowerCase().split(' ')[0])
+          );
+          if (match && !matchedIds.includes(match.id)) matchedIds.push(match.id);
+        }
+      }
+
+      setJobForm(prev => ({
+        ...prev,
+        builder:        r.builder  || prev.builder,
+        address:        r.address  || prev.address,
+        type:           r.type     || prev.type,
+        date:           r.date     || prev.date,
+        sqft:           r.sqft     != null ? String(r.sqft)    : prev.sqft,
+        revenue:        r.revenue  != null ? String(r.revenue) : prev.revenue,
+        notes:          r.notes    || prev.notes,
+        crewMemberIds:  matchedIds.length > 0 ? matchedIds : prev.crewMemberIds,
+      }));
+    } catch (err) {
+      alert('Scan failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setScanningWorkOrder(false);
+    }
+  };
+
+  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null; onAddJob({ ...jobForm, crewMemberIds: cleanCrew, revenue: revenueVal }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" }); setAddCrewSearch(""); setBuilderSearch(""); setShowBuilderDropdown(false); setShowAddJob(false); };
 
   const openTakeoffImport = async () => {
     setShowTakeoffImport(true);
@@ -4759,7 +6210,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     onReorderTruck(b.id, a.order ?? idx);
   };
   const handleTicketUpdate = () => { onUpdateTicket(activeTicket.id, { status: ticketStatus, adminNote: ticketNote }); onLogAction("Updated ticket for " + activeTicket.truckName + " to " + ticketStatus); setActiveTicket(null); setTicketStatus("acknowledged"); setTicketNote(""); };
-  const openEditJob = (job) => { setEditingJob(job); setEditCrewSearch(""); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", crewMemberIds: (job.crewMemberIds || []).filter(Boolean), date: job.date, notes: job.notes || "", jobCategory: job.jobCategory || "", revenue: job.revenue != null ? String(job.revenue) : "" }); };
+  const openEditJob = (job) => { setEditingJob(job); setEditCrewSearch(""); setEditForm({ address: job.address, builder: job.builder || "", type: job.type, truckId: job.truckId || "", crewMemberIds: (job.crewMemberIds || []).filter(Boolean), date: job.date, notes: job.notes || "", jobCategory: job.jobCategory || "", revenue: job.revenue != null ? String(job.revenue) : "", sqft: job.sqft != null ? String(job.sqft) : "", laborMode: job.laborMode || "percent", laborValue: job.laborValue != null ? String(job.laborValue) : "" }); };
   const handleSaveEdit = async () => {
     const cleanCrew = (editForm.crewMemberIds || []).filter(Boolean);
     const oldCrew = (editingJob.crewMemberIds || []).filter(Boolean);
@@ -4782,7 +6233,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       }
     }
     const revenueVal = editForm.revenue !== "" ? parseFloat(editForm.revenue) : null;
-    await onEditJob(editingJob.id, { ...editForm, crewMemberIds: cleanCrew, revenue: revenueVal });
+    const sqftVal = editForm.sqft !== "" ? parseFloat(editForm.sqft) : null;
+    const laborVal = editForm.laborValue !== "" ? parseFloat(editForm.laborValue) : null;
+    await onEditJob(editingJob.id, { ...editForm, crewMemberIds: cleanCrew, revenue: revenueVal, sqft: sqftVal, laborValue: laborVal });
     onLogAction("Edited job: " + editForm.address);
     setEditingJob(null);
   };
@@ -4854,6 +6307,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     const todayStr = todayCST();
     return jobs.filter((j) => {
       if (j.onHold) return false;
+      const jobTruck = j.truckId ? trucks.find(tr => tr.id === j.truckId) : null;
+      if (ES_JOB_TYPES.includes(j.type) || jobTruck?.department === "energySeal") return false;
       const jobStatusUpds = updates.filter(u => u.jobId === j.id).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
       // Must have at least one in_progress or completed update to appear on calendar
       const startedUpdate = jobStatusUpds.find(u => u.status === "in_progress" || u.status === "completed");
@@ -4888,12 +6343,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     { key: "schedule", label: "Schedule", badge: needsCheckJobs.length },
     { key: "calendar", label: "Calendar" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
-    { key: "trucks", label: "Trucks" },
     { key: "tools", label: "Tools" },
     { key: "inventory", label: "Inventory" },
+    { key: "trucks", label: "Trucks" },
     { key: "roster", label: "Roster" },
     { key: "builders", label: "Builders" },
-    { key: "log", label: "Log" },
     { key: "weather", label: "Weather" },
   ];
 
@@ -5001,7 +6455,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
                                 <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
                               </div>
-                              <button onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); setPmNote(""); }} style={{ marginTop: 8, width: "100%", minHeight: 48, padding: "10px", background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ Mark as Checked</button>
+                              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                                <button onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); setPmNote(""); }} style={{ flex: 1, minHeight: 48, padding: "10px", background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ Mark as Checked</button>
+                                {adminName === "Johnny" && (
+                                  <button onClick={() => { if (!window.confirm("Clear this job from Needs Check?")) return; onEditJob(job.id, { ...job, jobCheckedAM: "Yes", jobCheckedPM: "Yes", checkedAt: new Date().toISOString(), checkedBy: "Cleared by Johnny" }); }} style={{ flex: 1, minHeight: 48, padding: "10px", background: "#6b7280", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🧹 Clear</button>
+                                )}
+                              </div>
                             </div>
                           );
                         })
@@ -5103,7 +6562,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     const crew = trucks.find(tr => tr.id === job.truckId);
                     return (
                       <div key={job.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight, gap: 8 }}>
-                        <div style={{ minWidth: 0 }}>
+                        <div style={{ minWidth: 0, cursor: "pointer", flex: 1 }} onClick={() => setCalViewJob(job)}>
                           <div style={{ fontSize: 13, fontWeight: 600, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer"}</div>
                           <div style={{ fontSize: 11, color: t.textMuted }}>{job.address?.split(",")[0]} · {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
                         </div>
@@ -5123,6 +6582,23 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 <button onClick={() => setTruckFilter(null)} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontWeight: 700, fontSize: "14px", fontFamily: "inherit", padding: "0 4px" }}>✕</button>
               </div>
             )}
+            {/* ── Job Search & Filter Bar ── */}
+            <div style={{ marginBottom: 14, background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: "10px 12px" }}>
+              <input type="text" placeholder="🔍 Search address or builder..." value={jobSearch} onChange={e => setJobSearch(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 8 }} />
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                {[["active","Active"],["completed","Completed"],["all","All"]].map(([v,l]) => (
+                  <button key={v} onClick={() => setJobStatusFilter(v)} style={{ padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: jobStatusFilter === v ? t.accent : "#f1f5f9", color: jobStatusFilter === v ? "#fff" : t.textMuted, border: "1px solid " + (jobStatusFilter === v ? t.accent : t.border) }}>{l}</button>
+                ))}
+                <span style={{ color: t.border, padding: "0 4px" }}>|</span>
+                {[["all","All Time"],["today","Today"],["week","This Week"]].map(([v,l]) => (
+                  <button key={v} onClick={() => setJobDateFilter(v)} style={{ padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: jobDateFilter === v ? "#6d28d9" : "#f1f5f9", color: jobDateFilter === v ? "#fff" : t.textMuted, border: "1px solid " + (jobDateFilter === v ? "#6d28d9" : t.border) }}>{l}</button>
+                ))}
+              </div>
+              <select value={jobCrewFilter} onChange={e => setJobCrewFilter(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 12, fontFamily: "inherit", color: t.text, background: "#fff" }}>
+                <option value="">All Crew</option>
+                {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+              </select>
+            </div>
             {(() => {
               const displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
               if (displayJobs.length === 0) return <EmptyState text={showUncheckedOnly ? "All jobs have been checked." : "No active jobs."} />;
@@ -5173,6 +6649,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     const isChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
                     const partialCheck = job.jobCheckedAM === "Yes" || job.jobCheckedPM === "Yes";
                     const isExpanded = !!expandedJobs[job.id];
+                    const unreadNotes = getUnreadNotes(job.id, updates);
+                    if (isExpanded) {
+                      const allIds = updates.filter(u => u.jobId === job.id && u.notes && u.crewName).map(u => u.id);
+                      localStorage.setItem(`ist_read_notes_${job.id}`, JSON.stringify(allIds));
+                    }
                     return (
                       <Card key={job.id} style={{ marginLeft: "8px", padding: "14px 16px" }}>
 
@@ -5180,9 +6661,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", cursor: "pointer" }} onClick={() => toggleJobExpand(job.id)}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ fontWeight: 600, color: t.text, fontSize: "15px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer Listed"}</div>
-                            <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.address}</div>
+                            <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: "underline" }}>{job.address}</a></div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                            {unreadNotes.length > 0 && <Badge color="#1d4ed8" bg="#dbeafe">💬 {unreadNotes.length} new</Badge>}
                             <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
                             <span style={{ fontSize: "14px", color: t.textMuted, lineHeight: 1 }}>{isExpanded ? "▲" : "▼"}</span>
                           </div>
@@ -5274,12 +6756,31 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 </div>
                               );
                             })()}
+                            {/* Reopen button — office only */}
+                            {latest?.status === "completed" && onSubmitUpdate && (
+                              <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                                <button onClick={() => {
+                                  if (!window.confirm("Reopen this job and mark it back In Progress?")) return;
+                                  onSubmitUpdate({ jobId: job.id, truckId: job.truckId, status: "in_progress", notes: "Reopened by office", eta: "", crewName: adminName, timestamp: new Date().toISOString(), timeStr: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
+                                }} style={{ width: "100%", padding: "11px 8px", borderRadius: "99px", border: "2px solid #b45309", background: "transparent", color: "#b45309", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                                  🔓 Reopen Job
+                                </button>
+                              </div>
+                            )}
                             {/* 💰 Job P&L */}
                             {(job.closedOut || job.revenue) && (() => {
                               const matCost = calcJobMaterialCost(job);
                               const rev = job.revenue || 0;
-                              const profit = rev - matCost;
+                              const laborCost = (() => {
+                                if (!job.laborValue) return 0;
+                                if (job.laborMode === "sqft" && job.sqft) return parseFloat(job.laborValue) * parseFloat(job.sqft);
+                                if (job.laborMode === "percent") return rev * (parseFloat(job.laborValue) / 100);
+                                return 0;
+                              })();
+                              const totalCost = matCost + laborCost;
+                              const profit = rev - totalCost;
                               const margin = rev > 0 ? Math.round((profit / rev) * 100) : null;
+                              const marginColor = margin === null ? t.textMuted : margin >= 30 ? "#15803d" : margin >= 10 ? "#b45309" : "#dc2626";
                               return (
                                 <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
                                   <div style={{ fontSize: "11px", fontWeight: 700, color: "#15803d", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "8px" }}>💰 Job P&L</div>
@@ -5287,8 +6788,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                     <div style={{ background: profit >= 0 ? "#f0fdf4" : "#fff1f2", border: "1px solid " + (profit >= 0 ? "#86efac" : "#fca5a5"), borderRadius: 8, padding: "10px 12px", fontSize: 13 }}>
                                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: t.text }}><span>Revenue</span><span style={{ fontWeight: 600 }}>${rev.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>
                                       {matCost > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: t.textSecondary }}><span>Material Cost</span><span>−${matCost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>}
+                                      {laborCost > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: t.textSecondary }}><span>Labor Cost{job.laborMode === "percent" ? ` (${job.laborValue}%)` : ` (${job.laborValue}/sqft)`}</span><span>−${laborCost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>}
                                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: margin !== null ? 4 : 0, fontWeight: 700, color: profit >= 0 ? "#15803d" : "#dc2626", borderTop: "1px solid " + (profit >= 0 ? "#86efac" : "#fca5a5"), paddingTop: 6, marginTop: 2 }}><span>Gross Profit</span><span>{profit >= 0 ? "+" : ""}${profit.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>
-                                      {margin !== null && <div style={{ display: "flex", justifyContent: "space-between", color: profit >= 0 ? "#15803d" : "#dc2626", fontSize: 12 }}><span>Margin</span><span>{margin}%</span></div>}
+                                      {margin !== null && <div style={{ display: "flex", justifyContent: "space-between", color: marginColor, fontSize: 12, fontWeight: 700 }}><span>Margin</span><span>{margin}%</span></div>}
                                     </div>
                                   ) : (
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, color: t.textMuted, fontSize: 12 }}>
@@ -5307,6 +6809,34 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               );
                             })()}
 
+                            {/* Weather Log */}
+                            {job.weatherLog?.hours?.length > 0 && (() => {
+                              const wl = job.weatherLog;
+                              const nwsFC = c => { if (c===0) return "☀️ Clear"; if (c<=2) return "🌤️ Mostly Sunny"; if (c===3) return "☁️ Cloudy"; if (c===45||c===48) return "🌫️ Fog"; if (c>=51&&c<=65) return "🌧️ Rain"; if (c>=71&&c<=77) return "❄️ Snow"; if (c>=80&&c<=82) return "🌦️ Showers"; if (c>=95) return "⛈️ Storm"; return "🌤️ P. Cloudy"; };
+                              return (
+                                <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#0369a1", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>☁️ Weather on Job Day — {wl.date}</div>
+                                  <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "10px 12px" }}>
+                                    <div style={{ fontSize: 12, color: "#0369a1", fontWeight: 600, marginBottom: 8 }}>↑{wl.hiTemp}°F high · ↓{wl.loTemp}°F low · {nwsFC(wl.hours[Math.floor(wl.hours.length/2)]?.code)}</div>
+                                    <div style={{ display: "flex", gap: 6, overflowX: "auto", paddingBottom: 2 }}>
+                                      {wl.hours.map((h, i) => {
+                                        const hr = parseInt(h.time.slice(11,13));
+                                        const label = hr > 12 ? `${hr-12}PM` : hr === 12 ? "12PM" : `${hr}AM`;
+                                        return (
+                                          <div key={i} style={{ flexShrink: 0, textAlign: "center", minWidth: 42, padding: "5px 4px", background: "#fff", borderRadius: 6, border: "1px solid #e0f2fe" }}>
+                                            <div style={{ fontSize: 9, color: "#64748b", fontWeight: 600 }}>{label}</div>
+                                            <div style={{ fontSize: 12, fontWeight: 700, color: "#0f172a", margin: "2px 0" }}>{h.temp}°</div>
+                                            <div style={{ fontSize: 9, color: h.precip > 50 ? "#dc2626" : "#64748b" }}>{h.precip}%</div>
+                                            <div style={{ fontSize: 9, color: "#94a3b8" }}>{h.wind}mph</div>
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             {/* Photos section */}
                             <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
                               <JobPhotosSection job={job} canDelete={["Johnny","Jordan","Skip","Duck","Carolyn"].includes(adminName)} uploaderName={adminName} emptyText="No photos yet — crew will upload from their jobs" />
@@ -5317,6 +6847,28 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>PM Note</Button>
                               <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Edit</Button>
                               <Button variant="secondary" onClick={() => onEditJob(job.id, { ...job, onHold: true })} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Hold</Button>
+                              <Button variant="secondary" title="Snap today's weather to this job" onClick={async () => {
+                                if (!job.address) return;
+                                const todayISO = new Date().toLocaleDateString("en-CA");
+                                try {
+                                  const searchAddr = /oklahoma|,\s*ok\b/i.test(job.address) ? job.address : `${job.address}, Oklahoma`;
+                                  let lat, lon;
+                                  try { const c = JSON.parse(sessionStorage.getItem("ist_geocache")||"{}"); if (c[job.address]) { lat=c[job.address].lat; lon=c[job.address].lon; } } catch {}
+                                  if (!lat) {
+                                    const g = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchAddr)}&format=json&limit=1&countrycodes=us`,{headers:{"User-Agent":"ISTDispatch/1.0"}});
+                                    const gd = await g.json(); if (gd.length) { lat=parseFloat(gd[0].lat); lon=parseFloat(gd[0].lon); }
+                                  }
+                                  if (!lat) { alert("Could not geocode address."); return; }
+                                  const wx = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode,windspeed_10m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago&forecast_days=1`);
+                                  const wd = await wx.json();
+                                  const hours = (wd.hourly?.time||[]).map((t2,i)=>({time:t2,temp:Math.round(wd.hourly.temperature_2m[i]),feelsLike:Math.round(wd.hourly.apparent_temperature[i]),precip:wd.hourly.precipitation_probability[i]??0,wind:Math.round(wd.hourly.windspeed_10m[i]),code:wd.hourly.weathercode[i]})).filter(h=>h.time.startsWith(todayISO)&&parseInt(h.time.slice(11,13))>=7&&parseInt(h.time.slice(11,13))<=16);
+                                  if (!hours.length) { alert("No hourly data for today yet."); return; }
+                                  const temps = hours.map(h=>h.temp);
+                                  const weatherLog = { date: todayISO, hours, hiTemp: Math.max(...temps), loTemp: Math.min(...temps) };
+                                  await onEditJob(job.id, { ...job, weatherLog });
+                                  alert("✅ Weather snapped to this job!");
+                                } catch(e) { alert("Error: " + e.message); }
+                              }} style={{ padding: "6px 10px", fontSize: "12px" }}>☁️</Button>
                               <Button variant="danger" onClick={() => handleRemoveJob(job)} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Remove</Button>
                             </div>
                           </>
@@ -5369,7 +6921,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                     <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
                                     <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
                                   </div>
-                                  <button onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>✓ Mark as Checked</button>
+                                  <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+                                    <button onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ flex: 1, background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>✓ Mark as Checked</button>
+                                    {adminName === "Johnny" && (
+                                      <button onClick={() => { if (!window.confirm("Clear this job from Needs Check?")) return; onEditJob(job.id, { ...job, jobCheckedAM: "Yes", jobCheckedPM: "Yes", checkedAt: new Date().toISOString(), checkedBy: "Cleared by Johnny" }); }} style={{ flex: 1, background: "#6b7280", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>🧹 Clear</button>
+                                    )}
+                                  </div>
                                 </div>
                               );
                             })
@@ -5806,6 +7363,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             crewMembers={members}
             employeeFlags={employeeFlags}
             onSetFlag={onSetFlag}
+            foamPartsInventory={foamPartsInventory}
+            projectToolsInventory={projectToolsInventory}
+            onUpdateFoamParts={onUpdateFoamParts}
+            onUpdateProjectTools={onUpdateProjectTools}
+            suppliesCheckouts={suppliesCheckouts}
+            onSuppliesCheckout={() => {}}
           />
         )}
 
@@ -5951,7 +7514,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.category}</span>
                   <span style={{ fontSize: 11, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>{item.name}</span>
                   <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 2 }}>
-                    <span style={{ fontSize: 16, fontWeight: 800, color: sc.text, lineHeight: 1 }}>{displayQty} <span style={{ fontSize: 9, fontWeight: 500, color: '#94a3b8' }}>{item.unit}</span></span>
+                    <div>
+                      <span style={{ fontSize: 16, fontWeight: 800, color: sc.text, lineHeight: 1 }}>{displayQty} <span style={{ fontSize: 9, fontWeight: 500, color: '#94a3b8' }}>{item.unit}</span></span>
+                      {item.cost > 0 && qty > 0 && <div style={{ fontSize: 9, fontWeight: 600, color: '#15803d', marginTop: 1 }}>${(item.cost * qty).toFixed(2)} val</div>}
+                    </div>
                     {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '1px 4px' }}>{pcsQty}pc</span> : null}
                     <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
                   </div>
@@ -5979,83 +7545,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           };
 
 // Simple flat inventory list for foam gun parts & project tools (with category grouping)
-          const SimpleInvList = ({ items, invData, onUpdate }) => {
-            const getQ = (id) => invData.find(r => r.itemId === id)?.qty || 0;
-            const [editing, setEditing] = React.useState(null);
-            const [editVal, setEditVal] = React.useState("");
-            const dotColor = (q) => q === 0 ? "#ef4444" : q === 1 ? "#f59e0b" : "#22c55e";
-            const qtyColor = (q) => q === 0 ? "#ef4444" : q === 1 ? "#f59e0b" : "#22c55e";
-            // Group by category if items have category field
-            const hasCategories = items.some(i => i.category);
-            const groups = hasCategories
-              ? items.reduce((acc, item) => {
-                  const cat = item.category || "Other";
-                  if (!acc[cat]) acc[cat] = [];
-                  acc[cat].push(item);
-                  return acc;
-                }, {})
-              : { "": items };
-            const [activeCat, setActiveCat] = React.useState('all');
-            const visibleItems = activeCat === 'all' ? items : (groups[activeCat] || []);
-            const renderCard = (item) => {
-              const qty = getQ(item.id);
-              const isEditing = editing === item.id;
-              const borderColor = qty === 0 ? '#ef4444' : qty <= 2 ? '#f59e0b' : '#22c55e';
-              const qtyColorVal = qty === 0 ? '#ef4444' : qty <= 2 ? '#f59e0b' : '#1e293b';
-              return (
-                <div key={item.id} onClick={() => { if (!isEditing) { setEditing(item.id); setEditVal(String(qty)); } }}
-                  style={{
-                    background: '#fff',
-                    borderRadius: 6,
-                    padding: '6px 8px',
-                    cursor: isEditing ? 'default' : 'pointer',
-                    border: `1px solid ${isEditing ? '#2563eb' : '#e2e8f0'}`,
-                    borderLeftColor: borderColor,
-                    borderLeftWidth: 3,
-                    display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                    minHeight: 64,
-                    boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                    position: 'relative',
-                  }}>
-                  <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.id.toUpperCase()}</span>
-                  <span style={{ fontSize: 11, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>{item.name}</span>
-                  {isEditing ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 2, marginTop: 2 }} onClick={e => e.stopPropagation()}>
-                      <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)-1); setEditVal(String(v)); }} style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>−</button>
-                      <input value={editVal} onChange={e => setEditVal(e.target.value)} onClick={e => e.stopPropagation()}
-                        style={{ width: 32, textAlign: 'center', border: '1px solid #2563eb', borderRadius: 4, fontSize: 12, padding: '1px 2px', fontFamily: 'inherit', outline: 'none' }} />
-                      <button onClick={() => { const v = Math.max(0, (parseInt(editVal)||0)+1); setEditVal(String(v)); }} style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#f8fafc', cursor: 'pointer', fontSize: 12, fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
-                      <button onClick={(e) => { e.stopPropagation(); const v = parseInt(editVal); if (!isNaN(v) && v >= 0) onUpdate(item.id, v); setEditing(null); }}
-                        style={{ width: 20, height: 20, borderRadius: 4, border: 'none', background: '#2563eb', color: '#fff', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✓</button>
-                      <button onClick={(e) => { e.stopPropagation(); setEditing(null); }}
-                        style={{ width: 20, height: 20, borderRadius: 4, border: '1px solid #e2e8f0', background: '#fff', color: '#64748b', fontSize: 10, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
-                    </div>
-                  ) : (
-                    <span style={{ fontSize: 18, fontWeight: 800, color: qtyColorVal, lineHeight: 1 }}>{qty} <span style={{ fontSize: 9, fontWeight: 500, color: '#94a3b8' }}>{item.unit}</span></span>
-                  )}
-                </div>
-              );
-            };
-            return (
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', height: '100%' }}>
-                {hasCategories && (
-                  <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '6px 10px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                    <button onClick={() => setActiveCat('all')} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeCat === 'all' ? '#2563eb' : '#fff', color: activeCat === 'all' ? '#fff' : '#64748b', border: '1px solid ' + (activeCat === 'all' ? '#2563eb' : '#e2e8f0') }}>
-                      All ({items.length})
-                    </button>
-                    {Object.keys(groups).map(cat => (
-                      <button key={cat} onClick={() => setActiveCat(cat)} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeCat === cat ? '#2563eb' : '#fff', color: activeCat === cat ? '#fff' : '#64748b', border: '1px solid ' + (activeCat === cat ? '#2563eb' : '#e2e8f0') }}>
-                        {cat} ({groups[cat].length})
-                      </button>
-                    ))}
-                  </div>
-                )}
-                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gridAutoRows: 'minmax(64px, auto)', gap: 4, padding: '6px 8px', overflowY: 'auto', alignContent: 'start' }}>
-                  {visibleItems.map(item => renderCard(item))}
-                </div>
-              </div>
-            );
-          };
+
 
           return (
             <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 168px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))", overflow: "hidden", margin: "0 -20px -20px", padding: 0, background: lk.bg }}>
@@ -6064,8 +7554,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <div style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
                 {[
                   { id: "materials",     label: "Materials" },
-                  { id: "foam_parts",    label: "Foam Gun Parts" },
-                  { id: "project_tools", label: "Tools & Accessories" },
+                  { id: "summary",       label: "💰 Value" },
+                  { id: "report",        label: "Usage Report" },
+                  { id: "trucks",        label: "Truck Loads" },
                 ].map(tab => {
                   const active = invTab === tab.id;
                   return (
@@ -6083,16 +7574,147 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 })}
               </div>
 
-              {invTab === "foam_parts" && (
-                <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                  <SimpleInvList items={FOAM_GUN_PARTS} invData={foamPartsInventory || []} onUpdate={onUpdateFoamParts} />
+
+              {invTab === "report" && (
+                <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+                  <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+                    <div><label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>Start Date</label><input type="date" value={reportStart} onChange={e => setReportStart(e.target.value)} style={{ padding: "8px 10px", border: "1px solid " + t.border, borderRadius: 6, fontSize: 13, fontFamily: "inherit" }} /></div>
+                    <div><label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>End Date</label><input type="date" value={reportEnd} onChange={e => setReportEnd(e.target.value)} style={{ padding: "8px 10px", border: "1px solid " + t.border, borderRadius: 6, fontSize: 13, fontFamily: "inherit" }} /></div>
+                    <button onClick={() => window.print()} style={{ padding: "9px 16px", background: t.accent, color: "#fff", border: "none", borderRadius: 8, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>🖨️ Print</button>
+                  </div>
+                  {(() => {
+                    const totals = {};
+                    jobs.forEach(job => {
+                      const logs = job.dailyMaterialLogs || [];
+                      const logsInRange = logs.filter(l => l.date >= reportStart && l.date <= reportEnd);
+                      if (logsInRange.length > 0) {
+                        logsInRange.forEach(log => { Object.entries(log.materials || {}).forEach(([id, qty]) => { totals[id] = (totals[id] || 0) + qty; }); });
+                      } else if (job.date >= reportStart && job.date <= reportEnd && job.materialsUsed) {
+                        Object.entries(job.materialsUsed).forEach(([id, qty]) => { totals[id] = (totals[id] || 0) + qty; });
+                      }
+                    });
+                    const rows = Object.entries(totals).map(([id, qty]) => {
+                      const item = INVENTORY_ITEMS.find(i => i.id === id);
+                      const matCost = MATERIAL_COSTS[id] ? MATERIAL_COSTS[id] * qty : (item?.pcsPerTube ? qty * item.pcsPerTube * 0.08 : (item?.cost || 0) * qty);
+                      return { id, name: item?.name || id, unit: item?.unit || "units", qty, cost: matCost };
+                    }).filter(r => r.qty > 0);
+                    const grandTotal = rows.reduce((s, r) => s + r.cost, 0);
+                    return (
+                      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
+                        <thead><tr style={{ background: t.bg }}><th style={{ textAlign: "left", padding: "8px 10px", borderBottom: "2px solid " + t.border }}>Material</th><th style={{ textAlign: "right", padding: "8px 10px", borderBottom: "2px solid " + t.border }}>Qty</th><th style={{ textAlign: "right", padding: "8px 10px", borderBottom: "2px solid " + t.border }}>Unit</th><th style={{ textAlign: "right", padding: "8px 10px", borderBottom: "2px solid " + t.border }}>Est. Cost</th></tr></thead>
+                        <tbody>
+                          {rows.length === 0 ? <tr><td colSpan={4} style={{ padding: 20, textAlign: "center", color: t.textMuted }}>No material usage in this date range.</td></tr> : rows.map(r => (
+                            <tr key={r.id}><td style={{ padding: "7px 10px", borderBottom: "1px solid " + t.borderLight }}>{r.name}</td><td style={{ padding: "7px 10px", borderBottom: "1px solid " + t.borderLight, textAlign: "right" }}>{r.qty}</td><td style={{ padding: "7px 10px", borderBottom: "1px solid " + t.borderLight, textAlign: "right", color: t.textMuted }}>{r.unit}</td><td style={{ padding: "7px 10px", borderBottom: "1px solid " + t.borderLight, textAlign: "right" }}>${r.cost.toLocaleString("en-US",{maximumFractionDigits:0})}</td></tr>
+                          ))}
+                          <tr style={{ fontWeight: 700, background: "#f0fdf4" }}><td style={{ padding: "9px 10px" }} colSpan={3}>Grand Total</td><td style={{ padding: "9px 10px", textAlign: "right", color: "#15803d" }}>${grandTotal.toLocaleString("en-US",{maximumFractionDigits:0})}</td></tr>
+                        </tbody>
+                      </table>
+                    );
+                  })()}
                 </div>
               )}
-              {invTab === "project_tools" && (
-                <div style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                  <SimpleInvList items={PROJECT_TOOLS_ITEMS} invData={projectToolsInventory || []} onUpdate={onUpdateProjectTools} />
+              {invTab === "trucks" && (
+                <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
+                    {sortedTrucks.map(tr => {
+                      const ti = truckInventory?.[tr.id] || {};
+                      const loadedItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (ti[i.id] || 0) > 0);
+                      return (
+                        <div key={tr.id} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: 14, boxShadow: t.shadow }}>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 4 }}>{tr.name}</div>
+                          {tr.members && <div style={{ fontSize: 12, color: t.textMuted, marginBottom: 8 }}>{tr.members}</div>}
+                          {loadedItems.length === 0 ? (
+                            <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic" }}>Empty</div>
+                          ) : (
+                            <div style={{ fontSize: 12, color: t.textSecondary }}>
+                              {loadedItems.map(item => (
+                                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid " + t.borderLight }}>
+                                  <span>{item.name}</span>
+                                  <span style={{ fontWeight: 600, color: t.accent }}>{ti[item.id]} {item.unit}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <button onClick={() => setTruckDetailView(tr)} style={{ marginTop: 10, width: "100%", padding: "7px", borderRadius: 6, border: "1px solid " + t.border, background: t.bg, cursor: "pointer", fontFamily: "inherit", fontSize: 12, fontWeight: 600, color: t.accent }}>Details</button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
+
+
+
+              {/* ── Value Summary tab ── */}
+              {invTab === "summary" && (() => {
+                const getQty = (itemId) => (inventory || []).find(r => r.itemId === itemId)?.qty || 0;
+                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+                const getManufacturer = (item) => {
+                  const cat = item.category || "";
+                  if (item.unit === "bbl") return "Foam";
+                  if (cat.includes("Certainteed")) return "Certainteed";
+                  if (cat.includes("Owens Corning")) return "Owens Corning";
+                  if (cat.includes("Johns Manville") || cat.includes("JM")) return "Johns Manville";
+                  if (cat.toLowerCase().includes("blown") || cat.toLowerCase().includes("cellulose")) return "Blown";
+                  return "Other";
+                };
+                const MFG_ORDER = ["Certainteed", "Owens Corning", "Johns Manville", "Foam", "Blown", "Other"];
+
+                // Build rows — skip items with no cost or no qty, skip isPieces
+                const allRows = INVENTORY_ITEMS.filter(i => !i.isPieces && i.cost > 0).map(item => {
+                  const qty = getQty(item.id);
+                  const totalVal = item.cost * qty;
+                  const displayQty = isFoamId(item.id) ? qty.toFixed(2) + " bbl" : qty + " " + item.unit;
+                  const unitLabel = isFoamId(item.id) ? "/bbl" : "/" + item.unit;
+                  return { item, qty, totalVal, displayQty, unitLabel, mfg: getManufacturer(item) };
+                });
+
+                const grandTotal = allRows.reduce((s, r) => s + r.totalVal, 0);
+
+                const groups = MFG_ORDER.map(mfg => {
+                  const rows = allRows.filter(r => r.mfg === mfg && r.qty > 0);
+                  const subtotal = rows.reduce((s, r) => s + r.totalVal, 0);
+                  return { mfg, rows, subtotal };
+                }).filter(g => g.rows.length > 0);
+
+                return (
+                  <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+                    {/* Grand total card */}
+                    <div style={{ background: "#1e293b", borderRadius: 12, padding: "16px 20px", marginBottom: 20, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Warehouse Value</div>
+                        <div style={{ fontSize: 28, fontWeight: 800, color: "#fff", marginTop: 2 }}>${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                      </div>
+                      <div style={{ fontSize: 32 }}>🏭</div>
+                    </div>
+
+                    {/* Per-manufacturer groups */}
+                    {groups.map(({ mfg, rows, subtotal }) => (
+                      <div key={mfg} style={{ marginBottom: 16 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px", color: "#64748b" }}>{mfg}</div>
+                          <div style={{ fontSize: 12, fontWeight: 700, color: "#15803d" }}>${subtotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                        </div>
+                        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 10, overflow: "hidden" }}>
+                          {rows.map((r, i) => (
+                            <div key={r.item.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", borderBottom: i < rows.length - 1 ? "1px solid #f1f5f9" : "none" }}>
+                              <div style={{ minWidth: 0, flex: 1 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.item.name}</div>
+                                <div style={{ fontSize: 11, color: "#94a3b8" }}>{r.displayQty} · ${r.item.cost.toFixed(2)}{r.unitLabel}</div>
+                              </div>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", flexShrink: 0, marginLeft: 12 }}>${r.totalVal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+
+                    {groups.length === 0 && (
+                      <div style={{ textAlign: "center", padding: 40, color: "#94a3b8", fontSize: 14 }}>No inventory with pricing data found.</div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* ── Materials tab content ── */}
               {invTab === "materials" && <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -6115,7 +7737,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   {(() => {
                     const totalVal = INVENTORY_ITEMS.reduce((sum, item) => {
                       if (!item.cost || item.isPieces) return sum;
-                      return sum + (item.cost || 0) * ((inventory || {})[item.id] || 0);
+                      return sum + (item.cost || 0) * ((inventory || []).find(r => r.itemId === item.id)?.qty || 0);
                     }, 0);
                     return (
                       <span style={{ fontSize: 10, fontWeight: 700, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 99, padding: "2px 8px" }}>
@@ -6187,7 +7809,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         )}
 
         {view === "weather" && (
-          <WeatherTab jobs={jobs} trucks={trucks} />
+          <WeatherTab jobs={jobs} trucks={trucks} updates={updates} />
         )}
 
         {view === "builders" && (() => {
@@ -6195,7 +7817,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           const filteredBuilders = (builders || []).filter(b => !builderSearchQuery || b.name.toLowerCase().includes(builderSearchQuery.toLowerCase()) || (b.contact || "").toLowerCase().includes(builderSearchQuery.toLowerCase()));
           return (
             <>
-              <SectionHeader title="🏗️ Builder / Customer Database" right={<Button onClick={() => { setBuilderForm({ name: "", contact: "", address: "", notes: "", tags: [] }); setShowAddBuilder(true); }}>+ Add Builder</Button>} />
+              <SectionHeader title="🏗️ Builder / Customer Database" right={<Button onClick={() => { setBuilderForm({ name: "", contact: "", address: "", notes: "", tags: [], phone: "", email: "" }); setShowAddBuilder(true); }}>+ Add Builder</Button>} />
               <div style={{ marginBottom: 16 }}>
                 <input type="text" placeholder="Search builders..." value={builderSearchQuery} onChange={e => setBuilderSearchQuery(e.target.value)} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", background: t.surface, color: t.text, boxSizing: "border-box" }} />
               </div>
@@ -6211,6 +7833,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setExpandedBuilders(prev => ({ ...prev, [b.id]: !prev[b.id] }))}>
                         <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{b.name}</div>
                         {b.contact && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{b.contact}</div>}
+                        {b.phone && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 1 }}>📞 {b.phone}</div>}
+                        {b.email && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 1 }}>✉️ {b.email}</div>}
                         {b.tags && b.tags.length > 0 && (
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
                             {b.tags.map(tag => (
@@ -6225,7 +7849,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-                        <button onClick={() => { setEditingBuilder(b); setBuilderForm({ name: b.name, contact: b.contact || "", address: b.address || "", notes: b.notes || "", tags: b.tags || [] }); }} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid " + t.border, background: "none", cursor: "pointer", fontFamily: "inherit", color: t.textMuted }}>Edit</button>
+                        <button onClick={() => { setEditingBuilder(b); setBuilderForm({ name: b.name, contact: b.contact || "", address: b.address || "", notes: b.notes || "", tags: b.tags || [], phone: b.phone || "", email: b.email || "" }); }} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid " + t.border, background: "none", cursor: "pointer", fontFamily: "inherit", color: t.textMuted }}>Edit</button>
                         <button onClick={async () => { if (confirm("Delete " + b.name + "?")) await onDeleteBuilder(b.id); }} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fff1f2", cursor: "pointer", fontFamily: "inherit", color: "#dc2626" }}>Delete</button>
                       </div>
                     </div>
@@ -6253,6 +7877,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 <Modal title="Add Builder" onClose={() => setShowAddBuilder(false)} footer={<Button onClick={async () => { if (!builderForm.name.trim()) return; await onAddBuilder({ ...builderForm, createdAt: new Date().toISOString() }); setShowAddBuilder(false); }} disabled={!builderForm.name.trim()} style={{ width: "100%" }}>Add Builder</Button>}>
                   <Input label="Name *" value={builderForm.name} onChange={e => setBuilderForm({ ...builderForm, name: e.target.value })} placeholder="e.g. ABC Builders" />
                   <Input label="Contact (phone or email)" value={builderForm.contact} onChange={e => setBuilderForm({ ...builderForm, contact: e.target.value })} placeholder="e.g. 918-555-1234" />
+                  <Input label="Phone" value={builderForm.phone || ""} onChange={e => setBuilderForm({ ...builderForm, phone: e.target.value })} placeholder="e.g. 918-555-1234" />
+                  <Input label="Email" value={builderForm.email || ""} onChange={e => setBuilderForm({ ...builderForm, email: e.target.value })} placeholder="e.g. contact@builder.com" />
                   <Input label="Address" value={builderForm.address} onChange={e => setBuilderForm({ ...builderForm, address: e.target.value })} placeholder="Company address (optional)" />
                   <TextArea label="Notes" value={builderForm.notes} onChange={e => setBuilderForm({ ...builderForm, notes: e.target.value })} placeholder="Any notes about this builder..." />
                   <div style={{ marginBottom: 16 }}>
@@ -6272,6 +7898,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 <Modal title="Edit Builder" onClose={() => setEditingBuilder(null)} footer={<div style={{ display: "flex", gap: 10 }}><Button variant="secondary" onClick={() => setEditingBuilder(null)} style={{ flex: 1 }}>Cancel</Button><Button onClick={async () => { await onEditBuilder(editingBuilder.id, builderForm); setEditingBuilder(null); }} disabled={!builderForm.name.trim()} style={{ flex: 1 }}>Save</Button></div>}>
                   <Input label="Name *" value={builderForm.name} onChange={e => setBuilderForm({ ...builderForm, name: e.target.value })} />
                   <Input label="Contact" value={builderForm.contact} onChange={e => setBuilderForm({ ...builderForm, contact: e.target.value })} />
+                  <Input label="Phone" value={builderForm.phone || ""} onChange={e => setBuilderForm({ ...builderForm, phone: e.target.value })} />
+                  <Input label="Email" value={builderForm.email || ""} onChange={e => setBuilderForm({ ...builderForm, email: e.target.value })} />
                   <Input label="Address" value={builderForm.address} onChange={e => setBuilderForm({ ...builderForm, address: e.target.value })} />
                   <TextArea label="Notes" value={builderForm.notes} onChange={e => setBuilderForm({ ...builderForm, notes: e.target.value })} />
                   <div style={{ marginBottom: 16 }}>
@@ -6318,8 +7946,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       {showAddJob && (
         <Modal title="Add Job" onClose={() => setShowAddJob(false)} footer={<Button onClick={handleAddJob} disabled={!jobForm.address.trim()} style={{ width: "100%" }}>Add Job to Schedule</Button>}>
           <div className="compact-form">
-          <div style={{ marginBottom: "12px" }}>
-            <button onClick={openTakeoffImport} style={{ width: "100%", padding: "10px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", color: "#1d4ed8", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📋 Import from Takeoff</button>
+          <div style={{ marginBottom: "12px", display: "flex", gap: 8 }}>
+            <button onClick={openTakeoffImport} style={{ flex: 1, padding: "10px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", color: "#1d4ed8", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📋 Import from Takeoff</button>
+            <label style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px", background: scanningWorkOrder ? "#f0fdf4" : "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", color: scanningWorkOrder ? "#15803d" : "#16a34a", fontWeight: 600, fontSize: 13, cursor: scanningWorkOrder ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
+              {scanningWorkOrder ? "⏳ Scanning..." : "📷 Scan Work Order"}
+              <input type="file" accept="image/*,application/pdf" onChange={handleScanWorkOrder} disabled={scanningWorkOrder} style={{ display: "none" }} />
+            </label>
           </div>
           {/* Builder / Customer with typeahead */}
           <div style={{ marginBottom: "16px", position: "relative" }}>
@@ -6402,9 +8034,33 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <input type="date" value={jobForm.date} onChange={(e) => setJobForm({ ...jobForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <TextArea label="Office Notes (visible to crew)" placeholder="Special instructions, materials needed..." value={jobForm.notes} onChange={(e) => setJobForm({ ...jobForm, notes: e.target.value })} />
-          <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Job Revenue / Quote $ <span style={{ fontWeight: 400, color: t.textMuted }}>(optional)</span></label>
-            <input type="number" min="0" step="0.01" placeholder="e.g. 2500" value={jobForm.revenue} onChange={(e) => setJobForm({ ...jobForm, revenue: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          {/* 💰 Financials collapsible */}
+          <div style={{ marginBottom: 16, border: "1px solid " + t.border, borderRadius: 8 }}>
+            <button onClick={() => setAddFinOpen(o => !o)} style={{ width: "100%", padding: "10px 12px", background: addFinOpen ? t.accentBg : t.bg, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: t.accent, textAlign: "left", borderRadius: 8, display: "flex", justifyContent: "space-between" }}>💰 Financials {addFinOpen ? "▲" : "▼"}</button>
+            {addFinOpen && (
+              <div style={{ padding: "12px 12px 4px" }}>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Revenue / Quote $</label>
+                  <input type="number" min="0" step="0.01" placeholder="e.g. 2500" value={jobForm.revenue} onChange={e => setJobForm({ ...jobForm, revenue: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Square Footage</label>
+                  <input type="number" min="0" placeholder="e.g. 1200" value={jobForm.sqft} onChange={e => setJobForm({ ...jobForm, sqft: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Labor Mode</label>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    {[["percent","% of Revenue"],["sqft","Per Sq Ft"]].map(([v,l]) => (
+                      <button key={v} onClick={() => setJobForm({ ...jobForm, laborMode: v })} style={{ flex: 1, padding: "8px", borderRadius: 6, border: "1px solid " + (jobForm.laborMode === v ? t.accent : t.border), background: jobForm.laborMode === v ? t.accentBg : "#fff", color: jobForm.laborMode === v ? t.accent : t.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Labor Rate {jobForm.laborMode === "percent" ? "(%)" : "($/sqft)"}</label>
+                  <input type="number" min="0" step="0.01" placeholder={jobForm.laborMode === "percent" ? "e.g. 30" : "e.g. 0.50"} value={jobForm.laborValue} onChange={e => setJobForm({ ...jobForm, laborValue: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                </div>
+              </div>
+            )}
           </div>
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Job Category</label>
@@ -6601,8 +8257,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       {showAddTruck && (
         <Modal title={scheduleView === "energySeal" ? "Add Energy Seal Technician" : "Add Crew"} onClose={() => setShowAddTruck(false)}>
           <Input label={scheduleView === "energySeal" ? "Technician Name" : "Crew Name"} placeholder={scheduleView === "energySeal" ? "e.g. Mike Rodriguez" : "e.g. Alex & Juan, Harold Sr. & Jr."} value={truckForm.name} onChange={(e) => setTruckForm({ ...truckForm, name: e.target.value })} />
+          <Input label="Vehicle / Truck Name (optional)" placeholder="e.g. Truck 1, White Ram, Foam Rig" value={truckForm.vehicleName} onChange={(e) => setTruckForm({ ...truckForm, vehicleName: e.target.value })} />
           <Input label="Notes (optional)" placeholder={scheduleView === "energySeal" ? "e.g. Lead tech, specializes in blower door" : "e.g. Fiberglass crew, Foam rig, etc."} value={truckForm.members} onChange={(e) => setTruckForm({ ...truckForm, members: e.target.value })} />
-          <Button onClick={() => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, order: maxOrder + 1, department: scheduleView === "energySeal" ? "energySeal" : "insulation" }); onLogAction("Added " + (scheduleView === "energySeal" ? "ES tech" : "crew") + ": " + truckForm.name); setTruckForm({ name: "", members: "" }); setShowAddTruck(false); }} disabled={!truckForm.name.trim()} style={{ width: "100%" }}>{scheduleView === "energySeal" ? "Add Technician" : "Add Crew"}</Button>
+          <Button onClick={() => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, order: maxOrder + 1, department: scheduleView === "energySeal" ? "energySeal" : "insulation" }); onLogAction("Added " + (scheduleView === "energySeal" ? "ES tech" : "crew") + ": " + truckForm.name); setTruckForm({ name: "", members: "", vehicleName: "" }); setShowAddTruck(false); }} disabled={!truckForm.name.trim()} style={{ width: "100%" }}>{scheduleView === "energySeal" ? "Add Technician" : "Add Crew"}</Button>
         </Modal>
       )}
 
@@ -6666,9 +8323,33 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <TextArea label="Office Notes (visible to crew)" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
-          <div style={{ marginBottom: "16px" }}>
-            <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Job Revenue / Quote $ <span style={{ fontWeight: 400, color: t.textMuted }}>(optional)</span></label>
-            <input type="number" min="0" step="0.01" placeholder="e.g. 2500" value={editForm.revenue} onChange={(e) => setEditForm({ ...editForm, revenue: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
+          {/* 💰 Financials collapsible */}
+          <div style={{ marginBottom: 16, border: "1px solid " + t.border, borderRadius: 8 }}>
+                <button onClick={() => setEditFinOpen(o => !o)} style={{ width: "100%", padding: "10px 12px", background: editFinOpen ? t.accentBg : t.bg, border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: 600, color: t.accent, textAlign: "left", borderRadius: 8, display: "flex", justifyContent: "space-between" }}>💰 Financials {editFinOpen ? "▲" : "▼"}</button>
+                {editFinOpen && (
+                  <div style={{ padding: "12px 12px 4px" }}>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Revenue / Quote $</label>
+                      <input type="number" min="0" step="0.01" placeholder="e.g. 2500" value={editForm.revenue} onChange={e => setEditForm({ ...editForm, revenue: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Square Footage</label>
+                      <input type="number" min="0" placeholder="e.g. 1200" value={editForm.sqft} onChange={e => setEditForm({ ...editForm, sqft: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Labor Mode</label>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        {[["percent","% of Revenue"],["sqft","Per Sq Ft"]].map(([v,l]) => (
+                          <button key={v} onClick={() => setEditForm({ ...editForm, laborMode: v })} style={{ flex: 1, padding: "8px", borderRadius: 6, border: "1px solid " + (editForm.laborMode === v ? t.accent : t.border), background: editForm.laborMode === v ? t.accentBg : "#fff", color: editForm.laborMode === v ? t.accent : t.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Labor Rate {editForm.laborMode === "percent" ? "(%)" : "($/sqft)"}</label>
+                      <input type="number" min="0" step="0.01" placeholder={editForm.laborMode === "percent" ? "e.g. 30" : "e.g. 0.50"} value={editForm.laborValue} onChange={e => setEditForm({ ...editForm, laborValue: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+                    </div>
+                  </div>
+                )}
           </div>
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Job Category</label>
@@ -6891,6 +8572,19 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 );
               })}
             </div>
+
+            {/* Reopen button */}
+            {latestStatus === "completed" && onSubmitUpdate && (
+              <div style={{ marginBottom: "16px" }}>
+                <button onClick={() => {
+                  if (!window.confirm("Reopen this job and mark it back In Progress?")) return;
+                  onSubmitUpdate({ jobId: calViewJob.id, truckId: calViewJob.truckId, status: "in_progress", notes: "Reopened by office", eta: "", crewName: adminName, timestamp: new Date().toISOString(), timeStr: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
+                  setCalViewJob(null);
+                }} style={{ width: "100%", padding: "12px 8px", borderRadius: "99px", border: "2px solid #b45309", background: "transparent", color: "#b45309", fontSize: "14px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  🔓 Reopen Job
+                </button>
+              </div>
+            )}
 
             {/* Crew Change Log — shows crew_added/crew_removed events */}
             {(() => {
@@ -9527,6 +11221,7 @@ export default function App() {
   const savedSession = getSavedOfficeSession();
   const [loading, setLoading] = useState(true);
   const [role, setRole] = useState(savedSession ? "admin" : null);
+  const [mechanicName, setMechanicName] = useState(null);
   const [launcherDismissed, setLauncherDismissed] = useState(false);
   const [adminView, setAdminView] = useState("dispatch"); // "dispatch" | "quotes"
   const [crewSession, setCrewSession] = useState(null);
@@ -9560,7 +11255,23 @@ export default function App() {
     const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubLoadLog = onSnapshot(collection(db, "loadLog"), (snap) => { setLoadLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubJobUpdates = onSnapshot(collection(db, "jobUpdates"), (snap) => { setJobUpdates(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    const unsubTools = onSnapshot(collection(db, "tools"), (snap) => { setTools(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    const unsubTools = onSnapshot(collection(db, "tools"), async (snap) => {
+      const existing = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      setTools(existing);
+      // Seed migrated items once — skip if already present by name
+      const seedKey = "ist_tools_seeded_v2";
+      if (!localStorage.getItem(seedKey) && existing.length === 0) {
+        const existingNames = new Set(existing.map(t => t.name?.toLowerCase().trim()));
+        for (const item of MIGRATED_TO_TOOLS) {
+          if (!existingNames.has(item.name.toLowerCase().trim())) {
+            await addDoc(collection(db, "tools"), { name: item.name, category: item.category, quantity: 1, conditionNotes: "", status: "available", createdAt: new Date().toISOString() });
+          }
+        }
+        localStorage.setItem(seedKey, "1");
+      } else {
+        localStorage.setItem("ist_tools_seeded_v2", "1");
+      }
+    });
     const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
@@ -9572,12 +11283,39 @@ export default function App() {
   const handleUpdateTruck = async (id, fields) => { await updateDoc(doc(db, "trucks", id), fields); };
   const handleAdminSetLoadout = async (truckId, newState, type = "adjusted", notes = "") => {
     const truckRef = doc(db, "truckInventory", truckId);
+    // Read current truck state to calculate the delta against warehouse
+    const snap = await getDoc(truckRef);
+    const oldState = snap.exists() ? snap.data() : {};
+    // Reconcile warehouse: items added to truck → deduct from warehouse; items removed → return to warehouse
+    const allKeys = new Set([
+      ...Object.keys(oldState).filter(k => k !== "_custom"),
+      ...Object.keys(newState).filter(k => k !== "_custom"),
+    ]);
+    const loadLogItems = {};
+    const returnLogItems = {};
+    for (const key of allKeys) {
+      const oldQty = typeof oldState[key] === "number" ? oldState[key] : 0;
+      const newQty = typeof newState[key] === "number" ? newState[key] : 0;
+      const delta = Math.round((newQty - oldQty) * 100) / 100;
+      if (delta === 0) continue;
+      const rec = inventory.find(r => r.itemId === key);
+      const warehouseQty = rec?.qty || 0;
+      if (delta > 0) {
+        // More on truck — deduct from warehouse
+        await handleUpdateInventory(key, Math.max(0, Math.round((warehouseQty - delta) * 100) / 100));
+        loadLogItems[key] = delta;
+      } else {
+        // Less on truck — return to warehouse
+        await handleUpdateInventory(key, Math.round((warehouseQty + Math.abs(delta)) * 100) / 100);
+        returnLogItems[key] = Math.abs(delta);
+      }
+    }
     await setDoc(truckRef, newState);
-    // Log to loadLog or returnLog based on type
-    const logItems = {};
-    Object.entries(newState).forEach(([k, v]) => { if (k !== "_custom" && typeof v === "number" && v > 0) logItems[k] = v; });
-    if (type === "loaded" && Object.keys(logItems).length > 0) {
-      await addDoc(collection(db, "loadLog"), { truckId, items: logItems, notes, timestamp: new Date().toISOString() });
+    if (Object.keys(loadLogItems).length > 0) {
+      await addDoc(collection(db, "loadLog"), { truckId, items: loadLogItems, notes, type, timestamp: new Date().toISOString() });
+    }
+    if (Object.keys(returnLogItems).length > 0) {
+      await addDoc(collection(db, "returnLog"), { truckId, items: returnLogItems, notes, type, timestamp: new Date().toISOString() });
     }
   };
   const handleAdminUnload = async (truckId, itemsToUnload, unloadQtys, notes = "") => {
@@ -9639,6 +11377,7 @@ export default function App() {
   const [builders, setBuilders] = React.useState([]);
   const [foamPartsInventory, setFoamPartsInventory] = React.useState([]);
   const [projectToolsInventory, setProjectToolsInventory] = React.useState([]);
+  const [suppliesCheckouts, setSuppliesCheckouts] = React.useState([]);
 
   React.useEffect(() => {
     const unsub1 = onSnapshot(collection(db, "foamGunParts"), snap => {
@@ -9650,7 +11389,10 @@ export default function App() {
     const unsub3 = onSnapshot(collection(db, "builders"), snap => {
       setBuilders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    return () => { unsub1(); unsub2(); unsub3(); };
+    const unsub4 = onSnapshot(query(collection(db, "suppliesCheckouts"), orderBy("timestamp", "desc"), limit(200)), snap => {
+      setSuppliesCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
   }, []);
 
   const handleUpdateFoamParts = async (itemId, qty) => {
@@ -9667,6 +11409,28 @@ export default function App() {
     if (existing) { await updateDoc(doc(db, "projectToolsInventory", existing.id), { qty, updatedAt: new Date().toISOString() }); }
     else { await addDoc(collection(db, "projectToolsInventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
   };
+
+  const handleSuppliesCheckout = async (items, crewName, truckId, truckName) => {
+    for (const item of items) {
+      // Log checkout for audit trail
+      await addDoc(collection(db, "suppliesCheckouts"), {
+        itemId: item.itemId, itemName: item.itemName, category: item.category, qty: item.qty,
+        unit: item.unit, checkedOutBy: crewName, truckId: truckId || null, truckName: truckName || null,
+        timestamp: new Date().toISOString(), collection: item.collection,
+      });
+      // Deduct from the correct collection based on where the item lives
+      if (item.collection === "foamParts") {
+        const rec = foamPartsInventory.find(r => r.itemId === item.itemId);
+        const currentQty = rec?.qty || 0;
+        await handleUpdateFoamParts(item.itemId, Math.max(0, currentQty - item.qty));
+      } else if (item.collection === "projectTools") {
+        const rec = projectToolsInventory.find(r => r.itemId === item.itemId);
+        const currentQty = rec?.qty || 0;
+        await handleUpdateProjectTools(item.itemId, Math.max(0, currentQty - item.qty));
+      }
+    }
+  };
+
   // Deduct job materials from truck. usedMap = { itemId: qty } (tubes and loose pcs as entered by crew).
   // Reads fresh from Firestore, computes remaining, writes back.
   const handleDeductFromTruck = async (truckId, usedMap) => {
@@ -9739,24 +11503,68 @@ export default function App() {
   const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
     if (!truckId) return;
     const truckRef = doc(db, "truckInventory", truckId);
-    // Add stillHave quantities back to warehouse
+    // Read current truck state
+    const snap = await getDoc(truckRef);
+    const state = snap.exists() ? { ...snap.data() } : {};
     const logItems = {};
     for (const m of materials) {
       const stillHave = m.stillHave || 0;
       if (stillHave > 0) {
+        // Add back to warehouse
         const rec = inventory.find(r => r.itemId === m.itemId);
         const current = rec?.qty || 0;
         await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100);
         logItems[m.itemId] = stillHave;
+        // Remove only this item from truck state (don't wipe everything)
+        delete state[m.itemId];
       }
     }
     if (Object.keys(logItems).length > 0) {
       await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: new Date().toISOString(), crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
     }
-    await setDoc(truckRef, {});
+    // Write back with only returned items removed
+    await setDoc(truckRef, state);
   };
   const handleCloseOutJob = async (jobId, materialsUsed) => {
-    if (jobId) await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsUsed: materialsUsed || null, closedAt: new Date().toISOString() });
+    if (!jobId) return;
+    const closedAt = new Date().toISOString();
+    const todayISO = new Date().toLocaleDateString("en-CA");
+    // Fetch weather snapshot for this job (7am–4pm window)
+    let weatherLog = null;
+    try {
+      const job = jobs.find(j => j.id === jobId);
+      const address = job?.address;
+      if (address) {
+        const searchAddr = /oklahoma|,\s*ok\b/i.test(address) ? address : `${address}, Oklahoma`;
+        // Check geocache first
+        let lat, lon;
+        try {
+          const cache = JSON.parse(sessionStorage.getItem("ist_geocache") || "{}");
+          if (cache[address]) { ({ lat, lon } = cache[address]); }
+        } catch {}
+        if (!lat) {
+          const geoRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchAddr)}&format=json&limit=1&countrycodes=us`, { headers: { "User-Agent": "ISTDispatch/1.0" } });
+          const geoData = await geoRes.json();
+          if (geoData.length) { lat = parseFloat(geoData[0].lat); lon = parseFloat(geoData[0].lon); }
+        }
+        if (lat) {
+          const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode,windspeed_10m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago&forecast_days=1`);
+          const wxRaw = await wxRes.json();
+          const hours = (wxRaw.hourly?.time || []).map((t, i) => ({
+            time: t, temp: Math.round(wxRaw.hourly.temperature_2m[i]),
+            feelsLike: Math.round(wxRaw.hourly.apparent_temperature[i]),
+            precip: wxRaw.hourly.precipitation_probability[i] ?? 0,
+            wind: Math.round(wxRaw.hourly.windspeed_10m[i]),
+            code: wxRaw.hourly.weathercode[i],
+          })).filter(h => h.time.startsWith(todayISO) && parseInt(h.time.slice(11, 13)) >= 7 && parseInt(h.time.slice(11, 13)) <= 16);
+          if (hours.length) {
+            const temps = hours.map(h => h.temp);
+            weatherLog = { date: todayISO, hours, hiTemp: Math.max(...temps), loTemp: Math.min(...temps) };
+          }
+        }
+      }
+    } catch {}
+    await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsUsed: materialsUsed || null, closedAt, ...(weatherLog ? { weatherLog } : {}) });
   };
   const handleSaveJobMaterials = async (jobId, materialsUsed) => {
     if (jobId) await updateDoc(doc(db, "jobs", jobId), { materialsUsed: materialsUsed || null });
@@ -9773,14 +11581,20 @@ export default function App() {
   };
   const handleLoadTruck = async (itemsLoaded, truckId) => {
     const truckRef = doc(db, "truckInventory", truckId);
-    const updatedTruck = {};
+    // Read current truck state so we ADD to existing qty, not overwrite
+    const snap = await getDoc(truckRef);
+    const currentTruck = snap.exists() ? snap.data() : {};
+    const updatedTruck = { ...currentTruck };
     const logItems = {};
     for (const m of itemsLoaded) {
       if (m.qty > 0) {
-        const rec = inventory.find(r => r.itemId === m.itemId);
-        const current = rec?.qty || 0;
-        await handleUpdateInventory(m.itemId, Math.max(0, current - m.qty));
-        updatedTruck[m.itemId] = m.qty;
+        const warehouseRec = inventory.find(r => r.itemId === m.itemId);
+        const warehouseQty = warehouseRec?.qty || 0;
+        // Deduct from warehouse
+        await handleUpdateInventory(m.itemId, Math.max(0, Math.round((warehouseQty - m.qty) * 1000) / 1000));
+        // ADD to existing truck qty (not overwrite)
+        const existingOnTruck = typeof currentTruck[m.itemId] === "number" ? currentTruck[m.itemId] : 0;
+        updatedTruck[m.itemId] = Math.round((existingOnTruck + m.qty) * 1000) / 1000;
         logItems[m.itemId] = m.qty;
       }
     }
@@ -9793,7 +11607,21 @@ export default function App() {
   const handleEditTool = async (id, data) => { await updateDoc(doc(db, "tools", id), data); };
   const handleDeleteTool = async (id) => { await deleteDoc(doc(db, "tools", id)); };
   const handleToolCheckout = async (data) => { await addDoc(collection(db, "toolCheckouts"), { ...data, returnedAt: null }); };
-  const handleToolReturn = async (checkoutId, returnStatus) => { await updateDoc(doc(db, "toolCheckouts", checkoutId), { returnedAt: new Date().toISOString(), returnStatus: returnStatus || "good" }); };
+  const handleToolReturn = async (checkoutId, returnStatus) => {
+    await updateDoc(doc(db, "toolCheckouts", checkoutId), { returnedAt: new Date().toISOString(), returnStatus: returnStatus || "good" });
+    // Lost or broken tools reduce the total quantity permanently
+    if (returnStatus === "lost" || returnStatus === "broken") {
+      const checkout = toolCheckouts.find(c => c.id === checkoutId);
+      if (checkout) {
+        const toolDoc = tools.find(t => t.id === checkout.toolId);
+        if (toolDoc) {
+          const reduction = checkout.quantity || 1;
+          const newQty = Math.max(0, (toolDoc.quantity || 1) - reduction);
+          await updateDoc(doc(db, "tools", toolDoc.id), { quantity: newQty });
+        }
+      }
+    }
+  };
   const handleSetEmployeeFlag = async (employeeName, override, note) => {
     const flagId = employeeName.toLowerCase().replace(/\s+/g, "_");
     await setDoc(doc(db, "employeeFlags", flagId), { employeeName, override, note: note || "", updatedAt: new Date().toISOString() }, { merge: true });
@@ -9805,13 +11633,14 @@ export default function App() {
   };
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); saveOfficeSession(name); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
 
-  const isAuthScreen = !role || (role === "admin" && !adminName) || (role === "crew" && !crewSession) || (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed);
+  const isAuthScreen = !role || (role === "admin" && !adminName) || (role === "crew" && !crewSession) || (role === "mechanic" && !mechanicName) || (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed);
 
   if (isAuthScreen) {
     let screen;
     if (!role) screen = <RoleSelect key="role-select" onSelect={setRole} />;
     else if (role === "admin" && !adminName) screen = <AdminLogin key="admin-login" onLogin={handleAdminLogin} onBack={() => setRole(null)} />;
     else if (role === "crew" && !crewSession) screen = <CrewLogin key="crew-login" trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
+    else if (role === "mechanic" && !mechanicName) screen = <MechanicLogin key="mechanic-login" onLogin={name => setMechanicName(name)} onBack={() => setRole(null)} />;
     else screen = null; // launcher handled below inside this block
     if (screen) return (
       <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
@@ -9835,8 +11664,12 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   }
+  if (role === "mechanic" && mechanicName) {
+    return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
+  }
+
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden" }}>
       <style>{kbStyles}</style>
@@ -9867,6 +11700,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
   return null;
 }

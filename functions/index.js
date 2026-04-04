@@ -1,8 +1,13 @@
 const { onDocumentCreated, onDocumentUpdated } = require('firebase-functions/v2/firestore');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { setGlobalOptions } = require('firebase-functions/v2');
+const { defineSecret } = require('firebase-functions/params');
 const { initializeApp } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const nodemailer = require('nodemailer');
+const { OpenAI } = require('openai');
+
+const OPENAI_KEY = defineSecret('OPENAI_API_KEY');
 
 setGlobalOptions({ region: 'us-central1' });
 initializeApp();
@@ -110,4 +115,56 @@ exports.onJobUpdateCreated = onDocumentCreated('updates/{updateId}', async (even
      <p><strong>ETA:</strong> ${update.eta || 'N/A'}</p>
      <br><a href="https://www.istdispatch.com">Open IST Dispatch</a>`
   );
+});
+
+// ── scanWorkOrder — GPT-4o mini vision extraction ─────────────────────────────
+exports.scanWorkOrder = onCall({ secrets: [OPENAI_KEY], timeoutSeconds: 30 }, async (request) => {
+  const { imageBase64, mimeType = 'image/jpeg' } = request.data || {};
+  if (!imageBase64) throw new HttpsError('invalid-argument', 'imageBase64 is required');
+
+  const openai = new OpenAI({ apiKey: OPENAI_KEY.value() });
+
+  const prompt = `You are extracting job information from an insulation work order photo. There may be sticky notes on the work order with crew member first names written on them.
+Return ONLY a valid JSON object with these fields (use null for anything not found):
+{
+  "builder": "customer or builder name",
+  "address": "full job site address",
+  "type": "insulation type or job type (e.g. Blown-In Attic, Batt Walls, Spray Foam, Energy Seal)",
+  "date": "scheduled date in YYYY-MM-DD format",
+  "sqft": "square footage as a number (digits only, no units)",
+  "revenue": "contract price or total as a number (digits only, no $ sign)",
+  "notes": "any special instructions, access notes, or additional details",
+  "crewNames": ["array of crew member names or first names found on sticky notes or written anywhere on the work order — empty array if none found"]
+}
+If a field is unclear or not present, use null. Do not include any explanation outside the JSON.`;
+
+  let response;
+  try {
+    response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      max_tokens: 500,
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'text', text: prompt },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'high' } },
+        ],
+      }],
+    });
+  } catch (err) {
+    throw new HttpsError('internal', 'OpenAI request failed: ' + err.message);
+  }
+
+  const raw = response.choices?.[0]?.message?.content?.trim() || '';
+  // Strip markdown code fences if present
+  const cleaned = raw.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+
+  let parsed;
+  try {
+    parsed = JSON.parse(cleaned);
+  } catch (e) {
+    throw new HttpsError('internal', 'Could not parse GPT response as JSON: ' + raw);
+  }
+
+  return { result: parsed };
 });
