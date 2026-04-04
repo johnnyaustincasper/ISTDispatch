@@ -737,7 +737,7 @@ function MechanicDashboard({ mechanicName, trucks, tickets, onSubmitTicket, onUp
               {/* Truck header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setExpandedTruck(isExpanded ? null : truck.id)}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{truck.vehicleName || truck.name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{truck.vehicleName || truck.members || truck.name}</div>
                   {truck.vehicleName && (truck.year || truck.make) && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{[truck.year, truck.make, truck.model].filter(Boolean).join(" ")}</div>}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -1756,7 +1756,7 @@ function DailyBrief({ crewName, todayJobs, onDismiss }) {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, allTruckInventory, trucks, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
   const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -2705,8 +2705,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             crewMemberName={crewName}
             truckInventory={truckInventory}
             truck={truck}
-            allTruckInventory={allTruckInventory}
-            trucks={trucks}
             onDeltaAdjustTruck={onDeltaAdjustTruck}
             foamPartsInventory={foamPartsInventory || []}
             projectToolsInventory={projectToolsInventory || []}
@@ -3301,9 +3299,8 @@ function SimpleInvList({ items, invData, onUpdate, readOnly = false }) {
   );
 }
 
-function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, allTruckInventory = {}, trucks = [], onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
   const [tab, setTab] = useState("inventory");
-  const [selectedTruckId, setSelectedTruckId] = useState(truck?.id || null);
   const [showAddTool, setShowAddTool] = useState(false);
   const [editingTool, setEditingTool] = useState(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(null);
@@ -3459,30 +3456,78 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* MY ITEMS TAB */}
       {tab === "myitems" && (() => {
-        const myCheckouts = (toolCheckouts || []).filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
-        const selInv = (allTruckInventory || {})[selectedTruckId] || {};
-        const selTruck = (trucks || []).find(tr => tr.id === selectedTruckId) || truck;
-        const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (selInv[i.id] || 0) > 0);
-        const visibleTrucks = (trucks || []).filter(tr => tr.department !== "energySeal");
+        const myCheckouts = toolCheckouts.filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
+        const truckItems = truckInventory ? INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0) : [];
+
+        if (truckInvMode) {
+          // Truck inventory count mode
+          const cats = [...new Set(INVENTORY_ITEMS.filter(i => !i.isPieces).map(i => i.category))];
+          return (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>📋 Truck Inventory Count</div>
+                <button onClick={() => setTruckInvMode(false)} style={{ background: "none", border: "1px solid " + t.border, borderRadius: 6, padding: "5px 10px", fontSize: 12, color: t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>✕ Cancel</button>
+              </div>
+              {cats.map(cat => {
+                const catItems = INVENTORY_ITEMS.filter(i => !i.isPieces && i.category === cat);
+                return (
+                  <div key={cat} style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>{cat}</div>
+                    {catItems.map(item => (
+                      <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name} <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 400 }}>({item.unit})</span></div>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>On truck: <strong>{truckInventory?.[item.id] || 0}</strong></div>
+                          <input
+                            type="number" min="0"
+                            placeholder="Count"
+                            value={truckInvCounts[item.id] ?? ""}
+                            onChange={e => setTruckInvCounts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                            style={{ width: 70, padding: "6px 8px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", textAlign: "center" }}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+              <button onClick={async () => {
+                if (!onDeltaAdjustTruck || !truck) return;
+                const deltas = {};
+                Object.entries(truckInvCounts).forEach(([id, val]) => {
+                  const counted = parseInt(val);
+                  if (!isNaN(counted)) {
+                    const current = truckInventory?.[id] || 0;
+                    const diff = counted - current;
+                    if (diff !== 0) deltas[id] = diff;
+                  }
+                });
+                if (Object.keys(deltas).length === 0) { alert("No changes to submit."); return; }
+                await onDeltaAdjustTruck(truck.id, deltas);
+                setTruckInvCounts({});
+                setTruckInvMode(false);
+              }} style={{ width: "100%", marginTop: 16, padding: "14px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+                ✅ Submit Count
+              </button>
+            </div>
+          );
+        }
+
         return (
           <div>
-            {visibleTrucks.length > 1 && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Select Truck</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {visibleTrucks.map(tr => (
-                    <button key={tr.id} onClick={() => setSelectedTruckId(tr.id)} style={{ padding: "8px 14px", borderRadius: 8, border: "2px solid " + (selectedTruckId === tr.id ? t.accent : t.border), background: selectedTruckId === tr.id ? t.accent : t.surface, color: selectedTruckId === tr.id ? "#fff" : t.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                      {tr.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
+            {/* Truck Inventory button */}
+            {truck && (
+              <button onClick={() => { setTruckInvCounts({}); setTruckInvMode(true); }} style={{ width: "100%", marginBottom: 16, padding: "12px", background: t.surface, border: "2px solid " + t.border, borderRadius: 8, color: t.text, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+                📦 Take Truck Inventory
+              </button>
             )}
+
+            {/* Checked-out tools */}
             {myCheckouts.length > 0 && (
               <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>🔧 My Checked-Out Tools</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>🔧 Checked-Out Tools</div>
                 {myCheckouts.map(co => {
-                  const tool = (tools || []).find(tl => tl.id === co.toolId);
+                  const tool = tools.find(tl => tl.id === co.toolId);
                   return (
                     <Card key={co.id} style={{ marginBottom: 8 }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -3490,27 +3535,31 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                           <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName || tool?.name || "Unknown Tool"}</div>
                           <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Qty: {co.quantity || 1} · Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
                         </div>
+                        <Button variant="secondary" onClick={() => setReturnModal(co)} style={{ fontSize: 12, padding: "6px 12px" }}>Return</Button>
                       </div>
                     </Card>
                   );
                 })}
               </>
             )}
+
+            {/* Truck materials */}
             {truckItems.length > 0 && (
               <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🚛 {selTruck?.name || "Truck"} — Loaded Materials</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🚛 On Truck</div>
                 {truckItems.map(item => (
                   <Card key={item.id} style={{ marginBottom: 8 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                       <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{selInv[item.id]} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
                     </div>
                   </Card>
                 ))}
               </>
             )}
+
             {myCheckouts.length === 0 && truckItems.length === 0 && (
-              <EmptyState text="Nothing loaded." sub="Select a truck above to see what's on it." />
+              <EmptyState text="Nothing on your truck." sub="Checked-out tools and loaded materials will appear here." />
             )}
           </div>
         );
@@ -4301,7 +4350,7 @@ function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckIn
       {reconcileData.map(({ truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy }) => (
         <div key={truck.id} style={{ marginBottom: 16, border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#f8fafc" }}>
           <div style={{ padding: "12px 16px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{truck.name}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{truck.members || truck.name}</div>
           </div>
           <div style={{ padding: "12px 16px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
@@ -4586,7 +4635,7 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
     await deleteDoc(doc(db, "crewMembers", id));
   };
 
-  const getTruckName = (truckId) => { const tr = trucks.find(tr => tr.id === truckId); return tr ? (tr.name) : "Unassigned"; };
+  const getTruckName = (truckId) => { const tr = trucks.find(tr => tr.id === truckId); return tr ? (tr.members || tr.name) : "Unassigned"; };
 
   // Activity helpers
   const now30 = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -4676,7 +4725,7 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
             <div key={truck?.id || "unassigned"} style={{ marginBottom: 20 }}>
               {/* Truck header */}
               <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid " + t.borderLight }}>
-                {truck ? (truck.name) : "Unassigned"}
+                {truck ? (truck.members || truck.name) : "Unassigned"}
               </div>
               {groupMembers.map(member => {
                 const recentJobs = getRecentJobs(member.id);
@@ -4717,7 +4766,7 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
                           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                             <select onChange={e => assignTruck(member.id, e.target.value)} defaultValue={member.truckId || ""} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit" }}>
                               <option value="">Unassigned</option>
-                              {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
+                              {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.members || tr.name}</option>)}
                             </select>
                             <button onClick={() => setAssigning(null)} style={{ fontSize: 11, color: t.textMuted, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
                           </div>
@@ -4961,7 +5010,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
   );
 
   return (
-    <Modal title={(truck.vehicleName || truck.name)} onClose={onClose}>
+    <Modal title={(truck.vehicleName || truck.members || truck.name)} onClose={onClose}>
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, background: t.surface, borderRadius: 10, padding: 4, marginBottom: 16 }}>
         {tabBtn("loadout", "📦 Loadout")}
@@ -5754,7 +5803,7 @@ function WeatherTab({ jobs, trucks, updates }) {
     });
     Object.entries(truckGroups).forEach(([truckId, groupJobs]) => {
       const truck = trucks.find(t => t.id === truckId);
-      const label = truck ? (truck.name) : "Unassigned";
+      const label = truck ? (truck.members || truck.name) : "Unassigned";
       lines.push(`\n${label}`);
       lines.push(`Jobs: ${groupJobs.length}`);
       const advisories = new Set();
@@ -6996,7 +7045,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 dayJobs.forEach((j) => {
                   const crew = trucks.find((tr) => tr.id === j.truckId);
                   const key = crew ? crew.id : "_unassigned";
-                  if (!grouped[key]) grouped[key] = { name: crew ? (crew.name) : "Unassigned", jobs: [] };
+                  if (!grouped[key]) grouped[key] = { name: crew ? (crew.members || crew.name) : "Unassigned", jobs: [] };
                   grouped[key].jobs.push(j);
                 });
                 const crewKeys = Object.keys(grouped).sort((a, b) => {
@@ -7128,7 +7177,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       </div>
                       <div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckDetailView(tr)}>{tr.name}</span>
+                          <span style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckDetailView(tr)}>{tr.members || tr.name}</span>
                           {tr.department === "energySeal" && <span style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#d97706", borderRadius: 4, padding: "1px 6px", border: "1px solid #fde68a" }}>⚡ ES</span>}
                         </div>
                         <div style={{ fontSize: 11, color: t.textMuted }}>Info, loadout &amp; history</div>
@@ -7930,7 +7979,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </div>
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} inputMode="text" autoComplete="street-address" />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
+          <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
           {/* Employee tap-to-toggle — source of truth for timesheet */}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Assign Crew <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span></label>
@@ -8074,7 +8123,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         const today = todayCST();
 
         return (
-          <Modal title={(hTruck.name) + " — Daily History"} onClose={() => setTruckHistoryView(null)}>
+          <Modal title={(hTruck.members || hTruck.name) + " — Daily History"} onClose={() => setTruckHistoryView(null)}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <button onClick={() => setTruckHistoryView(v => { const m = v.calMonth === 0 ? 11 : v.calMonth - 1; const y = v.calMonth === 0 ? v.calYear - 1 : v.calYear; return {...v, calMonth: m, calYear: y, selectedDate: null}; })} style={{ background: "none", border: "1px solid "+t.border, borderRadius: 6, padding: "5px 11px", cursor: "pointer", color: t.text, fontSize: 15 }}>{"<"}</button>
               <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{monthNames[calMonth]} {calYear}</div>
@@ -8167,7 +8216,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
           </div>
           <Select label="Crew / Truck" value={adminTicketForm.truckId} onChange={e => setAdminTicketForm(f => ({...f, truckId: e.target.value}))}
-            options={[{value:"",label:"— Office / General —"}, ...sortedTrucks.map(tr => ({value: tr.id, label: tr.name}))]} />
+            options={[{value:"",label:"— Office / General —"}, ...sortedTrucks.map(tr => ({value: tr.id, label: tr.members || tr.name}))]} />
           <Select label="Priority" value={adminTicketForm.priority} onChange={e => setAdminTicketForm(f => ({...f, priority: e.target.value}))}
             options={TICKET_PRIORITIES.map(p => ({value: p.value, label: p.label}))} />
           <TextArea label="Description" placeholder="Describe the issue..." value={adminTicketForm.description} onChange={e => setAdminTicketForm(f => ({...f, description: e.target.value}))} />
@@ -8175,7 +8224,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <Button variant="secondary" onClick={() => setShowAdminTicketForm(false)} style={{ flex: 1 }}>Cancel</Button>
             <Button disabled={!adminTicketForm.description.trim()} onClick={() => {
               const tr = sortedTrucks.find(t => t.id === adminTicketForm.truckId);
-              onSubmitTicket({ truckId: adminTicketForm.truckId || null, truckName: tr ? (tr.name) : "Office", submittedBy: adminName, description: adminTicketForm.description, priority: adminTicketForm.priority, ticketType: adminTicketForm.ticketType, status: "open", timestamp: new Date().toISOString() });
+              onSubmitTicket({ truckId: adminTicketForm.truckId || null, truckName: tr ? (tr.members || tr.name) : "Office", submittedBy: adminName, description: adminTicketForm.description, priority: adminTicketForm.priority, ticketType: adminTicketForm.ticketType, status: "open", timestamp: new Date().toISOString() });
               onLogAction("Admin submitted ticket: " + adminTicketForm.description);
               setAdminTicketForm({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
               setShowAdminTicketForm(false);
@@ -8216,7 +8265,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
+          <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
           {/* Employee tap-to-toggle for edit form */}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>
@@ -8408,7 +8457,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             <div style={{ fontWeight: 700, fontSize: "13px", color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.builder || "No Customer"}</div>
                             <div style={{ fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.address}</div>
                             {assignedNames.length > 0 && <div style={{ fontSize: "11px", color: t.accent, fontWeight: 600, marginTop: "2px" }}>{assignedNames.join(", ")}</div>}
-                            {truck && <div style={{ fontSize: "10px", color: t.textMuted }}>{truck.name}</div>}
+                            {truck && <div style={{ fontSize: "10px", color: t.textMuted }}>{truck.members || truck.name}</div>}
                           </div>
                           <div style={{ flexShrink: 0, textAlign: "right" }}>
                             {j.jobCategory && <div style={{ fontSize: "10px", fontWeight: 700, color: j.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{j.jobCategory}</div>}
@@ -11313,28 +11362,8 @@ export default function App() {
     const unsub1 = onSnapshot(collection(db, "foamGunParts"), snap => {
       setFoamPartsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    const unsub2 = onSnapshot(collection(db, "projectToolsInventory"), async snap => {
-      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      // Dedup: if multiple docs share the same itemId, keep the one with lowest qty (most accurate post-checkout), delete extras
-      const seen = {};
-      const toDelete = [];
-      for (const d of docs) {
-        if (!d.itemId) continue;
-        if (!seen[d.itemId]) { seen[d.itemId] = d; }
-        else {
-          // Keep lowest qty, delete the other
-          if ((d.qty || 0) < (seen[d.itemId].qty || 0)) {
-            toDelete.push(seen[d.itemId].id);
-            seen[d.itemId] = d;
-          } else {
-            toDelete.push(d.id);
-          }
-        }
-      }
-      for (const id of toDelete) {
-        try { await deleteDoc(doc(db, "projectToolsInventory", id)); } catch {}
-      }
-      setProjectToolsInventory(docs.filter(d => !toDelete.includes(d.id)));
+    const unsub2 = onSnapshot(collection(db, "projectToolsInventory"), snap => {
+      setProjectToolsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
     const unsub3 = onSnapshot(collection(db, "builders"), snap => {
       setBuilders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
@@ -11368,25 +11397,15 @@ export default function App() {
         unit: item.unit, checkedOutBy: crewName, truckId: truckId || null, truckName: truckName || null,
         timestamp: new Date().toISOString(), collection: item.collection,
       });
-      // Deduct from the correct collection — read fresh from Firestore to avoid stale closure state
+      // Deduct from the correct collection based on where the item lives
       if (item.collection === "foamParts") {
-        const snap = await getDocs(query(collection(db, "foamGunParts"), where("itemId", "==", item.itemId)));
-        if (!snap.empty) {
-          const docRef = snap.docs[0].ref;
-          const currentQty = snap.docs[0].data().qty || 0;
-          await updateDoc(docRef, { qty: Math.max(0, currentQty - item.qty), updatedAt: new Date().toISOString() });
-        } else {
-          await addDoc(collection(db, "foamGunParts"), { itemId: item.itemId, qty: 0, updatedAt: new Date().toISOString() });
-        }
+        const rec = foamPartsInventory.find(r => r.itemId === item.itemId);
+        const currentQty = rec?.qty || 0;
+        await handleUpdateFoamParts(item.itemId, Math.max(0, currentQty - item.qty));
       } else if (item.collection === "projectTools") {
-        const snap = await getDocs(query(collection(db, "projectToolsInventory"), where("itemId", "==", item.itemId)));
-        if (!snap.empty) {
-          const docRef = snap.docs[0].ref;
-          const currentQty = snap.docs[0].data().qty || 0;
-          await updateDoc(docRef, { qty: Math.max(0, currentQty - item.qty), updatedAt: new Date().toISOString() });
-        } else {
-          await addDoc(collection(db, "projectToolsInventory"), { itemId: item.itemId, qty: 0, updatedAt: new Date().toISOString() });
-        }
+        const rec = projectToolsInventory.find(r => r.itemId === item.itemId);
+        const currentQty = rec?.qty || 0;
+        await handleUpdateProjectTools(item.itemId, Math.max(0, currentQty - item.qty));
       }
     }
   };
@@ -11624,7 +11643,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} allTruckInventory={truckInventory} trucks={trucks} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   }
   if (role === "mechanic" && mechanicName) {
     return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
