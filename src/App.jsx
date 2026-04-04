@@ -3003,28 +3003,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 ✓ Materials already logged for today — ready to close out.
               </div>
             )}
-            {/* Est. Material Cost preview */}
-            {(() => {
-              // Compute cost from daily logs + today's closeout inputs
-              let cost = 0;
-              (closeoutJob.job.dailyMaterialLogs || []).forEach(log => { cost += calcMaterialCost(log.materials); });
-              cost += Object.entries(closeoutMaterialQtys).reduce((s, [id, raw]) => {
-                const item = INVENTORY_ITEMS.find(i => i.id === id);
-                if (!item?.cost) return s;
-                const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
-                const qty = isFoamId
-                  ? (parseFloat(raw) || 0) / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48)
-                  : (parseFloat(raw) || 0);
-                return s + item.cost * qty;
-              }, 0);
-              if (cost <= 0) return null;
-              return (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, fontWeight: 600, color: "#15803d", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "8px 12px", marginBottom: 10 }}>
-                  <span>Est. Material Cost</span>
-                  <span>${cost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
-                </div>
-              );
-            })()}
+
             <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
               <Button variant="secondary" onClick={() => setCloseoutJob(null)} style={{ flex: 1 }}>Cancel</Button>
               <Button onClick={() => {
