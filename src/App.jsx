@@ -3505,6 +3505,11 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* MY ITEMS TAB */}
       {tab === "myitems" && (() => {
+        const getGlobalStock = (itemId) => {
+          if (itemId.startsWith("tool__")) return null; // physical tools — no global stock count
+          const rec = [...(foamPartsInventory || []), ...(projectToolsInventory || [])].find(r => r.itemId === itemId);
+          return rec?.qty ?? 0;
+        };
         const ALL_TOOL_ITEMS = [
           ...FOAM_GUN_PARTS,
           ...PROJECT_TOOLS_ITEMS,
@@ -3514,16 +3519,16 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
         const selectedTruck = visibleTrucks.find(tr => tr.id === truckInvCounts.__selectedTruckId) || visibleTrucks[0] || null;
         const selTruckId = selectedTruck?.id || null;
         const currentCounts = truckToolInventory[selTruckId] || {};
-        // Items on this truck = anything saved OR pending in truckInvCounts
-        const addedItemIds = new Set([
-          ...Object.keys(currentCounts).filter(k => k !== "updatedAt"),
-          ...Object.keys(truckInvCounts).filter(k => !k.startsWith("__") && k !== "updatedAt"),
-        ]);
-        const addedItems = ALL_TOOL_ITEMS.filter(i => addedItemIds.has(i.id));
-        const availableToAdd = ALL_TOOL_ITEMS.filter(i => !addedItemIds.has(i.id));
+        const truckItemIds = new Set(Object.keys(currentCounts).filter(k => k !== "updatedAt" && currentCounts[k] > 0));
+        const truckItems = ALL_TOOL_ITEMS.filter(i => truckItemIds.has(i.id));
+        const availableToAdd = ALL_TOOL_ITEMS.filter(i => !truckItemIds.has(i.id));
         const searchQ = (truckInvCounts.__search || "").toLowerCase();
         const searchResults = availableToAdd.filter(i => i.name.toLowerCase().includes(searchQ));
-        const cats = [...new Set(addedItems.map(i => i.category))];
+        const cats = [...new Set(truckItems.map(i => i.category))];
+
+        // Pull panel — when open, shows search + qty input for selected item
+        const pullingItem = truckInvMode && truckInvCounts.__pullItemId
+          ? ALL_TOOL_ITEMS.find(i => i.id === truckInvCounts.__pullItemId) : null;
 
         return (
           <div>
@@ -3532,7 +3537,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
               <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Select Your Truck</div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 {visibleTrucks.map(tr => (
-                  <button key={tr.id} onClick={() => setTruckInvCounts({ __selectedTruckId: tr.id })}
+                  <button key={tr.id} onClick={() => { setTruckInvCounts({ __selectedTruckId: tr.id }); setTruckInvMode(false); }}
                     style={{ padding: "8px 14px", borderRadius: 8, border: "2px solid " + (selTruckId === tr.id ? t.accent : t.border), background: selTruckId === tr.id ? t.accent : t.surface, color: selTruckId === tr.id ? "#fff" : t.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
                     {tr.members || tr.name}
                   </button>
@@ -3542,12 +3547,54 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
             {selTruckId && (
               <>
-                {/* Add Item panel */}
-                {truckInvMode ? (
+                {/* Pull panel: item selected, enter qty */}
+                {pullingItem ? (
+                  <div style={{ background: t.surface, border: "2px solid " + t.accent, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{pullingItem.name}</div>
+                      <button onClick={() => { setTruckInvMode(false); setTruckInvCounts(prev => ({ __selectedTruckId: prev.__selectedTruckId })); }} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: t.textMuted }}>✕</button>
+                    </div>
+                    {getGlobalStock(pullingItem.id) !== null && (
+                      <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 10 }}>Available in warehouse: <strong style={{ color: t.text }}>{getGlobalStock(pullingItem.id)} {pullingItem.unit}</strong></div>
+                    )}
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", marginBottom: 12 }}>
+                      <input
+                        type="number" min="1"
+                        placeholder="How many?"
+                        value={truckInvCounts.__pullQty || ""}
+                        onChange={e => setTruckInvCounts(prev => ({ ...prev, __pullQty: e.target.value }))}
+                        style={{ flex: 1, padding: "10px 12px", border: "1px solid " + t.border, borderRadius: 7, fontSize: 15, fontFamily: "inherit", outline: "none" }}
+                      />
+                      <span style={{ fontSize: 13, color: t.textMuted }}>{pullingItem.unit}</span>
+                    </div>
+                    <button onClick={async () => {
+                      const qty = parseInt(truckInvCounts.__pullQty);
+                      if (!qty || qty <= 0) return;
+                      // Deduct from global inventory if applicable
+                      const stock = getGlobalStock(pullingItem.id);
+                      if (stock !== null) {
+                        const isFoamPart = FOAM_GUN_PARTS.some(i => i.id === pullingItem.id);
+                        const collName = isFoamPart ? "foamGunParts" : "projectToolsInventory";
+                        const snap = await getDocs(query(collection(db, collName), where("itemId", "==", pullingItem.id)));
+                        if (!snap.empty) {
+                          await updateDoc(snap.docs[0].ref, { qty: Math.max(0, (snap.docs[0].data().qty || 0) - qty), updatedAt: new Date().toISOString() });
+                        }
+                      }
+                      // Add to truck inventory
+                      const newCount = (currentCounts[pullingItem.id] || 0) + qty;
+                      await onSaveTruckToolInventory(selTruckId, { ...currentCounts, [pullingItem.id]: newCount });
+                      setTruckInvMode(false);
+                      setTruckInvCounts({ __selectedTruckId: selTruckId });
+                    }} style={{ width: "100%", padding: "13px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+                      Pull to Truck
+                    </button>
+                  </div>
+                ) : truckInvMode ? (
+                  /* Search panel */
                   <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: 14, marginBottom: 16 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>Add Item</div>
-                      <button onClick={() => { setTruckInvMode(false); setTruckInvCounts(prev => ({ ...prev, __search: "" })); }} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: t.textMuted }}>✕</button>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>Pull from Inventory</div>
+                      <button onClick={() => { setTruckInvMode(false); setTruckInvCounts(prev => ({ __selectedTruckId: prev.__selectedTruckId })); }} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: t.textMuted }}>✕</button>
                     </div>
                     <input
                       autoFocus
@@ -3556,77 +3603,55 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                       onChange={e => setTruckInvCounts(prev => ({ ...prev, __search: e.target.value }))}
                       style={{ width: "100%", padding: "9px 12px", border: "1px solid " + t.border, borderRadius: 7, fontSize: 14, fontFamily: "inherit", outline: "none", marginBottom: 10, boxSizing: "border-box" }}
                     />
-                    <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
+                    <div style={{ maxHeight: 300, overflowY: "auto", display: "flex", flexDirection: "column", gap: 4 }}>
                       {searchResults.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, padding: "8px 0" }}>No items found.</div>}
-                      {searchResults.map(item => (
-                        <button key={item.id} onClick={() => {
-                          setTruckInvCounts(prev => ({ ...prev, [item.id]: "0", __search: "" }));
-                          setTruckInvMode(false);
-                        }} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 12px", background: t.bg, border: "1px solid " + t.borderLight, borderRadius: 7, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</span>
-                          <span style={{ fontSize: 11, color: t.textMuted }}>{item.category} · {item.unit}</span>
-                        </button>
-                      ))}
+                      {searchResults.map(item => {
+                        const stock = getGlobalStock(item.id);
+                        return (
+                          <button key={item.id} onClick={() => setTruckInvCounts(prev => ({ ...prev, __pullItemId: item.id, __pullQty: "", __search: "" }))}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "11px 12px", background: t.bg, border: "1px solid " + t.borderLight, borderRadius: 8, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
+                            <div>
+                              <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
+                              <div style={{ fontSize: 11, color: t.textMuted }}>{item.category}</div>
+                            </div>
+                            {stock !== null && <span style={{ fontSize: 12, fontWeight: 700, color: stock > 0 ? "#16a34a" : "#ef4444", background: stock > 0 ? "#f0fdf4" : "#fef2f2", padding: "3px 8px", borderRadius: 6 }}>{stock} in stock</span>}
+                          </button>
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
-                  <button onClick={() => setTruckInvMode(true)} style={{ width: "100%", marginBottom: 14, padding: "11px", background: t.surface, border: "2px dashed " + t.accent, borderRadius: 8, color: t.accent, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
-                    + Add Item
+                  <button onClick={() => setTruckInvMode(true)} style={{ width: "100%", marginBottom: 14, padding: "12px", background: t.surface, border: "2px dashed " + t.accent, borderRadius: 8, color: t.accent, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit" }}>
+                    + Pull from Inventory
                   </button>
                 )}
 
-                {/* Item list */}
-                {addedItems.length === 0 && !truckInvMode && (
-                  <EmptyState text="No items added yet." sub="Tap + Add Item to build this truck's tool inventory." />
+                {/* Truck item list */}
+                {truckItems.length === 0 && !truckInvMode && (
+                  <EmptyState text="Nothing on this truck yet." sub="Tap + Pull from Inventory to add items." />
                 )}
                 {cats.map(cat => {
-                  const catItems = addedItems.filter(i => i.category === cat);
+                  const catItems = truckItems.filter(i => i.category === cat);
                   return (
                     <div key={cat} style={{ marginBottom: 16 }}>
                       <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>{cat}</div>
                       {catItems.map(item => (
-                        <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
-                          <div>
-                            <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</div>
-                            <div style={{ fontSize: 11, color: t.textMuted }}>{item.unit}</div>
+                        <Card key={item.id} style={{ marginBottom: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                            <div>
+                              <div style={{ fontSize: 14, fontWeight: 600, color: t.text }}>{item.name}</div>
+                              <div style={{ fontSize: 12, color: t.textMuted }}>{currentCounts[item.id]} {item.unit} on truck</div>
+                            </div>
+                            <button onClick={async () => {
+                              const updated = { ...currentCounts, [item.id]: 0 };
+                              await onSaveTruckToolInventory(selTruckId, updated);
+                            }} style={{ background: "none", border: "1px solid " + t.border, borderRadius: 6, padding: "5px 10px", fontSize: 12, color: t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>Remove</button>
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <input
-                              type="number" min="0"
-                              placeholder="0"
-                              value={truckInvCounts[item.id] ?? currentCounts[item.id] ?? ""}
-                              onChange={e => setTruckInvCounts(prev => ({ ...prev, [item.id]: e.target.value }))}
-                              style={{ width: 70, padding: "6px 8px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", textAlign: "center" }}
-                            />
-                            <button onClick={() => {
-                              setTruckInvCounts(prev => { const n = { ...prev }; delete n[item.id]; return n; });
-                              if (currentCounts[item.id] !== undefined) {
-                                const updated = { ...currentCounts }; delete updated[item.id];
-                                onSaveTruckToolInventory(selTruckId, updated);
-                              }
-                            }} style={{ background: "none", border: "none", color: "#ef4444", cursor: "pointer", fontSize: 16, padding: "0 4px" }}>✕</button>
-                          </div>
-                        </div>
+                        </Card>
                       ))}
                     </div>
                   );
                 })}
-
-                {addedItems.length > 0 && (
-                  <button onClick={async () => {
-                    if (!selTruckId || !onSaveTruckToolInventory) return;
-                    const counts = { ...currentCounts };
-                    Object.entries(truckInvCounts).forEach(([id, val]) => {
-                      if (id.startsWith("__")) return;
-                      const n = parseInt(val);
-                      if (!isNaN(n)) counts[id] = n;
-                    });
-                    await onSaveTruckToolInventory(selTruckId, counts);
-                    setTruckInvCounts({ __selectedTruckId: selTruckId });
-                  }} style={{ width: "100%", marginTop: 8, padding: "14px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
-                    ✅ Save Inventory
-                  </button>
-                )}
               </>
             )}
           </div>
