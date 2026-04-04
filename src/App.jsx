@@ -3301,9 +3301,70 @@ function SimpleInvList({ items, invData, onUpdate, readOnly = false }) {
   );
 }
 
+function MyItemsTab({ crewMemberName, toolCheckouts, tools, trucks = [], allTruckInventory = {}, truck, foamPartsInventory, projectToolsInventory }) {
+  const [selectedTruckId, setSelectedTruckId] = useState(truck?.id || null);
+  const selectedTruck = trucks.find(tr => tr.id === selectedTruckId) || truck;
+  const selectedInv = (allTruckInventory[selectedTruckId]) || {};
+  const myCheckouts = (toolCheckouts || []).filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
+  const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (selectedInv[i.id] || 0) > 0);
+
+  return (
+    <div>
+      {trucks.filter(tr => tr.department !== "energySeal").length > 1 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Select Truck</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {trucks.filter(tr => tr.department !== "energySeal").map(tr => (
+              <button key={tr.id} onClick={() => setSelectedTruckId(tr.id)} style={{ padding: "8px 14px", borderRadius: 8, border: "2px solid " + (selectedTruckId === tr.id ? t.accent : t.border), background: selectedTruckId === tr.id ? t.accent : t.surface, color: selectedTruckId === tr.id ? "#fff" : t.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                {tr.name}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {myCheckouts.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>🔧 My Checked-Out Tools</div>
+          {myCheckouts.map(co => {
+            const tool = (tools || []).find(tl => tl.id === co.toolId);
+            return (
+              <Card key={co.id} style={{ marginBottom: 8 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName || tool?.name || "Unknown Tool"}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Qty: {co.quantity || 1} · Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                  </div>
+                </div>
+              </Card>
+            );
+          })}
+        </>
+      )}
+
+      {truckItems.length > 0 && (
+        <>
+          <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🚛 {selectedTruck?.name || "Truck"} — Loaded Materials</div>
+          {truckItems.map(item => (
+            <Card key={item.id} style={{ marginBottom: 8 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{selectedInv[item.id]} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
+              </div>
+            </Card>
+          ))}
+        </>
+      )}
+
+      {myCheckouts.length === 0 && truckItems.length === 0 && (
+        <EmptyState text="Nothing loaded." sub="Select a truck above to see what's on it." />
+      )}
+    </div>
+  );
+}
+
 function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, allTruckInventory = {}, trucks = [], onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
   const [tab, setTab] = useState("inventory");
-  const [selectedTruckId, setSelectedTruckId] = useState(truck?.id || null);
   const [showAddTool, setShowAddTool] = useState(false);
   const [editingTool, setEditingTool] = useState(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(null);
@@ -3458,71 +3519,18 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       </div>
 
       {/* MY ITEMS TAB */}
-      {tab === "myitems" && (() => {
-        const myCheckouts = toolCheckouts.filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
-        const selectedTruck = (trucks || []).find(tr => tr.id === selectedTruckId) || truck;
-        const selectedInv = (allTruckInventory || {})[selectedTruckId] || {};
-        const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (selectedInv[i.id] || 0) > 0);
-
-        return (
-          <div>
-
-            {/* Truck picker */}
-            {(trucks || []).length > 1 && (
-              <div style={{ marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Select Truck</div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                  {(trucks || []).filter(tr => tr.department !== "energySeal").map(tr => (
-                    <button key={tr.id} onClick={() => setSelectedTruckId(tr.id)} style={{ padding: "8px 14px", borderRadius: 8, border: "2px solid " + (selectedTruckId === tr.id ? t.accent : t.border), background: selectedTruckId === tr.id ? t.accent : t.surface, color: selectedTruckId === tr.id ? "#fff" : t.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
-                      {tr.name}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Checked-out tools */}
-            {myCheckouts.length > 0 && (
-              <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>🔧 My Checked-Out Tools</div>
-                {myCheckouts.map(co => {
-                  const tool = tools.find(tl => tl.id === co.toolId);
-                  return (
-                    <Card key={co.id} style={{ marginBottom: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName || tool?.name || "Unknown Tool"}</div>
-                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Qty: {co.quantity || 1} · Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
-                        </div>
-                        <Button variant="secondary" onClick={() => setReturnModal(co)} style={{ fontSize: 12, padding: "6px 12px" }}>Return</Button>
-                      </div>
-                    </Card>
-                  );
-                })}
-              </>
-            )}
-
-            {/* Truck loaded inventory */}
-            {truckItems.length > 0 && (
-              <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🚛 {selectedTruck?.name || "Truck"} — Loaded Materials</div>
-                {truckItems.map(item => (
-                  <Card key={item.id} style={{ marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{selectedInv[item.id]} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
-                    </div>
-                  </Card>
-                ))}
-              </>
-            )}
-
-            {myCheckouts.length === 0 && truckItems.length === 0 && (
-              <EmptyState text="Nothing loaded." sub="Select a truck above to see what's on it." />
-            )}
-          </div>
-        );
-      })()}
+      {tab === "myitems" && (
+        <MyItemsTab
+          crewMemberName={crewMemberName}
+          toolCheckouts={toolCheckouts}
+          tools={tools}
+          trucks={trucks}
+          allTruckInventory={allTruckInventory}
+          truck={truck}
+          foamPartsInventory={foamPartsInventory}
+          projectToolsInventory={projectToolsInventory}
+        />
+      )}
 
       {/* INVENTORY TAB */}
       {tab === "inventory" && (() => {
