@@ -737,7 +737,7 @@ function MechanicDashboard({ mechanicName, trucks, tickets, onSubmitTicket, onUp
               {/* Truck header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => setExpandedTruck(isExpanded ? null : truck.id)}>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{truck.vehicleName || truck.members || truck.name}</div>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{truck.vehicleName || truck.name}</div>
                   {truck.vehicleName && (truck.year || truck.make) && <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{[truck.year, truck.make, truck.model].filter(Boolean).join(" ")}</div>}
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -4309,7 +4309,7 @@ function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckIn
       {reconcileData.map(({ truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy }) => (
         <div key={truck.id} style={{ marginBottom: 16, border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#f8fafc" }}>
           <div style={{ padding: "12px 16px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
-            <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{truck.members || truck.name}</div>
+            <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{truck.name}</div>
           </div>
           <div style={{ padding: "12px 16px" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
@@ -4594,7 +4594,7 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
     await deleteDoc(doc(db, "crewMembers", id));
   };
 
-  const getTruckName = (truckId) => { const tr = trucks.find(tr => tr.id === truckId); return tr ? (tr.members || tr.name) : "Unassigned"; };
+  const getTruckName = (truckId) => { const tr = trucks.find(tr => tr.id === truckId); return tr ? (tr.name) : "Unassigned"; };
 
   // Activity helpers
   const now30 = Date.now() - 30 * 24 * 60 * 60 * 1000;
@@ -4684,7 +4684,7 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
             <div key={truck?.id || "unassigned"} style={{ marginBottom: 20 }}>
               {/* Truck header */}
               <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8, paddingBottom: 6, borderBottom: "1px solid " + t.borderLight }}>
-                {truck ? (truck.members || truck.name) : "Unassigned"}
+                {truck ? (truck.name) : "Unassigned"}
               </div>
               {groupMembers.map(member => {
                 const recentJobs = getRecentJobs(member.id);
@@ -4725,7 +4725,7 @@ function RosterView({ trucks, jobs, updates, jobUpdates }) {
                           <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                             <select onChange={e => assignTruck(member.id, e.target.value)} defaultValue={member.truckId || ""} style={{ fontSize: 12, padding: "4px 8px", borderRadius: 6, border: "1px solid " + t.border, fontFamily: "inherit" }}>
                               <option value="">Unassigned</option>
-                              {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.members || tr.name}</option>)}
+                              {trucks.map(tr => <option key={tr.id} value={tr.id}>{tr.name}</option>)}
                             </select>
                             <button onClick={() => setAssigning(null)} style={{ fontSize: 11, color: t.textMuted, background: "none", border: "none", cursor: "pointer" }}>Cancel</button>
                           </div>
@@ -4969,7 +4969,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
   );
 
   return (
-    <Modal title={(truck.vehicleName || truck.members || truck.name)} onClose={onClose}>
+    <Modal title={(truck.vehicleName || truck.name)} onClose={onClose}>
       {/* Tabs */}
       <div style={{ display: "flex", gap: 4, background: t.surface, borderRadius: 10, padding: 4, marginBottom: 16 }}>
         {tabBtn("loadout", "📦 Loadout")}
@@ -5762,7 +5762,7 @@ function WeatherTab({ jobs, trucks, updates }) {
     });
     Object.entries(truckGroups).forEach(([truckId, groupJobs]) => {
       const truck = trucks.find(t => t.id === truckId);
-      const label = truck ? (truck.members || truck.name) : "Unassigned";
+      const label = truck ? (truck.name) : "Unassigned";
       lines.push(`\n${label}`);
       lines.push(`Jobs: ${groupJobs.length}`);
       const advisories = new Set();
@@ -7004,7 +7004,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 dayJobs.forEach((j) => {
                   const crew = trucks.find((tr) => tr.id === j.truckId);
                   const key = crew ? crew.id : "_unassigned";
-                  if (!grouped[key]) grouped[key] = { name: crew ? (crew.members || crew.name) : "Unassigned", jobs: [] };
+                  if (!grouped[key]) grouped[key] = { name: crew ? (crew.name) : "Unassigned", jobs: [] };
                   grouped[key].jobs.push(j);
                 });
                 const crewKeys = Object.keys(grouped).sort((a, b) => {
@@ -7136,7 +7136,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       </div>
                       <div>
                         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                          <span style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckDetailView(tr)}>{tr.members || tr.name}</span>
+                          <span style={{ fontWeight: 600, color: t.accent, fontSize: "14.5px", cursor: "pointer", textDecoration: "underline" }} onClick={() => setTruckDetailView(tr)}>{tr.name}</span>
                           {tr.department === "energySeal" && <span style={{ fontSize: 10, fontWeight: 700, background: "#fef3c7", color: "#d97706", borderRadius: 4, padding: "1px 6px", border: "1px solid #fde68a" }}>⚡ ES</span>}
                         </div>
                         <div style={{ fontSize: 11, color: t.textMuted }}>Info, loadout &amp; history</div>
@@ -7938,7 +7938,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </div>
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} inputMode="text" autoComplete="street-address" />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
           {/* Employee tap-to-toggle — source of truth for timesheet */}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Assign Crew <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span></label>
@@ -8082,7 +8082,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         const today = todayCST();
 
         return (
-          <Modal title={(hTruck.members || hTruck.name) + " — Daily History"} onClose={() => setTruckHistoryView(null)}>
+          <Modal title={(hTruck.name) + " — Daily History"} onClose={() => setTruckHistoryView(null)}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
               <button onClick={() => setTruckHistoryView(v => { const m = v.calMonth === 0 ? 11 : v.calMonth - 1; const y = v.calMonth === 0 ? v.calYear - 1 : v.calYear; return {...v, calMonth: m, calYear: y, selectedDate: null}; })} style={{ background: "none", border: "1px solid "+t.border, borderRadius: 6, padding: "5px 11px", cursor: "pointer", color: t.text, fontSize: 15 }}>{"<"}</button>
               <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{monthNames[calMonth]} {calYear}</div>
@@ -8175,7 +8175,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
           </div>
           <Select label="Crew / Truck" value={adminTicketForm.truckId} onChange={e => setAdminTicketForm(f => ({...f, truckId: e.target.value}))}
-            options={[{value:"",label:"— Office / General —"}, ...sortedTrucks.map(tr => ({value: tr.id, label: tr.members || tr.name}))]} />
+            options={[{value:"",label:"— Office / General —"}, ...sortedTrucks.map(tr => ({value: tr.id, label: tr.name}))]} />
           <Select label="Priority" value={adminTicketForm.priority} onChange={e => setAdminTicketForm(f => ({...f, priority: e.target.value}))}
             options={TICKET_PRIORITIES.map(p => ({value: p.value, label: p.label}))} />
           <TextArea label="Description" placeholder="Describe the issue..." value={adminTicketForm.description} onChange={e => setAdminTicketForm(f => ({...f, description: e.target.value}))} />
@@ -8183,7 +8183,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <Button variant="secondary" onClick={() => setShowAdminTicketForm(false)} style={{ flex: 1 }}>Cancel</Button>
             <Button disabled={!adminTicketForm.description.trim()} onClick={() => {
               const tr = sortedTrucks.find(t => t.id === adminTicketForm.truckId);
-              onSubmitTicket({ truckId: adminTicketForm.truckId || null, truckName: tr ? (tr.members || tr.name) : "Office", submittedBy: adminName, description: adminTicketForm.description, priority: adminTicketForm.priority, ticketType: adminTicketForm.ticketType, status: "open", timestamp: new Date().toISOString() });
+              onSubmitTicket({ truckId: adminTicketForm.truckId || null, truckName: tr ? (tr.name) : "Office", submittedBy: adminName, description: adminTicketForm.description, priority: adminTicketForm.priority, ticketType: adminTicketForm.ticketType, status: "open", timestamp: new Date().toISOString() });
               onLogAction("Admin submitted ticket: " + adminTicketForm.description);
               setAdminTicketForm({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
               setShowAdminTicketForm(false);
@@ -8224,7 +8224,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.name }))]} />
           {/* Employee tap-to-toggle for edit form */}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>
@@ -8416,7 +8416,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             <div style={{ fontWeight: 700, fontSize: "13px", color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.builder || "No Customer"}</div>
                             <div style={{ fontSize: "11px", color: t.textMuted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{j.address}</div>
                             {assignedNames.length > 0 && <div style={{ fontSize: "11px", color: t.accent, fontWeight: 600, marginTop: "2px" }}>{assignedNames.join(", ")}</div>}
-                            {truck && <div style={{ fontSize: "10px", color: t.textMuted }}>{truck.members || truck.name}</div>}
+                            {truck && <div style={{ fontSize: "10px", color: t.textMuted }}>{truck.name}</div>}
                           </div>
                           <div style={{ flexShrink: 0, textAlign: "right" }}>
                             {j.jobCategory && <div style={{ fontSize: "10px", fontWeight: 700, color: j.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{j.jobCategory}</div>}
