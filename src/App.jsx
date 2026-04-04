@@ -3301,7 +3301,7 @@ function SimpleInvList({ items, invData, onUpdate, readOnly = false }) {
   );
 }
 
-function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, allTruckInventory, trucks, onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, allTruckInventory = {}, trucks = [], onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
   const [tab, setTab] = useState("inventory");
   const [selectedTruckId, setSelectedTruckId] = useState(truck?.id || null);
   const [showAddTool, setShowAddTool] = useState(false);
