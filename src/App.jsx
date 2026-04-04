@@ -1756,7 +1756,7 @@ function DailyBrief({ crewName, todayJobs, onDismiss }) {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, allTruckInventory, trucks, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
   const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -3457,69 +3457,12 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       {/* MY ITEMS TAB */}
       {tab === "myitems" && (() => {
         const myCheckouts = toolCheckouts.filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
-        // My Items only shows non-material items (tools, foam gun parts, supplies) — NOT warehouse materials
-        const SUPPLIES_ITEMS = [...FOAM_GUN_PARTS, ...PROJECT_TOOLS_ITEMS];
-        const getSupplyStock = (itemId) => {
-          const rec = [...(foamPartsInventory || []), ...(projectToolsInventory || [])].find(r => r.itemId === itemId);
-          return rec?.qty || 0;
-        };
-        const truckItems = []; // materials removed from this tab intentionally
+        const [selectedTruckId, setSelectedTruckId] = React.useState(truck?.id || null);
+        const selectedTruck = (trucks || []).find(tr => tr.id === selectedTruckId) || truck;
+        const selectedInv = (allTruckInventory || {})[selectedTruckId] || {};
+        const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (selectedInv[i.id] || 0) > 0);
 
-        if (truckInvMode) {
-          // Truck inventory count mode — supplies only
-          const cats = [...new Set(SUPPLIES_ITEMS.map(i => i.category))];
-          return (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>📋 Truck Inventory Count</div>
-                <button onClick={() => setTruckInvMode(false)} style={{ background: "none", border: "1px solid " + t.border, borderRadius: 6, padding: "5px 10px", fontSize: 12, color: t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>✕ Cancel</button>
-              </div>
-              {cats.map(cat => {
-                const catItems = SUPPLIES_ITEMS.filter(i => i.category === cat);
-                return (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>{cat}</div>
-                    {catItems.map(item => (
-                      <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name} <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 400 }}>({item.unit})</span></div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>In stock: <strong>{getSupplyStock(item.id)}</strong></div>
-                          <input
-                            type="number" min="0"
-                            placeholder="Count"
-                            value={truckInvCounts[item.id] ?? ""}
-                            onChange={e => setTruckInvCounts(prev => ({ ...prev, [item.id]: e.target.value }))}
-                            style={{ width: 70, padding: "6px 8px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", textAlign: "center" }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-              <button onClick={async () => {
-                const entries = Object.entries(truckInvCounts).filter(([, val]) => !isNaN(parseInt(val)));
-                if (entries.length === 0) { alert("No counts entered."); return; }
-                // Write each counted qty directly to the correct Firestore collection
-                for (const [id, val] of entries) {
-                  const counted = parseInt(val);
-                  const isFoamPart = FOAM_GUN_PARTS.some(i => i.id === id);
-                  const collName = isFoamPart ? "foamGunParts" : "projectToolsInventory";
-                  const snap = await getDocs(query(collection(db, collName), where("itemId", "==", id)));
-                  if (!snap.empty) {
-                    await updateDoc(snap.docs[0].ref, { qty: counted, updatedAt: new Date().toISOString() });
-                  } else {
-                    await addDoc(collection(db, collName), { itemId: id, qty: counted, updatedAt: new Date().toISOString() });
-                  }
-                }
-                setTruckInvCounts({});
-                setTruckInvMode(false);
-              }} style={{ width: "100%", marginTop: 16, padding: "14px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
-                ✅ Submit Count
-              </button>
-            </div>
-          );
-        }
+        if (truckInvMode) { return null; } // count mode removed from crew side
 
         return (
           <div>
@@ -3530,10 +3473,24 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
               </button>
             )}
 
+            {/* Truck picker */}
+            {(trucks || []).length > 1 && (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Select Truck</div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {(trucks || []).filter(tr => tr.department !== "energySeal").map(tr => (
+                    <button key={tr.id} onClick={() => setSelectedTruckId(tr.id)} style={{ padding: "8px 14px", borderRadius: 8, border: "2px solid " + (selectedTruckId === tr.id ? t.accent : t.border), background: selectedTruckId === tr.id ? t.accent : t.surface, color: selectedTruckId === tr.id ? "#fff" : t.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                      {tr.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Checked-out tools */}
             {myCheckouts.length > 0 && (
               <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>🔧 Checked-Out Tools</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>🔧 My Checked-Out Tools</div>
                 {myCheckouts.map(co => {
                   const tool = tools.find(tl => tl.id === co.toolId);
                   return (
@@ -3551,37 +3508,23 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
               </>
             )}
 
-            {/* Supplies & foam gun parts in stock */}
-            {(() => {
-              const cats = [...new Set(SUPPLIES_ITEMS.map(i => i.category))];
-              const hasAny = SUPPLIES_ITEMS.some(i => getSupplyStock(i.id) > 0);
-              if (!hasAny) return null;
-              return (
-                <>
-                  <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🧰 Supplies & Parts</div>
-                  {cats.map(cat => {
-                    const catItems = SUPPLIES_ITEMS.filter(i => i.category === cat && getSupplyStock(i.id) > 0);
-                    if (!catItems.length) return null;
-                    return (
-                      <div key={cat}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 6, marginTop: 12 }}>{cat}</div>
-                        {catItems.map(item => (
-                          <Card key={item.id} style={{ marginBottom: 8 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                              <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
-                              <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{getSupplyStock(item.id)} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
-                            </div>
-                          </Card>
-                        ))}
-                      </div>
-                    );
-                  })}
-                </>
-              );
-            })()}
+            {/* Truck loaded inventory */}
+            {truckItems.length > 0 && (
+              <>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🚛 {selectedTruck?.name || "Truck"} — Loaded Materials</div>
+                {truckItems.map(item => (
+                  <Card key={item.id} style={{ marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{selectedInv[item.id]} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
+                    </div>
+                  </Card>
+                ))}
+              </>
+            )}
 
-            {myCheckouts.length === 0 && !SUPPLIES_ITEMS.some(i => getSupplyStock(i.id) > 0) && (
-              <EmptyState text="Nothing to show." sub="Checked-out tools and supplies will appear here." />
+            {myCheckouts.length === 0 && truckItems.length === 0 && (
+              <EmptyState text="Nothing loaded." sub="Select a truck above to see what's on it." />
             )}
           </div>
         );
@@ -11695,7 +11638,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} allTruckInventory={truckInventory} trucks={trucks} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   }
   if (role === "mechanic" && mechanicName) {
     return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
