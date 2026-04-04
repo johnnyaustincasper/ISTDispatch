@@ -1779,7 +1779,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("home");
   const [truckTab, setTruckTab] = useState("truck"); // "truck" | "loadHistory"
-  const [selectedTruckId, setSelectedTruckId] = useState(truck?.id || null);
   const [tsWeekOffset, setTsWeekOffset] = useState(0);
   const [expandedJobCards, setExpandedJobCards] = useState({});
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -2706,6 +2705,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             crewMemberName={crewName}
             truckInventory={truckInventory}
             truck={truck}
+            allTruckInventory={allTruckInventory}
+            trucks={trucks}
             onDeltaAdjustTruck={onDeltaAdjustTruck}
             foamPartsInventory={foamPartsInventory || []}
             projectToolsInventory={projectToolsInventory || []}
@@ -3300,8 +3301,9 @@ function SimpleInvList({ items, invData, onUpdate, readOnly = false }) {
   );
 }
 
-function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, allTruckInventory, trucks, onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
   const [tab, setTab] = useState("inventory");
+  const [selectedTruckId, setSelectedTruckId] = useState(truck?.id || null);
   const [showAddTool, setShowAddTool] = useState(false);
   const [editingTool, setEditingTool] = useState(null);
   const [showCheckoutModal, setShowCheckoutModal] = useState(null);
