@@ -3478,7 +3478,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                     <div style={{ width: 36, height: 36, borderRadius: 8, background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                       <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
                     </div>
-                    <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{tr.name}</div>
+                    <div style={{ fontWeight: 700, fontSize: 15, color: t.text }}>{tr.members || tr.name}</div>
                   </div>
                   <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Loaded</div>
                   {loaded.length === 0
