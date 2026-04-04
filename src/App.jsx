@@ -11397,15 +11397,25 @@ export default function App() {
         unit: item.unit, checkedOutBy: crewName, truckId: truckId || null, truckName: truckName || null,
         timestamp: new Date().toISOString(), collection: item.collection,
       });
-      // Deduct from the correct collection based on where the item lives
+      // Deduct from the correct collection — read fresh from Firestore to avoid stale closure state
       if (item.collection === "foamParts") {
-        const rec = foamPartsInventory.find(r => r.itemId === item.itemId);
-        const currentQty = rec?.qty || 0;
-        await handleUpdateFoamParts(item.itemId, Math.max(0, currentQty - item.qty));
+        const snap = await getDocs(query(collection(db, "foamGunParts"), where("itemId", "==", item.itemId)));
+        if (!snap.empty) {
+          const docRef = snap.docs[0].ref;
+          const currentQty = snap.docs[0].data().qty || 0;
+          await updateDoc(docRef, { qty: Math.max(0, currentQty - item.qty), updatedAt: new Date().toISOString() });
+        } else {
+          await addDoc(collection(db, "foamGunParts"), { itemId: item.itemId, qty: 0, updatedAt: new Date().toISOString() });
+        }
       } else if (item.collection === "projectTools") {
-        const rec = projectToolsInventory.find(r => r.itemId === item.itemId);
-        const currentQty = rec?.qty || 0;
-        await handleUpdateProjectTools(item.itemId, Math.max(0, currentQty - item.qty));
+        const snap = await getDocs(query(collection(db, "projectToolsInventory"), where("itemId", "==", item.itemId)));
+        if (!snap.empty) {
+          const docRef = snap.docs[0].ref;
+          const currentQty = snap.docs[0].data().qty || 0;
+          await updateDoc(docRef, { qty: Math.max(0, currentQty - item.qty), updatedAt: new Date().toISOString() });
+        } else {
+          await addDoc(collection(db, "projectToolsInventory"), { itemId: item.itemId, qty: 0, updatedAt: new Date().toISOString() });
+        }
       }
     }
   };
