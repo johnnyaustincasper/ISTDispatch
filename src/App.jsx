@@ -3462,16 +3462,8 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
         const selectedInv = (allTruckInventory || {})[selectedTruckId] || {};
         const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (selectedInv[i.id] || 0) > 0);
 
-        if (truckInvMode) { return null; } // count mode removed from crew side
-
         return (
           <div>
-            {/* Truck Inventory button */}
-            {truck && (
-              <button onClick={() => { setTruckInvCounts({}); setTruckInvMode(true); }} style={{ width: "100%", marginBottom: 16, padding: "12px", background: t.surface, border: "2px solid " + t.border, borderRadius: 8, color: t.text, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                📦 Take Truck Inventory
-              </button>
-            )}
 
             {/* Truck picker */}
             {(trucks || []).length > 1 && (
