@@ -3457,11 +3457,17 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
       {/* MY ITEMS TAB */}
       {tab === "myitems" && (() => {
         const myCheckouts = toolCheckouts.filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
-        const truckItems = truckInventory ? INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0) : [];
+        // My Items only shows non-material items (tools, foam gun parts, supplies) — NOT warehouse materials
+        const SUPPLIES_ITEMS = [...FOAM_GUN_PARTS, ...PROJECT_TOOLS_ITEMS];
+        const getSupplyStock = (itemId) => {
+          const rec = [...(foamPartsInventory || []), ...(projectToolsInventory || [])].find(r => r.itemId === itemId);
+          return rec?.qty || 0;
+        };
+        const truckItems = []; // materials removed from this tab intentionally
 
         if (truckInvMode) {
-          // Truck inventory count mode
-          const cats = [...new Set(INVENTORY_ITEMS.filter(i => !i.isPieces).map(i => i.category))];
+          // Truck inventory count mode — supplies only
+          const cats = [...new Set(SUPPLIES_ITEMS.map(i => i.category))];
           return (
             <div>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -3469,7 +3475,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                 <button onClick={() => setTruckInvMode(false)} style={{ background: "none", border: "1px solid " + t.border, borderRadius: 6, padding: "5px 10px", fontSize: 12, color: t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>✕ Cancel</button>
               </div>
               {cats.map(cat => {
-                const catItems = INVENTORY_ITEMS.filter(i => !i.isPieces && i.category === cat);
+                const catItems = SUPPLIES_ITEMS.filter(i => i.category === cat);
                 return (
                   <div key={cat} style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>{cat}</div>
@@ -3477,7 +3483,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                       <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name} <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 400 }}>({item.unit})</span></div>
                         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>On truck: <strong>{truckInventory?.[item.id] || 0}</strong></div>
+                          <div style={{ fontSize: 11, color: t.textMuted }}>In stock: <strong>{getSupplyStock(item.id)}</strong></div>
                           <input
                             type="number" min="0"
                             placeholder="Count"
@@ -3492,18 +3498,20 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                 );
               })}
               <button onClick={async () => {
-                if (!onDeltaAdjustTruck || !truck) return;
-                const deltas = {};
-                Object.entries(truckInvCounts).forEach(([id, val]) => {
+                const entries = Object.entries(truckInvCounts).filter(([, val]) => !isNaN(parseInt(val)));
+                if (entries.length === 0) { alert("No counts entered."); return; }
+                // Write each counted qty directly to the correct Firestore collection
+                for (const [id, val] of entries) {
                   const counted = parseInt(val);
-                  if (!isNaN(counted)) {
-                    const current = truckInventory?.[id] || 0;
-                    const diff = counted - current;
-                    if (diff !== 0) deltas[id] = diff;
+                  const isFoamPart = FOAM_GUN_PARTS.some(i => i.id === id);
+                  const collName = isFoamPart ? "foamGunParts" : "projectToolsInventory";
+                  const snap = await getDocs(query(collection(db, collName), where("itemId", "==", id)));
+                  if (!snap.empty) {
+                    await updateDoc(snap.docs[0].ref, { qty: counted, updatedAt: new Date().toISOString() });
+                  } else {
+                    await addDoc(collection(db, collName), { itemId: id, qty: counted, updatedAt: new Date().toISOString() });
                   }
-                });
-                if (Object.keys(deltas).length === 0) { alert("No changes to submit."); return; }
-                await onDeltaAdjustTruck(truck.id, deltas);
+                }
                 setTruckInvCounts({});
                 setTruckInvMode(false);
               }} style={{ width: "100%", marginTop: 16, padding: "14px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
@@ -3543,23 +3551,37 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
               </>
             )}
 
-            {/* Truck materials */}
-            {truckItems.length > 0 && (
-              <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🚛 On Truck</div>
-                {truckItems.map(item => (
-                  <Card key={item.id} style={{ marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
-                    </div>
-                  </Card>
-                ))}
-              </>
-            )}
+            {/* Supplies & foam gun parts in stock */}
+            {(() => {
+              const cats = [...new Set(SUPPLIES_ITEMS.map(i => i.category))];
+              const hasAny = SUPPLIES_ITEMS.some(i => getSupplyStock(i.id) > 0);
+              if (!hasAny) return null;
+              return (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🧰 Supplies & Parts</div>
+                  {cats.map(cat => {
+                    const catItems = SUPPLIES_ITEMS.filter(i => i.category === cat && getSupplyStock(i.id) > 0);
+                    if (!catItems.length) return null;
+                    return (
+                      <div key={cat}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 6, marginTop: 12 }}>{cat}</div>
+                        {catItems.map(item => (
+                          <Card key={item.id} style={{ marginBottom: 8 }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                              <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
+                              <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{getSupplyStock(item.id)} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
+                            </div>
+                          </Card>
+                        ))}
+                      </div>
+                    );
+                  })}
+                </>
+              );
+            })()}
 
-            {myCheckouts.length === 0 && truckItems.length === 0 && (
-              <EmptyState text="Nothing on your truck." sub="Checked-out tools and loaded materials will appear here." />
+            {myCheckouts.length === 0 && !SUPPLIES_ITEMS.some(i => getSupplyStock(i.id) > 0) && (
+              <EmptyState text="Nothing to show." sub="Checked-out tools and supplies will appear here." />
             )}
           </div>
         );
