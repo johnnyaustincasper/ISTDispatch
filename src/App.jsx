@@ -1756,7 +1756,7 @@ function DailyBrief({ crewName, todayJobs, onDismiss }) {
   );
 }
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, allTruckInventory = {}, trucks = [], tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
   const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -2707,6 +2707,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             truck={truck}
             allTruckInventory={allTruckInventory}
             trucks={trucks}
+            truckToolInventory={truckToolInventory}
+            onSaveTruckToolInventory={onSaveTruckToolInventory}
             onDeltaAdjustTruck={onDeltaAdjustTruck}
             foamPartsInventory={foamPartsInventory || []}
             projectToolsInventory={projectToolsInventory || []}
@@ -3301,7 +3303,7 @@ function SimpleInvList({ items, invData, onUpdate, readOnly = false }) {
   );
 }
 
-function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, allTruckInventory = {}, trucks = [], onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
+function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, adminName, crewMembers, employeeFlags, onSetFlag, crewMemberId, crewMemberName, truckInventory, truck, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, onDeltaAdjustTruck, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, suppliesCheckouts, onSuppliesCheckout }) {
   const [tab, setTab] = useState("inventory");
   const [showAddTool, setShowAddTool] = useState(false);
   const [editingTool, setEditingTool] = useState(null);
@@ -3503,110 +3505,69 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* MY ITEMS TAB */}
       {tab === "myitems" && (() => {
-        const myCheckouts = toolCheckouts.filter(c => c.employeeName?.toLowerCase() === crewMemberName?.toLowerCase() && !c.returnedAt);
-        const truckItems = truckInventory ? INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0) : [];
-
-        if (truckInvMode) {
-          // Truck inventory count mode
-          const cats = [...new Set(INVENTORY_ITEMS.filter(i => !i.isPieces).map(i => i.category))];
-          return (
-            <div>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div style={{ fontSize: 14, fontWeight: 700, color: t.text }}>📋 Truck Inventory Count</div>
-                <button onClick={() => setTruckInvMode(false)} style={{ background: "none", border: "1px solid " + t.border, borderRadius: 6, padding: "5px 10px", fontSize: 12, color: t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>✕ Cancel</button>
-              </div>
-              {cats.map(cat => {
-                const catItems = INVENTORY_ITEMS.filter(i => !i.isPieces && i.category === cat);
-                return (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>{cat}</div>
-                    {catItems.map(item => (
-                      <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name} <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 400 }}>({item.unit})</span></div>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>On truck: <strong>{truckInventory?.[item.id] || 0}</strong></div>
-                          <input
-                            type="number" min="0"
-                            placeholder="Count"
-                            value={truckInvCounts[item.id] ?? ""}
-                            onChange={e => setTruckInvCounts(prev => ({ ...prev, [item.id]: e.target.value }))}
-                            style={{ width: 70, padding: "6px 8px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", textAlign: "center" }}
-                          />
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-              <button onClick={async () => {
-                if (!onDeltaAdjustTruck || !truck) return;
-                const deltas = {};
-                Object.entries(truckInvCounts).forEach(([id, val]) => {
-                  const counted = parseInt(val);
-                  if (!isNaN(counted)) {
-                    const current = truckInventory?.[id] || 0;
-                    const diff = counted - current;
-                    if (diff !== 0) deltas[id] = diff;
-                  }
-                });
-                if (Object.keys(deltas).length === 0) { alert("No changes to submit."); return; }
-                await onDeltaAdjustTruck(truck.id, deltas);
-                setTruckInvCounts({});
-                setTruckInvMode(false);
-              }} style={{ width: "100%", marginTop: 16, padding: "14px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
-                ✅ Submit Count
-              </button>
-            </div>
-          );
-        }
+        const ALL_TOOL_ITEMS = [...FOAM_GUN_PARTS, ...PROJECT_TOOLS_ITEMS];
+        const visibleTrucks = trucks.filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        const selectedTruck = visibleTrucks.find(tr => tr.id === truckInvCounts.__selectedTruckId) || visibleTrucks[0] || null;
+        const selTruckId = selectedTruck?.id || null;
+        const currentCounts = truckToolInventory[selTruckId] || {};
+        const cats = [...new Set(ALL_TOOL_ITEMS.map(i => i.category))];
 
         return (
           <div>
-            {/* Truck Inventory button */}
-            {truck && (
-              <button onClick={() => { setTruckInvCounts({}); setTruckInvMode(true); }} style={{ width: "100%", marginBottom: 16, padding: "12px", background: t.surface, border: "2px solid " + t.border, borderRadius: 8, color: t.text, fontWeight: 700, fontSize: 14, cursor: "pointer", fontFamily: "inherit", display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
-                📦 Take Truck Inventory
-              </button>
-            )}
+            {/* Truck selector */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>Select Your Truck</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {visibleTrucks.map(tr => (
+                  <button key={tr.id} onClick={() => setTruckInvCounts(prev => ({ ...prev, __selectedTruckId: tr.id }))}
+                    style={{ padding: "8px 14px", borderRadius: 8, border: "2px solid " + (selTruckId === tr.id ? t.accent : t.border), background: selTruckId === tr.id ? t.accent : t.surface, color: selTruckId === tr.id ? "#fff" : t.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                    {tr.members || tr.name}
+                  </button>
+                ))}
+              </div>
+            </div>
 
-            {/* Checked-out tools */}
-            {myCheckouts.length > 0 && (
+            {selTruckId && (
               <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginBottom: 8 }}>🔧 Checked-Out Tools</div>
-                {myCheckouts.map(co => {
-                  const tool = tools.find(tl => tl.id === co.toolId);
+                <div style={{ fontSize: 13, fontWeight: 600, color: t.textMuted, marginBottom: 12 }}>Tool inventory for <strong style={{ color: t.text }}>{selectedTruck?.members || selectedTruck?.name}</strong> — enter counts and save.</div>
+                {cats.map(cat => {
+                  const catItems = ALL_TOOL_ITEMS.filter(i => i.category === cat);
                   return (
-                    <Card key={co.id} style={{ marginBottom: 8 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                        <div>
-                          <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{co.toolName || tool?.name || "Unknown Tool"}</div>
-                          <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Qty: {co.quantity || 1} · Out: {new Date(co.checkedOutAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                    <div key={cat} style={{ marginBottom: 16 }}>
+                      <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, textTransform: "uppercase", letterSpacing: "0.8px", marginBottom: 8 }}>{cat}</div>
+                      {catItems.map(item => (
+                        <div key={item.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderBottom: "1px solid " + t.borderLight }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name} <span style={{ fontSize: 11, color: t.textMuted, fontWeight: 400 }}>({item.unit})</span></div>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ fontSize: 11, color: t.textMuted }}>On truck: <strong>{currentCounts[item.id] ?? 0}</strong></div>
+                            <input
+                              type="number" min="0"
+                              placeholder="Count"
+                              value={truckInvCounts[item.id] ?? ""}
+                              onChange={e => setTruckInvCounts(prev => ({ ...prev, [item.id]: e.target.value }))}
+                              style={{ width: 70, padding: "6px 8px", background: "#fff", border: "1px solid " + t.border, borderRadius: 6, color: t.text, fontSize: 13, fontFamily: "inherit", outline: "none", textAlign: "center" }}
+                            />
+                          </div>
                         </div>
-                        <Button variant="secondary" onClick={() => setReturnModal(co)} style={{ fontSize: 12, padding: "6px 12px" }}>Return</Button>
-                      </div>
-                    </Card>
+                      ))}
+                    </div>
                   );
                 })}
+                <button onClick={async () => {
+                  if (!selTruckId || !onSaveTruckToolInventory) return;
+                  const counts = {};
+                  Object.entries(truckInvCounts).forEach(([id, val]) => {
+                    if (id === "__selectedTruckId") return;
+                    const n = parseInt(val);
+                    if (!isNaN(n)) counts[id] = n;
+                  });
+                  await onSaveTruckToolInventory(selTruckId, counts);
+                  setTruckInvCounts({ __selectedTruckId: selTruckId });
+                  alert("✅ Saved!");
+                }} style={{ width: "100%", marginTop: 8, padding: "14px", background: t.accent, border: "none", borderRadius: 8, color: "#fff", fontWeight: 700, fontSize: 15, cursor: "pointer", fontFamily: "inherit" }}>
+                  ✅ Save Inventory
+                </button>
               </>
-            )}
-
-            {/* Truck materials */}
-            {truckItems.length > 0 && (
-              <>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.6px", marginTop: myCheckouts.length > 0 ? 20 : 0, marginBottom: 8 }}>🚛 On Truck</div>
-                {truckItems.map(item => (
-                  <Card key={item.id} style={{ marginBottom: 8 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ fontWeight: 600, fontSize: 14, color: t.text }}>{item.name}</div>
-                      <div style={{ fontSize: 14, fontWeight: 700, color: t.accent }}>{truckInventory[item.id]} <span style={{ fontSize: 11, fontWeight: 400, color: t.textMuted }}>{item.unit}</span></div>
-                    </div>
-                  </Card>
-                ))}
-              </>
-            )}
-
-            {myCheckouts.length === 0 && truckItems.length === 0 && (
-              <EmptyState text="Nothing on your truck." sub="Checked-out tools and loaded materials will appear here." />
             )}
           </div>
         );
@@ -11264,6 +11225,7 @@ export default function App() {
   const [members, setMembers] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [truckInventory, setTruckInventory] = useState({});
+  const [truckToolInventory, setTruckToolInventory] = useState({});
   const [tools, setTools] = useState([]);
   const [toolCheckouts, setToolCheckouts] = useState([]);
   const [employeeFlags, setEmployeeFlags] = useState([]);
@@ -11278,6 +11240,7 @@ export default function App() {
     const unsubMembers = onSnapshot(collection(db, "crewMembers"), (snap) => { setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubInv = onSnapshot(collection(db, "inventory"), (snap) => { setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubTruckInv = onSnapshot(collection(db, "truckInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckInventory(m); });
+    const unsubTruckToolInv = onSnapshot(collection(db, "truckToolInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckToolInventory(m); });
     const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubLoadLog = onSnapshot(collection(db, "loadLog"), (snap) => { setLoadLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubJobUpdates = onSnapshot(collection(db, "jobUpdates"), (snap) => { setJobUpdates(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
@@ -11300,7 +11263,7 @@ export default function App() {
     });
     const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
   }, []);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
@@ -11495,6 +11458,11 @@ export default function App() {
   };
   // Adjust truck inventory by delta between old and new used quantities.
   // Positive delta (used more) deducts from truck; negative (used less) adds back.
+  const handleSaveTruckToolInventory = async (truckId, counts) => {
+    if (!truckId) return;
+    await setDoc(doc(db, "truckToolInventory", truckId), { ...counts, updatedAt: new Date().toISOString() }, { merge: true });
+  };
+
   const handleDeltaAdjustTruck = async (truckId, oldUsed, newUsed) => {
     if (!truckId) return;
     const truckRef = doc(db, "truckInventory", truckId);
@@ -11690,7 +11658,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} allTruckInventory={truckInventory} trucks={trucks} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   }
   if (role === "mechanic" && mechanicName) {
     return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
