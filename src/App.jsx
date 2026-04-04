@@ -11362,8 +11362,28 @@ export default function App() {
     const unsub1 = onSnapshot(collection(db, "foamGunParts"), snap => {
       setFoamPartsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
     });
-    const unsub2 = onSnapshot(collection(db, "projectToolsInventory"), snap => {
-      setProjectToolsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    const unsub2 = onSnapshot(collection(db, "projectToolsInventory"), async snap => {
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Dedup: if multiple docs share the same itemId, keep the one with lowest qty (most accurate post-checkout), delete extras
+      const seen = {};
+      const toDelete = [];
+      for (const d of docs) {
+        if (!d.itemId) continue;
+        if (!seen[d.itemId]) { seen[d.itemId] = d; }
+        else {
+          // Keep lowest qty, delete the other
+          if ((d.qty || 0) < (seen[d.itemId].qty || 0)) {
+            toDelete.push(seen[d.itemId].id);
+            seen[d.itemId] = d;
+          } else {
+            toDelete.push(d.id);
+          }
+        }
+      }
+      for (const id of toDelete) {
+        try { await deleteDoc(doc(db, "projectToolsInventory", id)); } catch {}
+      }
+      setProjectToolsInventory(docs.filter(d => !toDelete.includes(d.id)));
     });
     const unsub3 = onSnapshot(collection(db, "builders"), snap => {
       setBuilders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
