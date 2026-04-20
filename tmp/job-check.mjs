@@ -1,0 +1,14 @@
+import fs from 'node:fs/promises';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, doc, getDoc, collection, getDocs } from 'firebase/firestore';
+import { getJobUsageParityReport } from '../src/inventoryEvents.js';
+const jobId = process.argv[2];
+const raw = await fs.readFile(new URL('../.env.local', import.meta.url), 'utf8');
+const env = Object.fromEntries(raw.split(/\r?\n/).map((line) => { const m = line.match(/^([^=]+)=(.*)$/); return m ? [m[1], m[2].replace(/^"|"$/g, '')] : null; }).filter(Boolean));
+const app = initializeApp({ apiKey: env.VITE_FB_API_KEY, authDomain: env.VITE_FB_AUTH_DOMAIN, projectId: env.VITE_FB_PROJECT_ID, storageBucket: env.VITE_FB_STORAGE_BUCKET, messagingSenderId: env.VITE_FB_MESSAGING_ID, appId: env.VITE_FB_APP_ID });
+const db = getFirestore(app);
+const [jobSnap, eventsSnap] = await Promise.all([getDoc(doc(db, 'jobs', jobId)), getDocs(collection(db, 'inventoryEvents'))]);
+const job = { id: jobSnap.id, ...jobSnap.data() };
+const events = eventsSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+const parity = getJobUsageParityReport([job], events)[0];
+console.log(JSON.stringify({ job, parity }, null, 2));

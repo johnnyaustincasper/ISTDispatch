@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';
+import { initializeApp } from 'firebase/app';
+import { getFirestore, collection, getDocs } from 'firebase/firestore';
+const truckId = process.argv[2];
+const raw = await fs.readFile(new URL('../.env.local', import.meta.url), 'utf8');
+const env = Object.fromEntries(raw.split(/\r?\n/).map((line) => { const m = line.match(/^([^=]+)=(.*)$/); return m ? [m[1], m[2].replace(/^"|"$/g, '')] : null; }).filter(Boolean));
+const app = initializeApp({ apiKey: env.VITE_FB_API_KEY, authDomain: env.VITE_FB_AUTH_DOMAIN, projectId: env.VITE_FB_PROJECT_ID, storageBucket: env.VITE_FB_STORAGE_BUCKET, messagingSenderId: env.VITE_FB_MESSAGING_ID, appId: env.VITE_FB_APP_ID });
+const db = getFirestore(app);
+const snap = await getDocs(collection(db, 'inventoryEvents'));
+const rows = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(e => e.location?.truckId === truckId).sort((a,b) => String(a.occurredAt||'').localeCompare(String(b.occurredAt||'')) || String(a.id).localeCompare(String(b.id)));
+console.log(JSON.stringify(rows.map(r => ({ id:r.id, eventType:r.eventType, occurredAt:r.occurredAt, effectiveDate:r.effectiveDate, itemId:r.item?.itemId, delta:r.quantity?.delta, after:r.quantity?.after, before:r.quantity?.before, snapshotKey:r.refs?.snapshotKey, correlationKey:r.refs?.correlationKey, jobId:r.location?.jobId })), null, 2));
