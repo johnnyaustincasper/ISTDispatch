@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=0.85, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#f8f9fb" />
@@ -13,9 +13,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
-      html { height: -webkit-fill-available; }
-      body { background: #f8f9fb; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; color: #111827; min-height: 100vh; min-height: -webkit-fill-available; min-height: 100dvh; }
-      #root { height: 100%; display: flex; flex-direction: column; }
+      html { height: -webkit-fill-available; width: 100%; }
+      body { background: #f8f9fb; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; -webkit-font-smoothing: antialiased; color: #111827; min-height: 100vh; min-height: -webkit-fill-available; min-height: 100dvh; width: 100%; overflow-x: hidden; }
+      #root { min-height: 100%; width: 100%; display: flex; flex-direction: column; }
       ::-webkit-scrollbar { width: 6px; }
       ::-webkit-scrollbar-track { background: #f1f1f1; }
       ::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }

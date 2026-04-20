@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
 
 import { db, storage } from "./firebase.js";
@@ -20,6 +20,7 @@ import {
   orderBy,
   limit,
   serverTimestamp,
+  runTransaction,
 } from "firebase/firestore";
 import {
   ref as storageRef,
@@ -28,6 +29,19 @@ import {
   deleteObject,
 } from "firebase/storage";
 import { jsPDF } from "jspdf";
+import {
+  INVENTORY_EVENT_TYPES,
+  adaptCloseoutMaterialsUsedDeltaToEvents,
+  adaptLegacyTruckInventoryToSnapshotEvents,
+  adaptLiveDailyMaterialLogUpsertToEvents,
+  adaptTruckTransferToEvents,
+  buildInventoryEvent,
+  compareTruckInventoryStates,
+  deriveTruckInventoryFromEvents,
+  getJobUsageParityReport,
+  getWarehouseInventoryParityReport,
+} from "./inventoryEvents.js";
+import { writeInventoryEvents } from "./inventoryEventWrites.js";
 
 // ─── Constants ───
 const JOB_TYPES = ["Foam","Fiberglass","Removal","Energy Seal"];
@@ -44,18 +58,68 @@ const STATUS_OPTIONS = [
 const MAT_RATE = { r11: 0.26, r13: 0.32, r19: 0.38, r30: 0.75, blown: 32, oc_bbl: 1536, cc_bbl: 2200 };
 const tubeCost = (sqft, rate) => Math.round(sqft * rate * 100) / 100;
 const pcsCost  = (sqft, rate, pcs) => Math.round((sqft * rate / pcs) * 100) / 100;
+const normalizeMaterialLogTruckId = (truckId) => truckId || null;
+const materialLogMatchesTruck = (log, truckId) => normalizeMaterialLogTruckId(log?.truckId) === normalizeMaterialLogTruckId(truckId);
+const findDailyMaterialLog = (logs, date, truckId) => {
+  const entries = (logs || []).filter(log => log.date === date);
+  return entries.find(log => materialLogMatchesTruck(log, truckId))
+    || (entries.length === 1 && !entries[0]?.truckId ? entries[0] : null);
+};
+const buildMaterialLogEditContext = (job, log = null, fallbackDate = null) => ({
+  ...(job || {}),
+  _editingDate: log?.date || fallbackDate || null,
+  _existingMaterials: log?.materials || {},
+  _logTruckId: normalizeMaterialLogTruckId(log?.truckId ?? job?.truckId ?? null),
+  _sourceTruckId: normalizeMaterialLogTruckId(log?.truckId ?? null),
+  _sourceDailyLog: log || null,
+});
+const getTruckInventorySnapshot = (allTruckInventory = {}, truckId = null) => {
+  const normalizedTruckId = normalizeMaterialLogTruckId(truckId);
+  if (!normalizedTruckId) return {};
+  return allTruckInventory?.[normalizedTruckId] || {};
+};
+const getTruckAwareDailyMaterialLogs = (logs, truckId) => {
+  const dates = [...new Set((logs || []).map(log => log.date))].sort();
+  return dates.map(date => findDailyMaterialLog(logs, date, truckId)).filter(Boolean);
+};
+const getTruckAwareLoggedDates = (logs, truckId) => new Set(getTruckAwareDailyMaterialLogs(logs, truckId).map(log => log.date));
+const roundInventoryQty = (value) => Math.round((parseFloat(value) || 0) * 1000) / 1000;
+const JOB_USAGE_PARITY_TOLERANCE = 0.001;
+const formatTruckParityDelta = (delta, unit = "") => {
+  const rounded = roundInventoryQty(delta);
+  const sign = rounded > 0 ? "+" : "";
+  return `${sign}${rounded}${unit ? ` ${unit}` : ""}`;
+};
+const buildTruckInventoryParityMap = (legacyTruckInventory = {}, derivedTruckInventory = {}, trucks = []) => {
+  const truckIds = new Set([
+    ...Object.keys(legacyTruckInventory || {}),
+    ...Object.keys(derivedTruckInventory || {}),
+    ...(trucks || []).map((truck) => truck?.id).filter(Boolean),
+  ]);
+
+  return Object.fromEntries(
+    [...truckIds].map((truckId) => {
+      const parity = compareTruckInventoryStates(legacyTruckInventory?.[truckId] || {}, derivedTruckInventory?.[truckId] || {});
+      return [truckId, {
+        ...parity,
+        truckId,
+        truckName: (trucks || []).find((truck) => truck?.id === truckId)?.vehicleName
+          || (trucks || []).find((truck) => truck?.id === truckId)?.members
+          || (trucks || []).find((truck) => truck?.id === truckId)?.name
+          || truckId,
+      }];
+    })
+  );
+};
 
 const INVENTORY_ITEMS = [
   // Foam — A-side $0 (not priced), B-side only: OC 48gal×$32=$1,536/bbl, CC 50gal×$44=$2,200/bbl
-  { id: "oc_a",       name: "Ambit Open Cell A",       unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "oc_a",       name: "Ambit A",                 unit: "bbl",   category: "Foam", cost: 0 },
   { id: "oc_b",       name: "Ambit Open Cell B",       unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
-  { id: "cc_a",       name: "Ambit Closed Cell A",     unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "cc_a",       name: "Ambit A",                 unit: "bbl",   category: "Foam", cost: 0 },
   { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
-  { id: "env_oc_a",   name: "Enverge Open Cell A",     unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "env_oc_a",   name: "Enverge A",               unit: "bbl",   category: "Foam", cost: 0 },
   { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
-  { id: "free_env_oc_a", name: "FREE Enverge Open Cell A", unit: "bbl", category: "Foam", cost: 0 },
-  { id: "free_env_oc_b", name: "FREE Enverge Open Cell B", unit: "bbl", category: "Foam", cost: 0 },
-  { id: "env_cc_a",   name: "Enverge Closed Cell A",   unit: "bbl",   category: "Foam", cost: 0 },
   { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
   // Blown — $32/bag
   { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown", cost: MAT_RATE.blown },
@@ -138,6 +202,14 @@ const calcJobMaterialCost = (job) => {
     total += calcMaterialCost(job.materialsUsed);
   }
   return total;
+};
+const buildJobUsageParityLookup = (jobs = [], events = []) => {
+  const lookup = {};
+  getJobUsageParityReport(jobs, events).forEach((entry) => {
+    if (!entry?.jobId) return;
+    lookup[entry.jobId] = entry;
+  });
+  return lookup;
 };
 const FOAM_GUN_PARTS = [
   // ── Drill Bits ──
@@ -251,9 +323,8 @@ const MATERIAL_COSTS = {
   oc_a: 0,    oc_b: MAT_RATE.oc_bbl,
   cc_a: 0,    cc_b: MAT_RATE.cc_bbl,
   env_oc_a: 0, env_oc_b: MAT_RATE.oc_bbl,
-  env_cc_a: 0, env_cc_b: MAT_RATE.cc_bbl,
-  free_env_oc_a: 0, free_env_oc_b: 0,
-  blown_fg: MAT_RATE.blown, blown_fg_jm: MAT_RATE.blown, blown_cel: MAT_RATE.blown,
+  env_cc_b: MAT_RATE.cc_bbl,
+    blown_fg: MAT_RATE.blown, blown_fg_jm: MAT_RATE.blown, blown_cel: MAT_RATE.blown,
 };
 
 function getUnreadNotes(jobId, updates) {
@@ -973,16 +1044,17 @@ function AdminLogin({ onLogin, onBack }) {
 }
 
 function CrewLogin({ trucks, onLogin, onBack }) {
+  const visibleTrucks = (trucks || []).filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
   const [step, setStep] = useState("pick"); // pick | pin | setup | confirm | email
   const [selectedMember, setSelectedMember] = useState(null);
   const [pin, setPin] = useState("");
   const [setupPin, setSetupPin] = useState("");
-  const [email, setEmail] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const [crewSearch, setCrewSearch] = useState("");
+  const [selectedTruckId, setSelectedTruckId] = useState("");
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, "crewMembers"), snap => {
@@ -994,6 +1066,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 
   function handleSelectMember(member) {
     setSelectedMember(member);
+    setSelectedTruckId(member.truckId || "");
     setPin(""); setSetupPin(""); setError("");
     setStep(member.pin ? "pin" : "setup");
   }
@@ -1022,7 +1095,8 @@ function CrewLogin({ trucks, onLogin, onBack }) {
         setChecking(true);
         await updateDoc(doc(db, "crewMembers", selectedMember.id), { pin: next });
         setChecking(false);
-        if (!selectedMember.email) { setStep("email"); } else { finishLogin({ ...selectedMember, pin: next }); }
+        setSelectedMember(prev => prev ? ({ ...prev, pin: next }) : prev);
+        setStep("truck");
       }
       return;
     }
@@ -1033,7 +1107,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
     setPin(next);
     if (next.length === 4) {
       if (selectedMember.pin === next) {
-        if (!selectedMember.email) { setStep("email"); } else { finishLogin(selectedMember); }
+        setStep("truck");
       } else {
         setError("Wrong PIN. Try again.");
         setPin("");
@@ -1042,15 +1116,9 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   }
 
   function finishLogin(member) {
-    const truck = trucks.find(tr => tr.id === member.truckId) || null;
-    onLogin(member, truck);
-  }
-
-  async function handleEmailSubmit() {
-    if (email.trim()) {
-      await updateDoc(doc(db, "crewMembers", selectedMember.id), { email: email.trim() });
-    }
-    finishLogin({ ...selectedMember, email: email.trim() });
+    const chosenTruckId = selectedTruckId || member.truckId || "";
+    const truck = visibleTrucks.find(tr => tr.id === chosenTruckId) || null;
+    onLogin({ ...member, activeTruckId: chosenTruckId || null }, truck);
   }
 
   function handleBackspace() {
@@ -1060,8 +1128,8 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   }
 
   const displayPin = step === "setup" ? setupPin : pin;
-  const title = step === "pick" ? null : step === "setup" ? "Create your PIN" : step === "confirm" ? "Confirm your PIN" : step === "email" ? "One more thing" : `Hi, ${selectedMember?.name?.split(" ")[0]} 👋`;
-  const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "email" ? "Add your email for job alerts (optional)" : "Enter your PIN";
+  const title = step === "pick" ? null : step === "setup" ? "Create your PIN" : step === "confirm" ? "Confirm your PIN" : step === "truck" ? "Select your truck" : `Hi, ${selectedMember?.name?.split(" ")[0]} 👋`;
+  const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "truck" ? "Choose the truck you’re using today" : "Enter your PIN";
 
   return (
     <AuthShell wide kiosk>
@@ -1118,33 +1186,83 @@ function CrewLogin({ trucks, onLogin, onBack }) {
           </>
         )}
 
-        {step === "email" && (
+        {(step === "pin" || step === "setup" || step === "confirm" || step === "truck") && (
           <>
-            <Input label="Your Email" placeholder="your@email.com" value={email} onChange={e => setEmail(e.target.value)} />
-            <Button onClick={handleEmailSubmit} style={{ width: "100%", marginTop: 8 }}>Continue</Button>
-            <button onClick={() => finishLogin(selectedMember)} style={{ width: "100%", marginTop: 8, background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Skip for now</button>
-          </>
-        )}
-
-        {(step === "pin" || step === "setup" || step === "confirm") && (
-          <>
-            <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 32 }}>
-              {[0,1,2,3].map(i => (
-                <div key={i} style={{ width: 18, height: 18, borderRadius: "50%", background: i < displayPin.length ? t.accent : "rgba(0,0,0,0.12)", transition: "background 0.15s" }} />
-              ))}
-            </div>
-            {error && <div style={{ textAlign: "center", color: "#ef4444", fontSize: 14, marginBottom: 16, fontWeight: 500 }}>{error}</div>}
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
-              {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d, i) => {
-                if (d === "") return <div key={i} />;
-                return (
-                  <button key={i} onClick={() => d === "⌫" ? handleBackspace() : handlePinDigit(String(d))}
-                    disabled={checking}
-                    style={{ padding: "18px 0", borderRadius: 12, fontSize: d === "⌫" ? 20 : 22, fontWeight: 600, background: "#fff", border: "1.5px solid " + t.border, color: t.text, cursor: "pointer", fontFamily: "inherit", WebkitTapHighlightColor: "transparent" }}>{d}</button>
-                );
-              })}
-            </div>
-            <button onClick={() => { setStep("pick"); setPin(""); setSetupPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
+            {step === "truck" && (
+              <div style={{ marginBottom: 20 }}>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.78)", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 8 }}>Select your truck</label>
+                <select
+                  value={selectedTruckId}
+                  onChange={e => setSelectedTruckId(e.target.value)}
+                  style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.22)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 16, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 10 }}
+                >
+                  <option value="" style={{ color: "#0f172a" }}>Select truck...</option>
+                  {visibleTrucks.map(tr => (
+                    <option key={tr.id} value={tr.id} style={{ color: "#0f172a" }}>{tr.members || tr.vehicleName || tr.name}</option>
+                  ))}
+                </select>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  {visibleTrucks.map(tr => {
+                    const active = selectedTruckId === tr.id;
+                    return (
+                      <button
+                        key={tr.id}
+                        onClick={() => setSelectedTruckId(tr.id)}
+                        type="button"
+                        style={{ padding: "9px 13px", borderRadius: 999, border: "2px solid " + (active ? "#60a5fa" : "rgba(255,255,255,0.22)"), background: active ? "#2563eb" : "rgba(255,255,255,0.10)", color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}
+                      >
+                        {tr.members || tr.vehicleName || tr.name}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            {step !== "truck" && (
+              <>
+                <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 32 }}>
+                  {[0,1,2,3].map(i => (
+                    <div key={i} style={{ width: 18, height: 18, borderRadius: "50%", background: i < displayPin.length ? t.accent : "rgba(0,0,0,0.12)", transition: "background 0.15s" }} />
+                  ))}
+                </div>
+                {error && <div style={{ textAlign: "center", color: "#ef4444", fontSize: 14, marginBottom: 16, fontWeight: 500 }}>{error}</div>}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
+                  {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d, i) => {
+                    if (d === "") return <div key={i} />;
+                    return (
+                      <button key={i} onClick={() => {
+                        if (d === "⌫") handleBackspace();
+                        else handlePinDigit(String(d));
+                      }}
+                        disabled={checking}
+                        style={{ padding: "18px 0", borderRadius: 12, fontSize: d === "⌫" ? 20 : 22, fontWeight: 600, background: "#fff", border: "1.5px solid " + t.border, color: t.text, cursor: "pointer", fontFamily: "inherit", WebkitTapHighlightColor: "transparent" }}>{d}</button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+            {step === "truck" && error && <div style={{ textAlign: "center", color: "#ef4444", fontSize: 14, marginBottom: 16, fontWeight: 500 }}>{error}</div>}
+            {step === "truck" ? (
+              <>
+                <button
+                  onClick={() => {
+                    if (!selectedTruckId) {
+                      setError("Pick a truck first.");
+                      return;
+                    }
+                    setError("");
+                    finishLogin(selectedMember);
+                  }}
+                  disabled={!selectedTruckId}
+                  style={{ width: "100%", padding: "14px", borderRadius: 12, background: !selectedTruckId ? "rgba(255,255,255,0.2)" : "#2563eb", border: "none", color: "#fff", fontSize: 16, fontWeight: 800, cursor: !selectedTruckId ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: 8 }}
+                >
+                  Continue
+                </button>
+                <button onClick={() => { setStep("pin"); setPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
+              </>
+            ) : (
+              <button onClick={() => { setStep("pick"); setPin(""); setSetupPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
+            )}
           </>
         )}
     </AuthShell>
@@ -1372,7 +1490,6 @@ function DailyProcedureCard() {
     "After each job — tap Log Materials on the job card and enter what you used. Do this before leaving the job site.",
     "Multi-day jobs — log materials at the end of every day worked. You will not be able to close out the job until all days are accounted for.",
     "When the job is finished — mark it as Completed. If today's materials are already logged, it will close out immediately. If not, you'll be prompted to enter them first.",
-    "Every evening when you return to the shop — tap Unload to Warehouse to return all remaining materials back to inventory."
   ];
   return (
     <Card style={{ marginBottom: 16, borderLeft: "4px solid #dc2626" }}>
@@ -1600,163 +1717,8 @@ function CheckoutLogView({ suppliesCheckouts }) {
   );
 }
 
-// ─── Daily Brief Modal ───
-function DailyBrief({ crewName, todayJobs, onDismiss }) {
-  const todayISO = new Date().toLocaleDateString("en-CA");
-  const hour = new Date().toLocaleString("en-US", { timeZone: "America/Chicago", hour: "numeric", hour12: false });
-  const h = parseInt(hour, 10);
-  const greeting = h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 
-  const [wxMap, setWxMap] = React.useState({});
-  const [loadingSet, setLoadingSet] = React.useState(new Set());
-
-  // Fetch weather for each job address sequentially
-  React.useEffect(() => {
-    const addresses = [...new Set(todayJobs.map(j => j.address).filter(Boolean))];
-    let cancelled = false;
-    (async () => {
-      for (const addr of addresses) {
-        if (cancelled) break;
-        setLoadingSet(prev => { const s = new Set(prev); s.add(addr); return s; });
-        try {
-          // Check sessionStorage cache first
-          const cacheKey = `ist_geocache`;
-          let geocache = {};
-          try { geocache = JSON.parse(sessionStorage.getItem(cacheKey) || "{}"); } catch {}
-          let lat, lon;
-          if (geocache[addr]) {
-            ({ lat, lon } = geocache[addr]);
-          } else {
-            const searchAddr = /oklahoma|,\s*ok\b/i.test(addr) ? addr : `${addr}, Oklahoma`;
-            const gRes = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchAddr)}&format=json&limit=1&countrycodes=us`, { headers: { "Accept-Language": "en", "User-Agent": "ISTDispatch/1.0" } });
-            const gData = await gRes.json();
-            if (!gData.length) throw new Error("geocode failed");
-            lat = parseFloat(gData[0].lat); lon = parseFloat(gData[0].lon);
-            geocache[addr] = { lat, lon };
-            try { sessionStorage.setItem(cacheKey, JSON.stringify(geocache)); } catch {}
-          }
-          const wxRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${lat.toFixed(4)}&longitude=${lon.toFixed(4)}&hourly=temperature_2m,apparent_temperature,precipitation_probability,weathercode,windspeed_10m&temperature_unit=fahrenheit&windspeed_unit=mph&timezone=America%2FChicago&forecast_days=1`);
-          const wxRaw = await wxRes.json();
-          // Find current hour conditions
-          const nowMs = Date.now();
-          let cur = null;
-          const hours = (wxRaw.hourly?.time || []).map((t, i) => ({ time: t, temp: wxRaw.hourly.temperature_2m[i], feelsLike: wxRaw.hourly.apparent_temperature[i], precip: wxRaw.hourly.precipitation_probability[i] ?? 0, wind: wxRaw.hourly.windspeed_10m[i], code: wxRaw.hourly.weathercode[i] }));
-          for (const h2 of hours) { if (new Date(h2.time).getTime() <= nowMs) cur = h2; else break; }
-          if (!cur && hours.length) cur = hours[0];
-          // Work shift range (6am-7pm)
-          const workHours = hours.filter(h2 => { const hr = parseInt(h2.time.slice(11,13),10); return h2.time.startsWith(todayISO) && hr >= 6 && hr <= 19; });
-          const hiTemp = workHours.length ? Math.round(Math.max(...workHours.map(h2 => h2.temp))) : null;
-          const loTemp = workHours.length ? Math.round(Math.min(...workHours.map(h2 => h2.temp))) : null;
-          const rainRisk = workHours.some(h2 => h2.precip > 50);
-          const windRisk = workHours.some(h2 => h2.wind > 25);
-          const coldRisk = workHours.some(h2 => h2.temp < 40);
-          if (!cancelled) setWxMap(prev => ({ ...prev, [addr]: { cur, hiTemp, loTemp, rainRisk, windRisk, coldRisk, ok: true } }));
-        } catch {
-          if (!cancelled) setWxMap(prev => ({ ...prev, [addr]: { error: true } }));
-        } finally {
-          if (!cancelled) setLoadingSet(prev => { const s = new Set(prev); s.delete(addr); return s; });
-          await new Promise(r => setTimeout(r, 1100));
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const getHour = () => new Date().toLocaleTimeString("en-US", { timeZone: "America/Chicago", hour: "numeric", minute: "2-digit", hour12: true });
-
-  return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 2000, background: "linear-gradient(135deg, #0f172a 0%, #1e3a5f 100%)", display: "flex", flexDirection: "column", overflowY: "auto" }}>
-      {/* Header */}
-      <div style={{ padding: "40px 24px 20px", textAlign: "center" }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "2px", marginBottom: 8 }}>{getHour()} · {new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })}</div>
-        <div style={{ fontSize: 30, fontWeight: 800, color: "#fff", lineHeight: 1.2 }}>{greeting},</div>
-        <div style={{ fontSize: 34, fontWeight: 900, color: "#60a5fa", lineHeight: 1.2, marginTop: 4 }}>{crewName} 👋</div>
-        <div style={{ fontSize: 14, color: "rgba(255,255,255,0.55)", marginTop: 12 }}>
-          {todayJobs.length === 0 ? "No jobs assigned for today." : `You have ${todayJobs.length} job${todayJobs.length !== 1 ? "s" : ""} today.`}
-        </div>
-      </div>
-
-      {/* Job cards */}
-      <div style={{ flex: 1, padding: "0 16px 16px" }}>
-        {todayJobs.length === 0 ? (
-          <div style={{ textAlign: "center", padding: "40px 0", color: "rgba(255,255,255,0.4)", fontSize: 15 }}>Check back later or contact the office.</div>
-        ) : todayJobs.map((job, idx) => {
-          const wx = wxMap[job.address];
-          const isLoading = loadingSet.has(job.address);
-          return (
-            <div key={job.id} style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 16, marginBottom: 12, overflow: "hidden", backdropFilter: "blur(8px)" }}>
-              {/* Job header */}
-              <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 11, fontWeight: 700, color: "#60a5fa", textTransform: "uppercase", letterSpacing: "1px", marginBottom: 4 }}>Job {idx + 1}</div>
-                    <div style={{ fontWeight: 700, fontSize: 15, color: "#fff" }}>{job.builder || "No customer"}</div>
-                    <div style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", marginTop: 3 }}>📍 {job.address || "No address"}</div>
-                  </div>
-                  {job.type && <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 700, background: "rgba(96,165,250,0.2)", color: "#93c5fd", borderRadius: 8, padding: "4px 10px", border: "1px solid rgba(96,165,250,0.3)" }}>{job.type}</span>}
-                </div>
-                {job.notes && <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.5)", fontStyle: "italic", borderTop: "1px solid rgba(255,255,255,0.06)", paddingTop: 8 }}>📝 {job.notes}</div>}
-              </div>
-
-              {/* Weather section */}
-              <div style={{ padding: "12px 16px" }}>
-                {isLoading && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, color: "rgba(255,255,255,0.4)", fontSize: 13 }}>
-                    <div style={{ width: 16, height: 16, borderRadius: "50%", border: "2px solid rgba(96,165,250,0.4)", borderTopColor: "#60a5fa", animation: "spin 0.8s linear infinite" }} />
-                    Loading weather...
-                  </div>
-                )}
-                {!isLoading && wx?.error && <div style={{ fontSize: 13, color: "rgba(255,255,255,0.35)" }}>Weather unavailable for this address.</div>}
-                {!isLoading && wx?.ok && wx.cur && (
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                      <div style={{ fontSize: 36 }}>{nwsEmoji(nwsForecastFromCode(wx.cur.code))}</div>
-                      <div>
-                        <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-                          <span style={{ fontSize: 28, fontWeight: 800, color: "#fff" }}>{Math.round(wx.cur.temp)}°F</span>
-                          {wx.cur.feelsLike != null && Math.abs(wx.cur.feelsLike - wx.cur.temp) >= 3 && (
-                            <span style={{ fontSize: 13, color: "rgba(255,255,255,0.5)" }}>Feels {Math.round(wx.cur.feelsLike)}°</span>
-                          )}
-                        </div>
-                        <div style={{ fontSize: 12, color: "rgba(255,255,255,0.55)", marginTop: 2 }}>
-                          {nwsForecastFromCode(wx.cur.code)} · 💨 {Math.round(wx.cur.wind)} mph
-                          {wx.hiTemp != null && <span> · ↑{wx.hiTemp}° ↓{wx.loTemp}°</span>}
-                        </div>
-                      </div>
-                    </div>
-                    {/* Advisories */}
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                      {wx.rainRisk && <div style={{ fontSize: 12, fontWeight: 600, color: "#fca5a5", background: "rgba(220,38,38,0.15)", borderRadius: 6, padding: "5px 10px" }}>⚠️ Rain expected — confirm with office before heading out</div>}
-                      {wx.coldRisk && <div style={{ fontSize: 12, fontWeight: 600, color: "#fde68a", background: "rgba(180,83,9,0.2)", borderRadius: 6, padding: "5px 10px" }}>🧊 Below 40°F — spray foam performance affected</div>}
-                      {wx.windRisk && <div style={{ fontSize: 12, fontWeight: 600, color: "#93c5fd", background: "rgba(37,99,235,0.2)", borderRadius: 6, padding: "5px 10px" }}>💨 High winds — overspray risk, take precautions</div>}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Materials placeholder */}
-              <div style={{ padding: "10px 16px 14px", borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.3)", textTransform: "uppercase", letterSpacing: "1px" }}>📦 Materials Needed</div>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", marginTop: 4, fontStyle: "italic" }}>Auto-estimate coming soon — check with office.</div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* CTA */}
-      <div style={{ padding: "16px 24px 40px", textAlign: "center" }}>
-        <button onClick={onDismiss} style={{ width: "100%", maxWidth: 360, padding: "16px", borderRadius: 14, background: "#2563eb", border: "none", color: "#fff", fontSize: 16, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 24px rgba(37,99,235,0.5)", letterSpacing: "0.3px" }}>
-          Let's Get It 🚀
-        </button>
-      </div>
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  );
-}
-
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, derivedTruckInventory = {}, truckInventoryParity = null, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
   const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -1767,15 +1729,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   });
   const todayJobs = myJobs.filter(j => j.date === todayISO);
 
-  // Daily brief: show once per day per crew member
-  const briefKey = `ist_brief_seen_${crewMemberId || crewName}_${todayISO}`;
-  const [showBrief, setShowBrief] = useState(() => {
-    try { return sessionStorage.getItem(briefKey) !== "1"; } catch { return true; }
-  });
-  const dismissBrief = () => {
-    try { sessionStorage.setItem(briefKey, "1"); } catch {}
-    setShowBrief(false);
-  };
   const myTickets = tickets.filter((tk) => tk.truckId === truck.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
   const [crewView, setCrewView] = useState("home");
   const [truckTab, setTruckTab] = useState("truck"); // "truck" | "loadHistory"
@@ -1785,14 +1738,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const [closeoutConfirm, setCloseoutConfirm] = useState(null); // { job, materialsUsed, skipMaterials }
   const [crewLocation, setCrewLocation] = useState(null);
   const [wrapUpToast, setWrapUpToast] = useState(false);
-  React.useEffect(() => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        pos => setCrewLocation({ lat: pos.coords.latitude, lon: pos.coords.longitude }),
-        () => {}
-      );
-    }
-  }, []);
   const [activeJob, setActiveJob] = useState(null);
   const [materialCountJob, setMaterialCountJob] = useState(null);
   const [materialQtys, setMaterialQtys] = useState({});
@@ -1809,6 +1754,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const [loadTruckMode, setLoadTruckMode] = useState(false);
   const [loadQtys, setLoadQtys] = useState({});   // from warehouse
   const [carriedQtys, setCarriedQtys] = useState({});  // already on truck
+  const [loadSectionTab, setLoadSectionTab] = useState("foam");
+  const [loadCollapsedGroups, setLoadCollapsedGroups] = useState({});
   const [status, setStatus] = useState("in_progress");
   const [eta, setEta] = useState("");
   const [notes, setNotes] = useState("");
@@ -1864,12 +1811,20 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     return [...days].sort();
   };
 
+  const getLogTruckIdForJob = (job) => normalizeMaterialLogTruckId(truck?.id || job?.truckId || null);
+  const getMaterialLogsForJob = (job) => getTruckAwareDailyMaterialLogs(job?.dailyMaterialLogs, getLogTruckIdForJob(job));
+  const getInventoryForMaterialLog = (jobLike = {}, logLike = null, fallbackTruckId = null) => {
+    const sourceTruckId = normalizeMaterialLogTruckId(
+      logLike?.truckId ?? jobLike?._logTruckId ?? fallbackTruckId ?? jobLike?.truckId ?? null,
+    );
+    return getTruckInventorySnapshot(allTruckInventory, sourceTruckId);
+  };
   const getMissingMaterialDays = (job) => {
     const worked = getWorkedDays(job);
-    const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
     const today = todayCST();
+    const loggedDates = getTruckAwareLoggedDates(job?.dailyMaterialLogs, getLogTruckIdForJob(job));
     // Exclude today — that's handled by closeout modal
-    return worked.filter(d => d !== today && !logged.has(d));
+    return worked.filter(d => d !== today && !loggedDates.has(d));
   };
 
   const handleSubmit = () => {
@@ -1877,7 +1832,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       // Check all worked days have materials logged (including today)
       const missing = getMissingMaterialDays(activeJob);
       const todayStr = todayCST();
-      const todayLogged = (activeJob.dailyMaterialLogs || []).some(l => l.date === todayStr);
+      const todayLogged = !!findDailyMaterialLog(activeJob.dailyMaterialLogs, todayStr, getLogTruckIdForJob(activeJob));
       const allMissing = todayLogged ? missing : [...missing, todayStr];
       if (allMissing.length > 0 && !todayLogged) {
         // Today not logged — show closeout modal to capture today's materials
@@ -1908,36 +1863,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
   const handleCloseoutConfirm = (bypass) => {
     const { job, status: s, eta: e, notes: n } = closeoutJob;
-    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
     const materialsUsed = bypass ? null : (() => {
       const used = {};
       INVENTORY_ITEMS.forEach(i => {
         const qty = closeoutMaterialQtys[i.id];
         if (qty && parseFloat(qty) > 0) {
-          used[i.id] = isFoam(i.id) ? Math.round(parseFloat(qty) / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(qty);
+          used[i.id] = isFoam(i.id) ? Math.round(parseFloat(qty) / (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(qty);
         }
       });
       return Object.keys(used).length > 0 ? used : null;
     })();
-    // Deduct closeout materials from truck — but only items NOT already logged via daily logs
-    // Daily logs already deducted via handleDeltaAdjustTruck, so we only deduct the NEW delta here
-    if (materialsUsed && truck?.id) {
-      const dailyLogged = {};
-      (closeoutJob.job?.dailyMaterialLogs || []).forEach(log => {
-        Object.entries(log.materials || {}).forEach(([id, qty]) => {
-          dailyLogged[id] = (dailyLogged[id] || 0) + qty;
-        });
-      });
-      const netNew = {};
-      Object.entries(materialsUsed).forEach(([id, qty]) => {
-        const alreadyLogged = dailyLogged[id] || 0;
-        const extra = Math.max(0, qty - alreadyLogged);
-        if (extra > 0) netNew[id] = extra;
-      });
-      if (Object.keys(netNew).length > 0) onDeductFromTruck(truck.id, netNew);
-    }
     onSubmitUpdate({ jobId: job.id, truckId: truck.id, crewName, status: s, eta: e, notes: n, timestamp: new Date().toISOString(), timeStr: timeStr() });
-    onCloseOutJob(job.id, materialsUsed);
+    onCloseOutJob(job.id, materialsUsed, truck?.id || null);
     setCloseoutJob(null); setCloseoutMaterialQtys({});
   };
 
@@ -1976,10 +1914,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     boxShadow: active ? "0 2px 8px rgba(26,86,219,0.25)" : "none",
   });
   const openTicketCount = myTickets.filter((tk) => tk.status !== "resolved").length;
+  const currentTruckParity = truckInventoryParity;
 
   return (
     <div style={{ minHeight: "100dvh", background: t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
-      {showBrief && <DailyBrief crewName={crewName} todayJobs={todayJobs} onDismiss={dismissBrief} />}
       {wrapUpToast && (
         <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 80px)", left: "50%", transform: "translateX(-50%)", background: "#15803d", color: "#fff", padding: "12px 24px", borderRadius: "99px", fontSize: "15px", fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap" }}>
           ✅ Job wrapped up!
@@ -2132,7 +2070,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               const jobsWithMissing = myJobs.map(job => {
                 const jobUpds = updates.filter(u => u.jobId === job.id);
                 const workedDays = [...new Set(jobUpds.filter(u => ["in_progress","on_site","started"].includes(u.status)).map(u => tsToCST(u.timestamp)))].sort();
-                const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
+                const logged = getTruckAwareLoggedDates(job.dailyMaterialLogs, getLogTruckIdForJob(job));
                 const missing = workedDays.filter(d => d !== todayStr && !logged.has(d));
                 return { job, missing };
               }).filter(x => x.missing.length > 0);
@@ -2154,7 +2092,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               const isExpanded = !!expandedJobCards[job.id];
               const jobUpds = updates.filter(u => u.jobId === job.id);
               const workedDays = [...new Set(jobUpds.filter(u => ["in_progress","on_site","started"].includes(u.status)).map(u => tsToCST(u.timestamp)))].sort();
-              const logged = new Set((job.dailyMaterialLogs || []).map(l => l.date));
+              const logged = getTruckAwareLoggedDates(job.dailyMaterialLogs, getLogTruckIdForJob(job));
               const todayStr = todayCST();
               const missingDays = workedDays.filter(d => d !== todayStr && !logged.has(d));
               const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
@@ -2219,17 +2157,17 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   {/* Collapsible details section */}
                   {isExpanded && (
                     <div>
-                      {(job.dailyMaterialLogs || []).length > 0 && (
+                      {getMaterialLogsForJob(job).length > 0 && (
                         <div style={{ marginBottom: "10px", background: t.bg, borderRadius: "6px", padding: "8px 12px" }}>
                           <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Materials Logged</div>
-                          {(job.dailyMaterialLogs || []).map((log, idx) => (
-                            <div key={idx} style={{ fontSize: "12px", color: t.textSecondary, paddingBottom: "4px", marginBottom: "4px", borderBottom: idx < job.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
+                          {getMaterialLogsForJob(job).map((log, idx) => (
+                            <div key={idx} style={{ fontSize: "12px", color: t.textSecondary, paddingBottom: "4px", marginBottom: "4px", borderBottom: idx < getMaterialLogsForJob(job).length - 1 ? "1px solid " + t.borderLight : "none" }}>
                               <span style={{ color: t.textMuted, marginRight: "8px" }}>{log.date}</span>
                               {Object.entries(log.materials).map(([itemId, qty]) => {
                                 const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                                 if (!item) return null;
-                                const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(itemId);
-                                const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                                const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(itemId);
+                                const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                                 return <span key={itemId} style={{ marginRight: "8px" }}>{item.name}: <strong>{display}</strong></span>;
                               })}
                             </div>
@@ -2257,7 +2195,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                       <JobPhotosSection job={job} canDelete={false} uploaderName={crewName} />
                       {(() => {
                         const todayStr = todayCST();
-                        const existingToday = (job.dailyMaterialLogs || []).find(l => l.date === todayStr);
+                        const existingToday = findDailyMaterialLog(job.dailyMaterialLogs, todayStr, getLogTruckIdForJob(job));
                         return (
                           <div style={{ display: "flex", gap: "8px" }}>
                             <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
@@ -2265,12 +2203,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                               if (existingToday) {
                                 const preQtys = {};
                                 INVENTORY_ITEMS.forEach(i => {
-                                  const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(i.id);
+                                  const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(i.id);
                                   const val = existingToday.materials[i.id];
-                                  if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
+                                  if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                                 });
                                 setDailyMaterialQtys(preQtys);
-                                setDailyMaterialsJob({ ...job, _existingMaterials: existingToday.materials });
+                                setDailyMaterialsJob(buildMaterialLogEditContext(job, existingToday, todayStr));
                               } else {
                                 setDailyMaterialQtys({});
                                 setDailyMaterialsJob(job);
@@ -2294,7 +2232,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
         {/* ── LOAD TRUCK MODAL ── */}
         {crewView === "history" && (() => { // eslint-disable-line no-extra-parens
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
           const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
           const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
           // All completed jobs for this crew member
@@ -2350,8 +2288,9 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     <button onClick={() => setHistDayJobs(null)} style={{ background: "none", border: "none", color: t.textMuted, fontSize: 18, cursor: "pointer" }}>✕</button>
                   </div>
                   {histDayJobs.jobs.map(job => {
-                    const mu = job.materialsUsed || {};
-                    const hasMaterials = Object.keys(mu).length > 0;
+                    const truckScopedLog = findDailyMaterialLog(job.dailyMaterialLogs, histDayJobs.date, truck?.id || job.truckId || null);
+                    const fallbackMaterials = (!truckScopedLog && !(job.dailyMaterialLogs || []).length) ? (job.materialsUsed || {}) : {};
+                    const hasMaterials = Object.keys(truckScopedLog?.materials || fallbackMaterials).length > 0;
                     return (
                       <Card key={job.id} style={{ borderLeft: "3px solid #15803d" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
@@ -2363,23 +2302,27 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                           <Badge color="#15803d" bg="#dcfce7">Done</Badge>
                         </div>
                         {(() => {
-                          const hasDailyLogs = (job.dailyMaterialLogs || []).length > 0;
+                          const materialLogs = getMaterialLogsForJob(job);
+                          const hasDailyLogs = materialLogs.length > 0;
                           const hasMU = Object.keys(job.materialsUsed || {}).length > 0;
                           if (hasDailyLogs) return (
                             <div style={{ marginTop: 6 }}>
-                              {(job.dailyMaterialLogs || []).map((log, li) => (
+                              {materialLogs.map((log, li) => {
+                                const logTruck = trucks.find(tr => tr.id === normalizeMaterialLogTruckId(log.truckId || getLogTruckIdForJob(job)));
+                                const logTruckLabel = logTruck ? (logTruck.members || logTruck.name) : (log.truckId ? "Unknown Truck" : "No Truck");
+                                return (
                                 <div key={li} style={{ marginBottom: 6 }}>
-                                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 3 }}>{log.date} — {log.loggedBy}</div>
+                                  <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 3 }}>{log.date} — {log.loggedBy}{" • "}{logTruckLabel}</div>
                                   <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
                                     {Object.entries(log.materials || {}).map(([itemId, qty]) => {
                                       const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                                       if (!item) return null;
-                                      const display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                                      const display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                                       return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "2px 8px", borderRadius: 5, fontWeight: 600 }}>{item.name}: {display}</span>;
                                     })}
                                   </div>
                                 </div>
-                              ))}
+                              )})}
                             </div>
                           );
                           if (hasMU) return (
@@ -2387,18 +2330,23 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                               {Object.entries(job.materialsUsed || {}).map(([itemId, qty]) => {
                                 const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                                 if (!item) return null;
-                                const display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                                const display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                                 return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "2px 8px", borderRadius: 5, fontWeight: 600 }}>{item.name}: {display}</span>;
                               })}
                             </div>
                           );
                           return <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic", marginTop: 6 }}>No materials logged</div>;
                         })()}
-                        {histDayJobs.date === today && (
-                          <Button variant="secondary" onClick={() => { setEditMaterialsJob(job); setEditMaterialQtys({}); }} style={{ width: "100%", marginTop: 10, fontSize: 13 }}>
-                            {hasMaterials ? "Edit Materials" : "Log Materials"}
-                          </Button>
-                        )}
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setEditMaterialsJob(buildMaterialLogEditContext(job, truckScopedLog, histDayJobs.date));
+                            setEditMaterialQtys({});
+                          }}
+                          style={{ width: "100%", marginTop: 10, fontSize: 13 }}
+                        >
+                          {hasMaterials ? "Edit Materials" : "Log Materials"}
+                        </Button>
                       </Card>
                     );
                   })}
@@ -2409,22 +2357,141 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         })()}
 
         {crewView === "truck" && (() => {
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
-          const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
-          const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48));
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+          const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
+          const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
           const loadedItems = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0);
           const ocSets = Math.min(truckInventory["oc_a"] || 0, truckInventory["oc_b"] || 0);
           const ccSets = Math.min(truckInventory["cc_a"] || 0, truckInventory["cc_b"] || 0);
           const envOcSets = Math.min(truckInventory["env_oc_a"] || 0, truckInventory["env_oc_b"] || 0);
-          const envCcSets = Math.min(truckInventory["env_cc_a"] || 0, truckInventory["env_cc_b"] || 0);
-          const freeEnvOcSets = Math.min(truckInventory["free_env_oc_a"] || 0, truckInventory["free_env_oc_b"] || 0);
           const nonFoamLoaded = loadedItems.filter(i => !isFoam(i.id));
           const renderTruckForm = (mode) => {
-            const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
+            const activeTab = loadSectionTab;
             const itemsForMode = mode === "return"
               ? INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0 || (i.isPieces && truckInventory[i.parentId] > 0))
               : INVENTORY_ITEMS;
             const inputStyle = { width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", textAlign: "right", boxSizing: "border-box" };
+            const blownItems = itemsForMode.filter(i => {
+              const name = (i.name || "").toLowerCase();
+              return name.includes("blown");
+            });
+            const fiberglassItems = itemsForMode.filter(i => {
+              if (i.category === "Foam") return false;
+              const name = (i.name || "").toLowerCase();
+              if (name.includes("blown")) return false;
+              return !name.includes("rockwool") && !name.includes("lambswool");
+            });
+            const otherItems = itemsForMode.filter(i => {
+              const name = (i.name || "").toLowerCase();
+              return name.includes("rockwool") || name.includes("lambswool");
+            });
+            const fiberglassManufacturerForItem = (item) => {
+              const name = (item?.name || "").toLowerCase();
+              if (name.includes("owens corning")) return "Owens Corning";
+              if (name.includes("jm")) return "Johns Manville";
+              return "CertainTeed";
+            };
+            const sectionedItems = [
+              {
+                key: "foam",
+                label: "Foam",
+                groups: [
+                  { key: "ambit", label: "Ambit", items: itemsForMode.filter(i => ["oc_a","oc_b","cc_a","cc_b"].includes(i.id)) },
+                  { key: "enverge", label: "Enverge", items: itemsForMode.filter(i => ["env_oc_a","env_oc_b","env_cc_b"].includes(i.id)) },
+                ].filter(group => group.items.length > 0),
+              },
+              {
+                key: "fiberglass",
+                label: "Fiberglass",
+                groups: [
+                  { key: "owens-corning", label: "Owens Corning", items: fiberglassItems.filter(i => fiberglassManufacturerForItem(i) === "Owens Corning") },
+                  { key: "johns-manville", label: "Johns Manville", items: fiberglassItems.filter(i => fiberglassManufacturerForItem(i) === "Johns Manville") },
+                  { key: "certainteed", label: "CertainTeed", items: fiberglassItems.filter(i => fiberglassManufacturerForItem(i) === "CertainTeed") },
+                ].filter(group => group.items.length > 0),
+              },
+              {
+                key: "blown",
+                label: "Blown",
+                groups: [
+                  { key: "blown", label: "Blown Materials", items: blownItems },
+                ].filter(group => group.items.length > 0),
+              },
+              {
+                key: "other",
+                label: "Other",
+                groups: [
+                  { key: "other", label: "Other", items: otherItems },
+                ].filter(group => group.items.length > 0),
+              },
+            ].filter(section => section.groups.length > 0);
+            const visibleSection = sectionedItems.find(section => section.key === activeTab) || sectionedItems[0] || null;
+            const renderItemRow = (item) => {
+              const warehouseQty = inventory.find(r => r.itemId === item.id)?.qty || 0;
+              const onTruck = truckInventory[item.id] || 0;
+              const label = item.isPieces ? "↳ Loose pieces" : item.name;
+              const subLabel = isFoam(item.id)
+                ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse`
+                : warehouseQty > 0 ? `${warehouseQty} in warehouse` : "0 in warehouse";
+
+              if (mode === "return") {
+                const stillHaveUnits = loadQtys[item.id] || 0;
+                const used = Math.max(0, Math.round((onTruck - stillHaveUnits) * 100) / 100);
+                return (
+                  <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 56px 90px 56px", gap: "4px 8px", alignItems: "center", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid " + t.borderLight }}>
+                    <div>
+                      <div style={{ fontSize: item.isPieces ? 12 : 13, fontWeight: 600, color: item.isPieces ? t.textMuted : t.text }}>{label}</div>
+                    </div>
+                    <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: t.textMuted }}>
+                      {isFoam(item.id) ? <>{bblToGals(onTruck, item.id)}<div style={{ fontSize: 9 }}>gal</div></> : onTruck}
+                    </div>
+                    <div>
+                      {isFoam(item.id)
+                        ? <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <input type="number" min="0" step="1" placeholder="0"
+                              value={loadQtys[item.id + "_gal"] || ""}
+                              onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.min(onTruck, Math.round(g/(["cc_a","cc_b","env_cc_b"].includes(item.id)?50:48)*100)/100); setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
+                              style={{ ...inputStyle, width: 64 }} />
+                            <span style={{ fontSize: 10, color: t.textMuted }}>gal</span>
+                          </div>
+                        : <input type="number" min="0" step="1" placeholder="0"
+                            value={loadQtys[item.id] || ""}
+                            onChange={e => setLoadQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
+                            style={inputStyle} />
+                      }
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: used > 0 ? "#dc2626" : t.textMuted }}>
+                        {isFoam(item.id) ? bblToGals(used, item.id) : used}
+                      </div>
+                      {isFoam(item.id) && used > 0 && <div style={{ fontSize: 9, color: "#dc2626" }}>{used.toFixed(2)} bbl</div>}
+                    </div>
+                  </div>
+                );
+              }
+
+              const unit = isFoam(item.id) ? "gal" : item.isPieces ? "pcs" : "tubes";
+              return (
+                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: "4px 8px", alignItems: "center", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: item.isPieces ? 12 : 13, fontWeight: 600, color: item.isPieces ? t.textMuted : t.text }}>{label}</div>
+                    {subLabel && <div style={{ fontSize: 10, color: t.textMuted }}>{subLabel}</div>}
+                  </div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                    {isFoam(item.id)
+                      ? <input type="number" min="0" step="1" placeholder="0"
+                          value={loadQtys[item.id + "_gal"] || ""}
+                          onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.round(g/(["cc_a","cc_b","env_cc_b"].includes(item.id)?50:48)*100)/100; setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
+                          style={{ ...inputStyle, width: 70 }} />
+                      : <input type="number" min="0" step="1" placeholder="0"
+                          value={loadQtys[item.id] || ""}
+                          onChange={e => setLoadQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
+                          style={{ ...inputStyle, width: 70 }} />
+                    }
+                    <span style={{ fontSize: 10, color: t.textMuted }}>{unit}</span>
+                  </div>
+                </div>
+              );
+            };
             return (
               <div>
                 <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 16 }}>
@@ -2432,93 +2499,55 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     ? <div style={{ marginBottom: 8, color: "#dc2626", fontWeight: 600 }}>Count <strong>everything on your truck</strong> — what was already there plus what you're grabbing today. Enter the total.</div>
                     : "Enter what you still have on the truck. Anything not entered was used on the job."}
                 </div>
-                {categories.map(cat => {
-                  const items = itemsForMode.filter(i => i.category === cat);
-                  if (items.length === 0) return null;
-                  return (
-                    <div key={cat} style={{ marginBottom: 20 }}>
-                      <div style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7, marginBottom: 10 }}>{cat}</div>
-                      {mode === "return" && (
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 90px 56px", gap: "4px 8px", alignItems: "center", marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid " + t.border }}>
-                          <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase" }}></div>
-                          <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", textAlign: "center" }}>Loaded</div>
-                          <div style={{ fontSize: 10, fontWeight: 700, color: "#15803d", textTransform: "uppercase", textAlign: "center" }}>Still Have</div>
-                          <div style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", textAlign: "center" }}>Used</div>
-                        </div>
-                      )}
-                      {items.map(item => {
-                        const warehouseQty = inventory.find(r => r.itemId === item.id)?.qty || 0;
-                        const onTruck = truckInventory[item.id] || 0;
-                        const pi = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
-
-                        const label = item.isPieces ? "↳ Loose pieces" : item.name;
-                        const subLabel = isFoam(item.id)
-                          ? `${warehouseQty.toFixed(2)} bbl (${bblToGals(warehouseQty, item.id)} gal) in warehouse`
-                          : warehouseQty > 0 ? `${warehouseQty} in warehouse` : "0 in warehouse";
-
-                        if (mode === "return") {
-                          const stillHaveUnits = isFoam(item.id) ? (loadQtys[item.id] || 0) : (loadQtys[item.id] || 0);
-                          const used = Math.max(0, Math.round((onTruck - stillHaveUnits) * 100) / 100);
-                          return (
-                            <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 56px 90px 56px", gap: "4px 8px", alignItems: "center", marginBottom: 10, paddingBottom: 10, borderBottom: "1px solid " + t.borderLight }}>
-                              <div>
-                                <div style={{ fontSize: item.isPieces ? 12 : 13, fontWeight: 600, color: item.isPieces ? t.textMuted : t.text }}>{label}</div>
-                              </div>
-                              <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: t.textMuted }}>
-                                {isFoam(item.id) ? <>{bblToGals(onTruck, item.id)}<div style={{ fontSize: 9 }}>gal</div></> : onTruck}
-                              </div>
-                              <div>
-                                {isFoam(item.id)
-                                  ? <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                                      <input type="number" min="0" step="1" placeholder="0"
-                                        value={loadQtys[item.id + "_gal"] || ""}
-                                        onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.min(onTruck, Math.round(g/(["cc_a","cc_b","env_cc_a","env_cc_b"].includes(item.id)?50:48)*100)/100); setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
-                                        style={{ ...inputStyle, width: 64 }} />
-                                      <span style={{ fontSize: 10, color: t.textMuted }}>gal</span>
-                                    </div>
-                                  : <input type="number" min="0" step="1" placeholder="0"
-                                      value={loadQtys[item.id] || ""}
-                                      onChange={e => setLoadQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
-                                      style={inputStyle} />
-                                }
-                              </div>
-                              <div style={{ textAlign: "center" }}>
-                                <div style={{ fontSize: 13, fontWeight: 700, color: used > 0 ? "#dc2626" : t.textMuted }}>
-                                  {isFoam(item.id) ? bblToGals(used, item.id) : used}
+                <div style={{ display: "flex", gap: 8, marginBottom: 16, overflowX: "auto" }}>
+                  {sectionedItems.map(section => {
+                    const active = section.key === (visibleSection?.key || activeTab);
+                    return (
+                      <button
+                        key={section.key}
+                        onClick={() => setLoadSectionTab(section.key)}
+                        style={{ padding: "9px 14px", borderRadius: 999, border: "1px solid " + (active ? t.accent : t.border), background: active ? t.accent : "#fff", color: active ? "#fff" : t.text, fontSize: 13, fontWeight: 800, fontFamily: "inherit", cursor: "pointer", whiteSpace: "nowrap" }}
+                      >
+                        {section.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {visibleSection && (
+                  <div style={{ marginBottom: 24 }}>
+                    {visibleSection.groups.map(group => {
+                      const items = group.items;
+                      if (items.length === 0) return null;
+                      const groupKey = `${mode}:${visibleSection.key}:${group.key}`;
+                      const collapsed = loadCollapsedGroups[groupKey] !== undefined ? loadCollapsedGroups[groupKey] : true;
+                      return (
+                        <div key={group.key} style={{ marginBottom: 18, borderRadius: 12, background: "rgba(255,255,255,0.72)", border: "1px solid " + t.borderLight, overflow: "hidden" }}>
+                          <button
+                            type="button"
+                            onClick={() => setLoadCollapsedGroups(prev => ({ ...prev, [groupKey]: !collapsed }))}
+                            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px", background: "transparent", border: "none", cursor: "pointer", fontFamily: "inherit" }}
+                          >
+                            <span style={{ fontSize: 11, fontWeight: 800, color: t.accent, textTransform: "uppercase", letterSpacing: 0.7 }}>{group.label}</span>
+                            <span style={{ fontSize: 16, color: t.textMuted }}>{collapsed ? "＋" : "−"}</span>
+                          </button>
+                          {!collapsed && (
+                            <div style={{ padding: "0 12px 12px" }}>
+                              {mode === "return" && (
+                                <div style={{ display: "grid", gridTemplateColumns: "1fr 56px 90px 56px", gap: "4px 8px", alignItems: "center", marginBottom: 6, paddingBottom: 6, borderBottom: "1px solid " + t.border }}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase" }}></div>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", textAlign: "center" }}>Loaded</div>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: "#15803d", textTransform: "uppercase", textAlign: "center" }}>Still Have</div>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: "#dc2626", textTransform: "uppercase", textAlign: "center" }}>Used</div>
                                 </div>
-                                {isFoam(item.id) && used > 0 && <div style={{ fontSize: 9, color: "#dc2626" }}>{used.toFixed(2)} bbl</div>}
-                              </div>
+                              )}
+                              {items.map(renderItemRow)}
                             </div>
-                          );
-                        }
-
-                        // Load mode — single column: total on truck today
-                        const unit = isFoam(item.id) ? "gal" : item.isPieces ? "pcs" : "tubes";
-                        return (
-                          <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: "4px 8px", alignItems: "center", marginBottom: 12 }}>
-                            <div>
-                              <div style={{ fontSize: item.isPieces ? 12 : 13, fontWeight: 600, color: item.isPieces ? t.textMuted : t.text }}>{label}</div>
-                              {subLabel && <div style={{ fontSize: 10, color: t.textMuted }}>{subLabel}</div>}
-                            </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                              {isFoam(item.id)
-                                ? <input type="number" min="0" step="1" placeholder="0"
-                                    value={loadQtys[item.id + "_gal"] || ""}
-                                    onChange={e => { const g = parseFloat(e.target.value)||0; const b = Math.round(g/(["cc_a","cc_b","env_cc_a","env_cc_b"].includes(item.id)?50:48)*100)/100; setLoadQtys(q => ({...q,[item.id+"_gal"]:e.target.value,[item.id]:b})); }}
-                                    style={{ ...inputStyle, width: 70 }} />
-                                : <input type="number" min="0" step="1" placeholder="0"
-                                    value={loadQtys[item.id] || ""}
-                                    onChange={e => setLoadQtys(q => ({...q,[item.id]:Math.max(0,parseInt(e.target.value)||0)}))}
-                                    style={{ ...inputStyle, width: 70 }} />
-                              }
-                              <span style={{ fontSize: 10, color: t.textMuted }}>{unit}</span>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
                 {mode === "load"
                   ? <button onClick={async () => {
                       // Everything they entered = total leaving on truck today, all deducted from warehouse
@@ -2571,7 +2600,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 ))}
               </div>
               {truckTab === "loadHistory" && (() => {
-                const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+                const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
                 const truckLoads = (loadLog || []).filter(r => r.truckId === truck.id);
                 const truckReturns = (returnLog || []).filter(r => r.truckId === truck.id);
                 const allEntries = [
@@ -2615,7 +2644,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                             const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                             const name = item ? item.name : itemId;
                             const display = isFoam(itemId)
-                              ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+                              ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
                               : qty + " " + (item ? item.unit : "");
                             return (
                               <span key={itemId} style={{ fontSize: "12px", background: t.bg, border: "1px solid " + t.border, color: t.text, padding: "3px 10px", borderRadius: "6px", fontWeight: 600 }}>
@@ -2639,8 +2668,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     {ocSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Ambit Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ocSets.toFixed(2)} sets ({bblToGals(ocSets, "oc_a")*2} gal total)</span></div>}
                     {ccSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Ambit Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ccSets.toFixed(2)} sets ({bblToGals(ccSets, "cc_a")*2} gal total)</span></div>}
                     {envOcSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Enverge Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{envOcSets.toFixed(2)} sets ({bblToGals(envOcSets, "env_oc_a")*2} gal total)</span></div>}
-                    {freeEnvOcSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>FREE Enverge Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: "#16a34a" }}>{freeEnvOcSets.toFixed(2)} sets ({bblToGals(freeEnvOcSets, "free_env_oc_a")*2} gal total)</span></div>}
-                    {envCcSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Enverge Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{envCcSets.toFixed(2)} sets ({bblToGals(envCcSets, "env_cc_a")*2} gal total)</span></div>}
+                    {INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0).map(item => (
+                      <div key={item.id + "_foamline"} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>{bblToGals(truckInventory[item.id] || 0, item.id)} gal</span>
+                      </div>
+                    ))}
                     {nonFoamLoaded.filter(i => !i.isPieces).map(item => {
                       const pi = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
                       const pq = pi ? (truckInventory[pi.id] || 0) : 0;
@@ -2677,9 +2710,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     setLoadQtys({});
                   }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                     Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse</div>
-                  </button>
-                  <button onClick={() => setConfirmUnload(true)} style={{ padding: "18px", borderRadius: 12, background: "#15803d", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
-                    Unload to Warehouse<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Returns everything on your truck back to warehouse</div>
                   </button>
                 </div>
               ) : renderTruckForm(loadTruckMode)}
@@ -2765,34 +2795,21 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         </Modal>
       )}
 
-      {/* ── UNLOAD CONFIRMATION ── */}
-      {confirmUnload && (
-        <Modal title="Unload to Warehouse" onClose={() => setConfirmUnload(false)}>
-          <div style={{ fontSize: 15, color: t.text, marginBottom: 8 }}>Are you sure you want to return everything back to the warehouse inventory?</div>
-          <div style={{ fontSize: 13, color: t.danger, fontWeight: 600, marginBottom: 20 }}>You can't undo this once you press Yes.</div>
-          <div style={{ display: "flex", gap: 10 }}>
-            <Button variant="secondary" onClick={() => setConfirmUnload(false)} style={{ flex: 1 }}>No</Button>
-            <Button variant="danger" onClick={() => {
-              const returning = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, stillHave: truckInventory[i.id] || 0 }));
-              onReturnMaterial(returning, truck?.id, "unload");
-              setConfirmUnload(false);
-            }} style={{ flex: 1 }}>Yes, Unload</Button>
-          </div>
-        </Modal>
-      )}
 
       {/* ── CLOSEOUT MATERIALS MODAL ── */}
       {dailyMaterialsJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
-        const today = dailyMaterialsJob._editingDate || todayCST();
-        const isEditingPast = !!dailyMaterialsJob._editingDate;
-        const existingDailyEntry = dailyMaterialsJob._existingMaterials || {};
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const today = dailyMaterialsJob._editingDate || dailyMaterialsJob._forceDate || todayCST();
+        const isEditingPast = !!dailyMaterialsJob._editingDate || !!dailyMaterialsJob._forceDate;
+        const matchedDailyLog = findDailyMaterialLog(dailyMaterialsJob.dailyMaterialLogs, today, dailyMaterialsJob._logTruckId || dailyMaterialsJob.truckId || truck?.id);
+        const existingDailyEntry = dailyMaterialsJob._existingMaterials || matchedDailyLog?.materials || {};
         const isEditing = Object.keys(existingDailyEntry).length > 0;
         const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
         const jobType = (dailyMaterialsJob.type || "").toLowerCase();
+        const materialLogInventory = getInventoryForMaterialLog(dailyMaterialsJob, matchedDailyLog, truck?.id);
         const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (
-          (truckInventory[i.id] || 0) > 0 ||
-          (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0) ||
+          (materialLogInventory[i.id] || 0) > 0 ||
+          (i.hasPieces && (materialLogInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0) ||
           existingDailyEntry[i.id] ||
           (i.hasPieces && existingDailyEntry[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id]) ||
           (jobType === "fiberglass" && (i.category === "Certainteed" || i.category === "JM" || i.category === "Rockwool" || i.category === "Blown")) ||
@@ -2803,18 +2820,21 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           <Modal title={isEditingPast ? "Edit Materials — " + fmtDateLabel(today) : "Log Today's Materials"} onClose={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }}>
             <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
               <strong style={{ color: t.text }}>{dailyMaterialsJob.builder || "No Customer"}</strong><br />{dailyMaterialsJob.address}
-              <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>{isEditingPast ? fmtDateLabel(today) : "Job stays open — just logging today's usage"}</div>
+              <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>{isEditingPast ? fmtDateLabel(today) : "Job stays open, just logging today's usage"}</div>
+              <div style={{ fontSize: 11, marginTop: 4, color: t.textMuted }}>
+                Truck: <strong style={{ color: t.text }}>{trucks.find(tr => tr.id === (dailyMaterialsJob._logTruckId || dailyMaterialsJob.truckId || truck?.id))?.name || "Unassigned"}</strong>
+              </div>
             </div>
             {tubeItems.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 14 }}>No materials loaded on truck.</div>}
             {tubeItems.map(item => {
-              const onTruck = truckInventory[item.id] || 0;
+              const onTruck = materialLogInventory[item.id] || 0;
               const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
-              const loosePcsOnTruck = pcsItem ? (truckInventory[pcsItem.id] || 0) : 0;
+              const loosePcsOnTruck = pcsItem ? (materialLogInventory[pcsItem.id] || 0) : 0;
               const looseOnly = onTruck === 0 && loosePcsOnTruck > 0;
               const existingQty = existingDailyEntry[item.id];
               const existingPcsQty = pcsItem ? existingDailyEntry[pcsItem.id] : null;
               const label = isFoam(item.id)
-                ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
+                ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
                 : item.name + (
                     onTruck > 0 ? " (on truck: " + onTruck + " tubes" + (loosePcsOnTruck > 0 ? " + " + loosePcsOnTruck + " pcs)" : ")")
                     : loosePcsOnTruck > 0 ? " (on truck: " + loosePcsOnTruck + " pcs)"
@@ -2861,7 +2881,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 INVENTORY_ITEMS.forEach(i => {
                   const raw = dailyMaterialQtys[i.id];
                   if (raw && parseFloat(raw) > 0) {
-                    used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
+                    used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
                   }
                 });
                 if (Object.keys(used).length === 0) {
@@ -2876,7 +2896,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     const oldUsed = existingDailyEntry[item.id] || 0;
                     const delta = newUsed - oldUsed;
                     if (delta > 0) {
-                      const onTruck = truckInventory[item.id] || 0;
+                      const onTruck = materialLogInventory[item.id] || 0;
                       if (delta > onTruck) {
                         alert("Not enough " + item.name + " on your truck.\nYou have " + onTruck + " available.");
                         valid = false;
@@ -2895,8 +2915,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   const newTotal = newTubes * item.pcsPerTube + newPcs;
                   const delta = newTotal - oldTotal;
                   if (delta > 0) {
-                    const truckTubes = truckInventory[item.id] || 0;
-                    const truckPcs = pcsItem ? (truckInventory[pcsItem.id] || 0) : 0;
+                    const truckTubes = materialLogInventory[item.id] || 0;
+                    const truckPcs = pcsItem ? (materialLogInventory[pcsItem.id] || 0) : 0;
                     const truckTotal = truckTubes * item.pcsPerTube + truckPcs;
                     if (delta > truckTotal) {
                       alert(`Not enough ${item.name} on your truck. Need ${delta} more pieces than available.`);
@@ -2906,13 +2926,14 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 });
                 if (!valid) return;
                 // Delta adjust if editing existing entry, full deduct if new
-                if (isEditing) {
-                  await onDeltaAdjustTruck(truck?.id, existingDailyEntry, used);
-                } else {
-                  await onDeductFromTruck(truck?.id, used);
-                }
-                // Save log entry — await so we know it worked before closing
-                await onLogDailyMaterials(dailyMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
+                await onSaveJobMaterials(dailyMaterialsJob.id, {
+                  date: today,
+                  truckId: dailyMaterialsJob._logTruckId || dailyMaterialsJob.truckId || truck?.id || null,
+                  sourceTruckId: dailyMaterialsJob._sourceTruckId,
+                  materials: used,
+                  loggedBy: crewName,
+                  timestamp: new Date().toISOString(),
+                }, truck?.id || null);
                 setDailyMaterialsJob(null); setDailyMaterialQtys({});
               }} style={{ flex: 1 }}>Save</Button>
             </div>
@@ -2921,19 +2942,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       })()}
 
       {closeoutJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
         const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
         return (
           <Modal title="Close Out Job" onClose={() => setCloseoutJob(null)}>
             <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
               <strong style={{ color: t.text }}>{closeoutJob.job.builder || "No Customer"}</strong><br />{closeoutJob.job.address}
+              <div style={{ fontSize: 11, marginTop: 4, color: t.textMuted }}>
+                Closing out for truck: <strong style={{ color: t.text }}>{trucks.find(tr => tr.id === getLogTruckIdForJob(closeoutJob.job))?.name || truck?.name || "Unassigned"}</strong>
+              </div>
             </div>
             {/* Daily material log review */}
             {(() => {
-              const logs = closeoutJob.job.dailyMaterialLogs || [];
+              const logs = getMaterialLogsForJob(closeoutJob.job);
               if (logs.length === 0) return null;
               const fmtDate = (ds) => { const [y,m,d] = ds.split("-"); const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return months[parseInt(m)-1] + " " + parseInt(d); };
-              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
               return (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, fontWeight: 600, marginBottom: 8 }}>Materials Logged — Previous Days</div>
@@ -2941,11 +2965,12 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     <div key={idx} style={{ background: t.bg, border: "1px solid " + t.border, borderRadius: 8, padding: "10px 12px", marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                       <div style={{ flex: 1 }}>
                         <div style={{ fontSize: 12, fontWeight: 700, color: t.text, marginBottom: 4 }}>{fmtDate(log.date)}</div>
+                        <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 4 }}>Truck: {trucks.find(tr => tr.id === normalizeMaterialLogTruckId(log.truckId || getLogTruckIdForJob(closeoutJob.job)))?.name || "Unassigned"}</div>
                         <div style={{ fontSize: 12, color: t.textSecondary }}>
                           {Object.entries(log.materials).map(([itemId, qty]) => {
                             const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                             if (!item) return null;
-                            const display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                            const display = isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                             return <span key={itemId} style={{ marginRight: 10 }}>{item.name}: <strong>{display}</strong></span>;
                           })}
                         </div>
@@ -2953,11 +2978,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                       <button onClick={() => {
                         const preQtys = {};
                         INVENTORY_ITEMS.forEach(i => {
-                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(i.id);
+                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(i.id);
                           const val = log.materials[i.id];
-                          if (val) preQtys[i.id] = isFoamItem ? String(Math.round(val * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
+                          if (val) preQtys[i.id] = isFoamItem ? String(Math.round(val * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                         });
-                        setDailyMaterialsJob({ ...closeoutJob.job, _editingDate: log.date });
+                        setDailyMaterialsJob(buildMaterialLogEditContext(closeoutJob.job, log));
                         setDailyMaterialQtys(preQtys);
                       }} style={{ fontSize: 12, fontWeight: 600, color: t.accent, background: t.accentBg, border: "1px solid " + t.accent, borderRadius: 6, padding: "5px 10px", cursor: "pointer", fontFamily: "inherit", flexShrink: 0 }}>Edit</button>
                     </div>
@@ -2977,7 +3002,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 {truckItems.map(item => {
                   const onTruck = truckInventory[item.id] || 0;
                   const label = isFoam(item.id)
-                    ? item.name + " (on truck: " + Math.round(onTruck * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(item.id) ? 50 : 48)) + " gal)"
+                    ? item.name + " (on truck: " + Math.round(onTruck * (["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48)) + " gal)"
                     : item.name + " (on truck: " + onTruck + " " + item.unit + ")";
                   const placeholder = isFoam(item.id) ? "gallons used" : item.unit + " used";
                   const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
@@ -3012,13 +3037,13 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               <Button variant="secondary" onClick={() => setCloseoutJob(null)} style={{ flex: 1 }}>Cancel</Button>
               <Button onClick={() => {
                 // Build materials summary for confirmation
-                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
                 const allMaterials = {};
                 if (!closeoutJob.skipMaterials) {
                   INVENTORY_ITEMS.forEach(i => {
                     const qty = closeoutMaterialQtys[i.id];
                     if (qty && parseFloat(qty) > 0) {
-                      allMaterials[i.id] = isFoamId(i.id) ? Math.round(parseFloat(qty) / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(qty);
+                      allMaterials[i.id] = isFoamId(i.id) ? Math.round(parseFloat(qty) / (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(qty);
                     }
                   });
                 }
@@ -3033,7 +3058,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       {closeoutConfirm && (() => {
         const { closeoutJobData, materialsForConfirm } = closeoutConfirm;
         const job = closeoutJobData.job;
-        const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+        const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
         const allMats = { ...materialsForConfirm };
         (job.dailyMaterialLogs || []).forEach(log => {
           Object.entries(log.materials || {}).forEach(([id, qty]) => { allMats[id] = (allMats[id] || 0) + qty; });
@@ -3049,7 +3074,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 {matEntries.map(([id, qty]) => {
                   const item = INVENTORY_ITEMS.find(i => i.id === id);
                   if (!item) return null;
-                  const display = isFoamId(id) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                  const display = isFoamId(id) ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                   return (
                     <div key={id} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: t.text, padding: "4px 0", borderBottom: "1px solid " + t.borderLight }}>
                       <span>{item.name}</span><strong>{display}</strong>
@@ -3074,32 +3099,28 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
       {/* ── EDIT MATERIALS MODAL ── */}
       {editMaterialsJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
-        // Aggregate all installed: daily logs + materialsUsed
-        const existing = (() => {
-          const totals = { ...(editMaterialsJob.materialsUsed || {}) };
-          (editMaterialsJob.dailyMaterialLogs || []).forEach(log => {
-            Object.entries(log.materials || {}).forEach(([id, qty]) => {
-              totals[id] = (totals[id] || 0) + qty;
-            });
-          });
-          return totals;
-        })();
-        // Show items already installed OR on truck
-        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (existing[i.id] || (truckInventory[i.id] || 0) > 0 || (i.hasPieces && (truckInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)));
-        const getVal = (item) => { const e = existing[item.id]; const r = editMaterialQtys[item.id]; if (r !== undefined) return r; if (e) return isFoam(item.id) ? String(Math.round(e * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(item.id) ? 50 : 48))) : String(e); return ""; };
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const editDate = editMaterialsJob._editingDate || todayCST();
+        const targetTruckId = normalizeMaterialLogTruckId(editMaterialsJob._logTruckId ?? truck?.id ?? editMaterialsJob.truckId ?? null);
+        const targetTruck = trucks.find(tr => tr.id === targetTruckId) || truck || null;
+        const targetTruckLabel = targetTruck ? (targetTruck.members || targetTruck.name) : "No Truck";
+        const existing = editMaterialsJob._existingMaterials || {};
+        const editMaterialInventory = getInventoryForMaterialLog(editMaterialsJob, editMaterialsJob._sourceDailyLog, targetTruckId);
+        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (existing[i.id] || (editMaterialInventory[i.id] || 0) > 0 || (i.hasPieces && (editMaterialInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)));
+        const getVal = (item) => { const e = existing[item.id]; const r = editMaterialQtys[item.id]; if (r !== undefined) return r; if (e) return isFoam(item.id) ? String(Math.round(e * (["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48))) : String(e); return ""; };
         return (
           <Modal title="Edit Materials" onClose={() => setEditMaterialsJob(null)}>
             <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
               <strong style={{ color: t.text }}>{editMaterialsJob.builder || "No Customer"}</strong><br />{editMaterialsJob.address}
+              <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>Editing {editDate} for {targetTruckLabel}</div>
             </div>
             {tubeItems.map(item => {
-              const onTruck = truckInventory[item.id] || 0;
+              const onTruck = editMaterialInventory[item.id] || 0;
               const label = isFoam(item.id)
-                ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
+                ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
                 : item.name + (onTruck > 0 ? " (on truck: " + onTruck + " " + item.unit + ")" : "");
               const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
-              const showPcs = pcsItem && ((truckInventory[pcsItem.id] || 0) > 0 || existing[pcsItem.id]);
+              const showPcs = pcsItem && ((editMaterialInventory[pcsItem.id] || 0) > 0 || existing[pcsItem.id]);
               return (
                 <div key={item.id} style={{ marginBottom: 14 }}>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
@@ -3122,12 +3143,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               <Button onClick={async () => {
                 const used = {};
                 INVENTORY_ITEMS.forEach(i => {
-                  const raw = editMaterialQtys[i.id] !== undefined ? editMaterialQtys[i.id] : (existing[i.id] ? (isFoam(i.id) ? String(Math.round(existing[i.id] * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48))) : String(existing[i.id])) : "");
+                  const raw = editMaterialQtys[i.id] !== undefined ? editMaterialQtys[i.id] : (existing[i.id] ? (isFoam(i.id) ? String(Math.round(existing[i.id] * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(existing[i.id])) : "");
                   if (raw && parseFloat(raw) > 0) {
-                    used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
+                    used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
                   }
                 });
-                // Validate: can only ADD if truck has enough
                 let canSave = true;
                 INVENTORY_ITEMS.filter(i => !i.isPieces && i.pcsPerTube).forEach(item => {
                   const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
@@ -3139,17 +3159,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   const newTotal = newTubes * item.pcsPerTube + newPcs;
                   const delta = newTotal - oldTotal;
                   if (delta > 0) {
-                    const truckTubes = truckInventory[item.id] || 0;
-                    const truckPcs = pcsItem ? (truckInventory[pcsItem.id] || 0) : 0;
+                    const truckTubes = editMaterialInventory[item.id] || 0;
+                    const truckPcs = pcsItem ? (editMaterialInventory[pcsItem.id] || 0) : 0;
                     const truckTotal = truckTubes * item.pcsPerTube + truckPcs;
                     if (delta > truckTotal) { alert(`Not enough ${item.name} on your truck. Need ${delta} more pieces than available.`); canSave = false; }
                   }
                 });
                 if (!canSave) return;
                 if (Object.keys(used).length === 0) { alert("No materials entered."); return; }
-                // Delta adjust truck and save log — await both
-                await onDeltaAdjustTruck(truck?.id, existing, used);
-                await onLogDailyMaterials(editMaterialsJob.id, { date: today, materials: used, loggedBy: crewName, timestamp: new Date().toISOString() }, true);
+                await onSaveJobMaterials(editMaterialsJob.id, {
+                  date: editDate,
+                  truckId: targetTruckId,
+                  sourceTruckId: editMaterialsJob._sourceTruckId,
+                  materials: used,
+                  loggedBy: crewName,
+                  timestamp: new Date().toISOString(),
+                }, targetTruckId);
                 setEditMaterialsJob(null); setEditMaterialQtys({});
               }} style={{ flex: 1 }}>Save</Button>
             </div>
@@ -3461,7 +3486,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* TRUCKS TAB */}
       {tab === "trucks" && (() => {
-        const isFoamItem = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+        const isFoamItem = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
         const visibleTrucks = trucks.filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         return (
           <div>
@@ -3472,8 +3497,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
               const ocS        = Math.min(ti["oc_a"]||0, ti["oc_b"]||0);
               const ccS        = Math.min(ti["cc_a"]||0, ti["cc_b"]||0);
               const envOcS     = Math.min(ti["env_oc_a"]||0, ti["env_oc_b"]||0);
-              const envCcS     = Math.min(ti["env_cc_a"]||0, ti["env_cc_b"]||0);
-              const freeEnvOcS = Math.min(ti["free_env_oc_a"]||0, ti["free_env_oc_b"]||0);
+              const envCcS     = Math.min(ti["env_oc_a"]||0, ti["env_cc_b"]||0);
               return (
                 <Card key={tr.id} style={{ marginBottom: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
@@ -3485,15 +3509,20 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
                   <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Loaded</div>
                   {loaded.length === 0
                     ? <div style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded.</div>
-                    : <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {ocS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit OC — {ocS.toFixed(2)} sets</span>}
-                        {ccS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit CC — {ccS.toFixed(2)} sets</span>}
-                        {envOcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge OC — {envOcS.toFixed(2)} sets</span>}
-                        {envCcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge CC — {envCcS.toFixed(2)} sets</span>}
-                        {freeEnvOcS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: "#f0fdf4", color: "#16a34a", padding: "3px 9px", borderRadius: 6 }}>FREE Enverge OC — {freeEnvOcS.toFixed(2)} sets</span>}
-                        {loaded.filter(i => !isFoamItem(i.id)).map(item => (
-                          <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>
-                        ))}
+                    : <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {ocS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit OC — {ocS.toFixed(2)} sets</span>}
+                          {ccS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit CC — {ccS.toFixed(2)} sets</span>}
+                          {envOcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge OC — {envOcS.toFixed(2)} sets</span>}
+                          {envCcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge CC — {envCcS.toFixed(2)} sets</span>}
+                        </div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                          {loaded.map(item => (
+                            <div key={item.id} style={{ fontSize: 12, fontWeight: 600, color: t.text }}>
+                              {item.name} — {Number(ti[item.id] || 0).toFixed(item.unit === "gal" || item.unit === "set" ? 2 : 0)} {item.unit}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                   }
                 </Card>
@@ -4179,7 +4208,7 @@ function useJobUpdateToasts(updates, jobs) {
 // ─── EOD Summary Modal ───
 function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, onClose }) {
   const today = todayCST();
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
 
   // Jobs with any activity today
   const todayJobs = jobs.filter(j => {
@@ -4210,7 +4239,7 @@ function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, 
       const item = INVENTORY_ITEMS.find(i => i.id === itemId);
       if (!item) return null;
       const display = isFoam(itemId)
-        ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+        ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
         : qty + " " + item.unit;
       return <span key={itemId} style={{ display: "inline-block", margin: "2px 4px 2px 0", padding: "2px 8px", background: "#eef2ff", color: "#3730a3", borderRadius: 5, fontSize: 11, fontWeight: 600 }}>{item.name}: {display}</span>;
     }).filter(Boolean);
@@ -4330,7 +4359,7 @@ function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, 
             const item = INVENTORY_ITEMS.find(i => i.id === itemId);
             if (!item) return null;
             const display = isFoam(itemId)
-              ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+              ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
               : qty + " " + item.unit;
             const lineCost = (item.cost || 0) * qty;
             grandCost += lineCost;
@@ -4368,12 +4397,12 @@ function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, 
 }
 
 // ─── Truck Reconciliation View ───
-function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckInventory }) {
+function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckInventory, derivedTruckInventory = {}, truckInventoryParity = {} }) {
   const today = todayCST();
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
 
   const fmtQty = (itemId, qty) => {
-    if (isFoam(itemId)) return Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal";
+    if (isFoam(itemId)) return Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal";
     const item = INVENTORY_ITEMS.find(i => i.id === itemId);
     return qty + (item ? " " + item.unit : "");
   };
@@ -4390,6 +4419,7 @@ function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckIn
   };
 
   const reconcileData = trucks.map(truck => {
+    const parity = truckInventoryParity?.[truck.id] || compareTruckInventoryStates(truckInventory?.[truck.id] || {}, derivedTruckInventory?.[truck.id] || {});
     const todayLoads = loadLog.filter(r => r.truckId === truck.id && tsToCST(r.timestamp) === today);
     const todayReturns = returnLog.filter(r => r.truckId === truck.id && tsToCST(r.timestamp) === today);
 
@@ -4431,7 +4461,7 @@ function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckIn
     const hasFlaggedDiscrepancy = Object.keys(discrepancies).length > 0;
     const hasActivity = Object.keys(loaded).length > 0 || Object.keys(returned).length > 0;
 
-    return { truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy, hasActivity };
+    return { truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy, hasActivity, parity };
   }).filter(r => r.hasActivity);
 
   if (reconcileData.length === 0) {
@@ -4440,12 +4470,35 @@ function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckIn
 
   return (
     <div>
-      {reconcileData.map(({ truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy }) => (
+      {reconcileData.map(({ truck, loaded, returned, materialsUsed, discrepancies, hasFlaggedDiscrepancy, parity }) => (
         <div key={truck.id} style={{ marginBottom: 16, border: "1px solid #e2e8f0", borderRadius: 12, overflow: "hidden", background: "#f8fafc" }}>
           <div style={{ padding: "12px 16px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0" }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: "#1e293b" }}>{truck.members || truck.name}</div>
           </div>
           <div style={{ padding: "12px 16px" }}>
+            {parity?.hasMismatch && (
+              <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 8, border: "1px solid #fde68a", background: "#fffbeb" }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: "#b45309", textTransform: "uppercase", letterSpacing: "0.4px", marginBottom: 4 }}>
+                  Event parity warning
+                </div>
+                <div style={{ fontSize: 12, color: "#92400e", marginBottom: 6 }}>
+                  Legacy truckInventory and event-derived counts differ on {parity.mismatchCount} item{parity.mismatchCount === 1 ? "" : "s"}.
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                  {parity.mismatches.slice(0, 4).map((mismatch) => {
+                    const item = INVENTORY_ITEMS.find(i => i.id === mismatch.itemId);
+                    return (
+                      <span key={mismatch.itemId} style={{ fontSize: 11, color: "#92400e", background: "#fff", border: "1px solid #fde68a", borderRadius: 999, padding: "4px 8px" }}>
+                        {item?.name || mismatch.itemId}: {formatTruckParityDelta(mismatch.delta, item?.unit || "")}
+                      </span>
+                    );
+                  })}
+                  {parity.mismatches.length > 4 && (
+                    <span style={{ fontSize: 11, color: "#92400e" }}>+{parity.mismatches.length - 4} more</span>
+                  )}
+                </div>
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
               {[
                 { label: "Loaded Out", items: loaded, color: "#1d4ed8" },
@@ -4911,10 +4964,10 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
   const [gals, setGals] = useState("");
   const [pcsVal, setPcsVal] = useState("");
 
-  const galPerBbl = ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48;
+  const galPerBbl = ["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48;
 
   const open = () => {
-    setBbls(isFoam ? String(Math.round(qty)) : "");
+    setBbls(isFoam ? String(Math.round(qty * 100) / 100) : "");
     setGals(isFoam ? String(bblToGals(qty, itemId)) : "");
     setPcsVal(pcsItem ? String(pcsQty) : "");
     setEditing(true);
@@ -4922,12 +4975,11 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 
   const save = () => {
     if (isFoam) {
-      // Use whichever was last edited — gals takes priority if both filled
-      const g = parseFloat(gals);
       const b = parseFloat(bbls);
+      const g = parseFloat(gals);
       let newBbl;
-      if (!isNaN(g) && g >= 0) newBbl = Math.round((g / galPerBbl) * 100) / 100;
-      else if (!isNaN(b) && b >= 0) newBbl = Math.round(b * 100) / 100;
+      if (!isNaN(b) && b >= 0) newBbl = Math.round(b * 100) / 100;
+      else if (!isNaN(g) && g >= 0) newBbl = Math.round((g / galPerBbl) * 100) / 100;
       if (newBbl !== undefined) onUpdateInventory(itemId, Math.max(0, newBbl));
     } else {
       const parsed = parseFloat(gals || bbls);
@@ -5020,9 +5072,9 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
   const customItems = (ti._custom || []);
   const allLoadout = [...inventoryLoadout, ...customItems.map(c => ({ key: "custom_" + c.name, name: c.name, qty: c.qty, unit: c.unit, isCustom: true }))];
 
-  const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+  const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
   const fmtQty = (key, qty) => {
-    if (isFoamId(key)) return Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(key) ? 50 : 48)) + " gal";
+    if (isFoamId(key)) return Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(key) ? 50 : 48)) + " gal";
     const u = INVENTORY_ITEMS.find(i => i.id === key)?.unit || "";
     return qty + (u ? " " + u : "");
   };
@@ -5242,7 +5294,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
         // Jobs assigned to this truck
         const truckJobs = (jobs || []).filter(j => j.truckId === truck.id);
 
-        const isFoamIdLocal = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+        const isFoamIdLocal = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
 
         // Build per-day data, broken out by job
         const dayData = days.map(dateStr => {
@@ -5259,7 +5311,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
               const item = INVENTORY_ITEMS.find(i => i.id === itemId);
               if (!item) return null;
               const display = isFoamIdLocal(itemId)
-                ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+                ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
                 : qty + " " + item.unit;
               const lineCost = (item.cost || 0) * qty;
               jobCost += lineCost;
@@ -5522,14 +5574,14 @@ async function generateJobPDF(job, updates, pmUpdates, members) {
     doc2.setTextColor(17, 24, 39);
     doc2.setFontSize(9);
 
-    const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+    const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
 
     const renderMaterials = (mats) => {
       Object.entries(mats || {}).forEach(([itemId, qty]) => {
         const item = INVENTORY_ITEMS.find(i => i.id === itemId);
         if (!item) return;
         const display = isFoamId(itemId)
-          ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
+          ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal"
           : qty + " " + item.unit;
         doc2.text(`• ${item.name}: ${display}`, margin + 4, y);
         y += 5;
@@ -6042,7 +6094,7 @@ function WeatherTab({ jobs, trucks, updates }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   // Builders DB state
@@ -6195,7 +6247,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   });
   const orderSort = (a, b) => (a.order ?? 999) - (b.order ?? 999) || naturalSort(a, b);
   const sortedTrucks = [...trucks].filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : tr.department !== "energySeal").sort(orderSort);
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
   const handleScanWorkOrder = async (e) => {
@@ -6881,6 +6933,45 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               );
                             })()}
 
+                            {job.closedOut && (() => {
+                              const parity = jobUsageParityByJobId?.[job.id] || null;
+                              if (!parity) return null;
+                              const recommendedLabel = parity.hasDailyLogs ? "Daily logs" : "Closeout total";
+                              const mismatchRows = parity.vsEffectiveLegacy?.mismatches || [];
+                              const hasMismatch = !parity.isAligned;
+                              return (
+                                <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                                    <div style={{ fontSize: "11px", fontWeight: 700, color: hasMismatch ? "#b45309" : "#15803d", textTransform: "uppercase", letterSpacing: "0.5px" }}>Job Usage Parity</div>
+                                    <Badge color={hasMismatch ? "#b45309" : "#15803d"} bg={hasMismatch ? "#fef3c7" : "#dcfce7"}>{hasMismatch ? "Needs Review" : "Aligned"}</Badge>
+                                  </div>
+                                  <div style={{ background: hasMismatch ? "#fffbeb" : "#f0fdf4", border: "1px solid " + (hasMismatch ? "#fde68a" : "#86efac"), borderRadius: 8, padding: "10px 12px" }}>
+                                    <div style={{ fontSize: 12, color: hasMismatch ? "#92400e" : "#166534", marginBottom: hasMismatch ? 8 : 0 }}>
+                                      Event-derived usage vs {recommendedLabel.toLowerCase()}: {parity.vsEffectiveLegacy?.mismatchCount || 0} mismatched item{(parity.vsEffectiveLegacy?.mismatchCount || 0) === 1 ? "" : "s"}.
+                                    </div>
+                                    {hasMismatch && (
+                                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                        {mismatchRows.slice(0, 4).map((row) => {
+                                          const item = INVENTORY_ITEMS.find((entry) => entry.id === row.itemId);
+                                          const deltaLabel = Math.abs(row.delta) <= JOB_USAGE_PARITY_TOLERANCE ? "0" : fmtQty(row.itemId, row.delta);
+                                          return (
+                                            <div key={row.itemId} style={{ fontSize: 12, color: "#78350f", display: "flex", justifyContent: "space-between", gap: 12 }}>
+                                              <span>{item?.name || row.itemId}</span>
+                                              <span style={{ whiteSpace: "nowrap" }}>{fmtQty(row.itemId, row.baselineQty)} legacy, {fmtQty(row.itemId, row.comparisonQty)} events, Δ {deltaLabel}</span>
+                                            </div>
+                                          );
+                                        })}
+                                        {mismatchRows.length > 4 && <div style={{ fontSize: 11, color: "#a16207" }}>+{mismatchRows.length - 4} more item mismatch{mismatchRows.length - 4 === 1 ? "" : "es"}</div>}
+                                        {parity.hasDailyLogs && parity.vsCloseout?.mismatchCount > 0 && (
+                                          <div style={{ fontSize: 11, color: "#a16207", marginTop: 2 }}>Closeout total also differs from events on {parity.vsCloseout.mismatchCount} item{parity.vsCloseout.mismatchCount === 1 ? "" : "s"}.</div>
+                                        )}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })()}
+
                             {/* Weather Log */}
                             {job.weatherLog?.hours?.length > 0 && (() => {
                               const wl = job.weatherLog;
@@ -7291,24 +7382,28 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                         <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Loaded on Truck</div>
                         {loaded.length === 0
                           ? <div style={{ fontSize: 12, color: t.textMuted }}>Nothing loaded.</div>
-                          : <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                          : <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
                               {(() => {
                                 const ocS       = Math.min(ti["oc_a"]||0, ti["oc_b"]||0);
                                 const ccS       = Math.min(ti["cc_a"]||0, ti["cc_b"]||0);
                                 const envOcS    = Math.min(ti["env_oc_a"]||0, ti["env_oc_b"]||0);
-                                const envCcS    = Math.min(ti["env_cc_a"]||0, ti["env_cc_b"]||0);
-                                const freeEnvOcS= Math.min(ti["free_env_oc_a"]||0, ti["free_env_oc_b"]||0);
+                                const envCcS    = Math.min(ti["env_oc_a"]||0, ti["env_cc_b"]||0);
                                 return <>
-                                  {ocS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit Open Cell — {ocS.toFixed(2)} sets</span>}
-                                  {ccS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit Closed Cell — {ccS.toFixed(2)} sets</span>}
-                                  {envOcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge Open Cell — {envOcS.toFixed(2)} sets</span>}
-                                  {envCcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge Closed Cell — {envCcS.toFixed(2)} sets</span>}
-                                  {freeEnvOcS > 0 && <span style={{ fontSize: 12, fontWeight: 600, background: "#f0fdf4", color: "#16a34a", padding: "3px 9px", borderRadius: 6 }}>FREE Enverge OC — {freeEnvOcS.toFixed(2)} sets</span>}
+                                  <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                                    {ocS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit Open Cell — {ocS.toFixed(2)} sets</span>}
+                                    {ccS > 0        && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Ambit Closed Cell — {ccS.toFixed(2)} sets</span>}
+                                    {envOcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge Open Cell — {envOcS.toFixed(2)} sets</span>}
+                                    {envCcS > 0     && <span style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>Enverge Closed Cell — {envCcS.toFixed(2)} sets</span>}
+                                  </div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                    {loaded.map(item => (
+                                      <div key={item.id} style={{ fontSize: 12, fontWeight: 600, color: t.text }}>
+                                        {item.name} — {Number(ti[item.id] || 0).toFixed(item.unit === "gal" || item.unit === "set" ? 2 : 0)} {item.unit}
+                                      </div>
+                                    ))}
+                                  </div>
                                 </>;
                               })()}
-                              {loaded.filter(item => !isFoam(item.id)).map(item => (
-                                <span key={item.id} style={{ fontSize: 12, fontWeight: 600, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6 }}>{item.name} — {ti[item.id]} {item.unit}</span>
-                              ))}
                             </div>
                         }
                       </div>
@@ -7447,8 +7542,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         {view === "inventory" && (() => {
           const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
-          const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
-          const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48));
+          const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
+          const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
           const searchLower = invSearch.toLowerCase();
           const sortItems = (arr) => [...arr].sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
           const stockStatus = (qty) => qty === 0 ? "out" : qty <= 2 ? "low" : "ok";
@@ -7626,6 +7721,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <div style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
                 {[
                   { id: "materials",     label: "Materials" },
+                  { id: "parity",        label: "Parity" },
                   { id: "summary",       label: "💰 Value" },
                   { id: "report",        label: "Usage Report" },
                   { id: "trucks",        label: "Truck Loads" },
@@ -7645,6 +7741,70 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   );
                 })}
               </div>
+
+              {invTab === "parity" && (() => {
+                const parity = warehouseInventoryParity || { mismatches: [], matches: true, warehouseEventCount: 0, warehouseSnapshotCount: 0, warehouseDeltaEventCount: 0 };
+                const topMismatches = (parity.mismatches || []).slice(0, 50);
+                const statusColor = parity.matches ? "#15803d" : "#b45309";
+                const statusBg = parity.matches ? "#f0fdf4" : "#fffbeb";
+                const statusBorder = parity.matches ? "#bbf7d0" : "#fde68a";
+                return (
+                  <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 16 }}>
+                      {[
+                        { label: "Status", value: parity.matches ? "Aligned" : `${parity.mismatchedItemCount} mismatches`, color: statusColor, bg: statusBg, border: statusBorder },
+                        { label: "Warehouse Events", value: parity.warehouseEventCount || 0 },
+                        { label: "Snapshots", value: parity.warehouseSnapshotCount || 0 },
+                        { label: "Delta Events", value: parity.warehouseDeltaEventCount || 0 },
+                      ].map((card) => (
+                        <div key={card.label} style={{ background: card.bg || "#fff", border: `1px solid ${card.border || t.border}`, borderRadius: 10, padding: 14 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>{card.label}</div>
+                          <div style={{ fontSize: 20, fontWeight: 800, color: card.color || t.text }}>{card.value}</div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ background: "#fff", border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden" }}>
+                      <div style={{ padding: "12px 14px", borderBottom: `1px solid ${t.borderLight}`, background: t.bg }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>Warehouse parity, legacy vs event-derived</div>
+                        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>
+                          Read only for now. Mismatches are surfaced for reconciliation, not auto-corrected.
+                          {parity.latestWarehouseEventAt ? ` Last event ${dateStr(parity.latestWarehouseEventAt)}.` : ""}
+                        </div>
+                      </div>
+                      {topMismatches.length === 0 ? (
+                        <div style={{ padding: 20, fontSize: 13, color: "#15803d" }}>No warehouse mismatches detected.</div>
+                      ) : (
+                        <div style={{ overflowX: "auto" }}>
+                          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: "#fff7ed" }}>
+                                <th style={{ textAlign: "left", padding: "8px 10px", borderBottom: `1px solid ${t.border}` }}>Item</th>
+                                <th style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${t.border}` }}>Legacy</th>
+                                <th style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${t.border}` }}>Event-Derived</th>
+                                <th style={{ textAlign: "right", padding: "8px 10px", borderBottom: `1px solid ${t.border}` }}>Delta</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {topMismatches.map((row) => (
+                                <tr key={row.itemId}>
+                                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${t.borderLight}` }}>
+                                    <div style={{ fontWeight: 600, color: t.text }}>{row.itemName || row.itemId}</div>
+                                    <div style={{ fontSize: 11, color: t.textMuted }}>{row.itemId}{row.unit ? ` · ${row.unit}` : ""}</div>
+                                  </td>
+                                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${t.borderLight}`, textAlign: "right" }}>{row.legacyQty}</td>
+                                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${t.borderLight}`, textAlign: "right" }}>{row.eventQty}</td>
+                                  <td style={{ padding: "8px 10px", borderBottom: `1px solid ${t.borderLight}`, textAlign: "right", fontWeight: 700, color: row.delta > 0 ? "#b91c1c" : "#0369a1" }}>{row.delta > 0 ? "+" : ""}{row.delta}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
 
               {invTab === "report" && (
@@ -7720,7 +7880,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               {/* ── Value Summary tab ── */}
               {invTab === "summary" && (() => {
                 const getQty = (itemId) => (inventory || []).find(r => r.itemId === itemId)?.qty || 0;
-                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
+                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
                 const getManufacturer = (item) => {
                   const cat = item.category || "";
                   if (item.unit === "bbl") return "Foam";
@@ -7851,7 +8011,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 </button>
                 {showReconcile && (
                   <div style={{ padding: "12px 16px", maxHeight: 320, overflowY: "auto" }}>
-                    <TruckReconcileView trucks={trucks} loadLog={loadLog} returnLog={returnLog} jobs={jobs} updates={updates} truckInventory={truckInventory} />
+                    <TruckReconcileView trucks={trucks} loadLog={loadLog} returnLog={returnLog} jobs={jobs} updates={updates} truckInventory={truckInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} />
                   </div>
                 )}
               </div>
@@ -8172,8 +8332,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         const { truck: hTruck, calMonth, calYear, selectedDate } = truckHistoryView;
         const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
         const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
-        const fmtQty = (itemId, qty) => isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + (INVENTORY_ITEMS.find(i => i.id === itemId)?.unit || "");
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const fmtQty = (itemId, qty) => isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + (INVENTORY_ITEMS.find(i => i.id === itemId)?.unit || "");
         const toCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }); // returns YYYY-MM-DD in CST
 
         // Group loads, unloads, and job usage by date for this truck
@@ -8692,16 +8852,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       {Object.entries(calViewJob.materialsUsed || {}).map(([itemId, qty]) => {
                         const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                         if (!item) return null;
-                        const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(itemId);
-                        const display = isFoamId ? Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                        const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(itemId);
+                        const display = isFoamId ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                         return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6, fontWeight: 600 }}>{item.name}: {display}</span>;
                       })}
                     </div>
                   </div>
                 )}
                 {(calViewJob.dailyMaterialLogs || []).map((log, idx) => {
-                  const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","free_env_oc_a","free_env_oc_b"].includes(id);
-                  const bblToGal = (qty, id) => Math.round(qty * (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48));
+                  const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+                  const bblToGal = (qty, id) => Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
                   const isEditing = editMatLogIdx === idx;
                   return (
                     <div key={idx} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: idx < calViewJob.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
@@ -8723,11 +8883,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             Object.entries(editMatLogQtys).forEach(([id, raw]) => {
                               const qty = parseFloat(raw);
                               if (!isNaN(qty) && qty > 0) {
-                                newMats[id] = isFoamId(id) ? Math.round(qty / (["cc_a","cc_b","env_cc_a","env_cc_b"].includes(id) ? 50 : 48) * 10000) / 10000 : qty;
+                                newMats[id] = isFoamId(id) ? Math.round(qty / (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 10000) / 10000 : qty;
                               }
                             });
-                            const newLogs = (calViewJob.dailyMaterialLogs || []).map((l, i) => i === idx ? {...l, materials: newMats} : l);
-                            await onEditJob(calViewJob.id, { ...calViewJob, dailyMaterialLogs: newLogs });
+                            const preservedTruckId = normalizeMaterialLogTruckId(log.truckId ?? calViewJob.truckId ?? null);
+                            await onSaveJobMaterials(calViewJob.id, {
+                              ...log,
+                              date: log.date,
+                              truckId: preservedTruckId,
+                              sourceTruckId: normalizeMaterialLogTruckId(log.truckId ?? null),
+                              materials: newMats,
+                            }, preservedTruckId);
                             setEditMatLogIdx(null); setEditMatLogQtys({});
                           }} style={{ marginTop: 6, width: "100%" }}>Save Changes</Button>
                         </div>
@@ -11309,6 +11475,7 @@ export default function App() {
   const [pmUpdates, setPmUpdates] = useState([]);
   const [members, setMembers] = useState([]);
   const [inventory, setInventory] = useState([]);
+  const [inventoryEvents, setInventoryEvents] = useState([]);
   const [truckInventory, setTruckInventory] = useState({});
   const [truckToolInventory, setTruckToolInventory] = useState({});
   const [tools, setTools] = useState([]);
@@ -11324,6 +11491,7 @@ export default function App() {
     const unsubPm = onSnapshot(collection(db, "pmUpdates"), (snap) => { setPmUpdates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubMembers = onSnapshot(collection(db, "crewMembers"), (snap) => { setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubInv = onSnapshot(collection(db, "inventory"), (snap) => { setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
+    const unsubInventoryEvents = onSnapshot(collection(db, "inventoryEvents"), (snap) => { setInventoryEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubTruckInv = onSnapshot(collection(db, "truckInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckInventory(m); });
     const unsubTruckToolInv = onSnapshot(collection(db, "truckToolInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckToolInventory(m); });
     const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
@@ -11348,25 +11516,155 @@ export default function App() {
     });
     const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubTruckInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
   }, []);
+
+  const derivedTruckInventory = useMemo(
+    () => deriveTruckInventoryFromEvents(truckInventory, inventoryEvents),
+    [truckInventory, inventoryEvents],
+  );
+  const truckInventoryParity = useMemo(
+    () => buildTruckInventoryParityMap(truckInventory, derivedTruckInventory, trucks),
+    [truckInventory, derivedTruckInventory, trucks],
+  );
+  const warehouseInventoryParity = useMemo(
+    () => getWarehouseInventoryParityReport({ legacyInventory: inventory, events: inventoryEvents, warehouseId: "main" }),
+    [inventory, inventoryEvents],
+  );
+  const jobUsageParityByJobId = useMemo(
+    () => buildJobUsageParityLookup(jobs, inventoryEvents),
+    [jobs, inventoryEvents],
+  );
+  const jobUsageParitySummary = useMemo(() => {
+    const closedOutRows = jobs
+      .filter((job) => job?.closedOut)
+      .map((job) => jobUsageParityByJobId[job.id])
+      .filter(Boolean);
+    const mismatchedJobs = closedOutRows.filter((row) => !row.isAligned);
+    return {
+      checkedJobCount: closedOutRows.length,
+      mismatchedJobCount: mismatchedJobs.length,
+    };
+  }, [jobs, jobUsageParityByJobId]);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
   const handleDeleteTruck = async (id) => { await deleteDoc(doc(db, "trucks", id)); };
   const handleReorderTruck = async (id, newOrder) => { await updateDoc(doc(db, "trucks", id), { order: newOrder }); };
   const handleUpdateTruck = async (id, fields) => { await updateDoc(doc(db, "trucks", id), fields); };
+  const getInventoryEventItemMeta = (itemId) => {
+    if (!itemId) return { itemId: null, itemName: null, unit: null, category: null };
+    const customName = itemId.startsWith("custom_") ? itemId.slice(7) : null;
+    const knownItem = INVENTORY_ITEMS.find(item => item.id === itemId);
+    const warehouseItem = inventory.find(row => row.itemId === itemId);
+    return {
+      itemId,
+      itemName: warehouseItem?.itemName || knownItem?.name || customName || itemId,
+      unit: warehouseItem?.unit || knownItem?.unit || null,
+      category: warehouseItem?.category || knownItem?.category || (customName ? "Custom" : null),
+    };
+  };
+  const writeInventoryEventsBestEffort = async (events, writeSource, context = {}) => {
+    if (!Array.isArray(events) || events.length === 0) return;
+    try {
+      await writeInventoryEvents(db, events, { writeSource });
+    } catch (error) {
+      console.warn(`inventory dual-write skipped for ${writeSource}`, { ...context, error });
+    }
+  };
+  const areTruckInventoryStatesEqual = (left = {}, right = {}) => {
+    const keys = new Set([
+      ...Object.keys(left || {}),
+      ...Object.keys(right || {}),
+    ]);
+    for (const key of keys) {
+      if (key === "_custom") continue;
+      if (roundInventoryQty(left?.[key] || 0) !== roundInventoryQty(right?.[key] || 0)) return false;
+    }
+    return true;
+  };
+  const commitDirectTruckInventoryMutation = async ({ truckId, mutationKind, writeSource, applyMutation, metadata = {}, legacy = {} }) => {
+    if (!truckId || typeof applyMutation !== "function") return null;
+    const truckRef = doc(db, "truckInventory", truckId);
+    const occurredAt = new Date().toISOString();
+    const truck = trucks.find((entry) => entry.id === truckId);
+    const truckName = truck?.vehicleName || truck?.members || truck?.name || null;
+    let nextTruckState = null;
+    let didChange = false;
+
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(truckRef);
+      const priorTruckState = snap.exists() ? snap.data() : {};
+      const updatedTruckState = applyMutation(priorTruckState);
+      if (areTruckInventoryStatesEqual(priorTruckState, updatedTruckState)) return;
+      didChange = true;
+      nextTruckState = updatedTruckState;
+      tx.set(truckRef, updatedTruckState);
+    });
+
+    if (!didChange || !nextTruckState) return nextTruckState;
+
+    const inventoryEvents = adaptLegacyTruckInventoryToSnapshotEvents({
+      truckId,
+      truckName,
+      truckInventory: nextTruckState,
+      occurredAt,
+      actor: {
+        actorId: crewSession?.memberId || null,
+        actorName: crewSession?.crewName || null,
+        actorRole: "crew",
+        source: "crew-dashboard",
+      },
+      legacyDocId: truckId,
+    }).map((event) => ({
+      ...event,
+      metadata: {
+        ...(event.metadata || {}),
+        eventKind: "direct_truck_inventory_snapshot",
+        mutationKind,
+        ...metadata,
+      },
+      legacy: {
+        ...(event.legacy || {}),
+        ...legacy,
+      },
+    }));
+
+    await writeInventoryEventsBestEffort(inventoryEvents, writeSource, { truckId, mutationKind });
+    return nextTruckState;
+  };
+  const buildWarehouseAdjustmentEvent = ({ itemId, beforeQty, afterQty, occurredAt, actor, notes = null, correlationKey = null, metadata = {}, legacy = {} }) => buildInventoryEvent({
+    eventType: INVENTORY_EVENT_TYPES.warehouseAdjustment,
+    occurredAt,
+    actor,
+    item: getInventoryEventItemMeta(itemId),
+    quantity: {
+      delta: roundInventoryQty(afterQty - beforeQty),
+      before: roundInventoryQty(beforeQty),
+      after: roundInventoryQty(afterQty),
+    },
+    location: { warehouseId: "main" },
+    refs: { legacyCollection: "inventory", legacyDocId: itemId, correlationKey },
+    notes,
+    metadata,
+    legacy,
+  });
   const handleAdminSetLoadout = async (truckId, newState, type = "adjusted", notes = "") => {
     const truckRef = doc(db, "truckInventory", truckId);
-    // Read current truck state to calculate the delta against warehouse
+    const occurredAt = new Date().toISOString();
+    const truck = trucks.find(tr => tr.id === truckId);
+    const truckName = truck?.vehicleName || truck?.members || truck?.name || null;
+    const actor = { actorName: adminName || null, actorRole: "admin", source: "admin-dashboard" };
+    const correlationKey = ["admin-set-loadout", truckId || "truck", occurredAt].join("::");
     const snap = await getDoc(truckRef);
     const oldState = snap.exists() ? snap.data() : {};
-    // Reconcile warehouse: items added to truck → deduct from warehouse; items removed → return to warehouse
     const allKeys = new Set([
       ...Object.keys(oldState).filter(k => k !== "_custom"),
       ...Object.keys(newState).filter(k => k !== "_custom"),
     ]);
     const loadLogItems = {};
     const returnLogItems = {};
+    const loadItems = [];
+    const returnItems = [];
     for (const key of allKeys) {
       const oldQty = typeof oldState[key] === "number" ? oldState[key] : 0;
       const newQty = typeof newState[key] === "number" ? newState[key] : 0;
@@ -11375,28 +11673,89 @@ export default function App() {
       const rec = inventory.find(r => r.itemId === key);
       const warehouseQty = rec?.qty || 0;
       if (delta > 0) {
-        // More on truck — deduct from warehouse
-        await handleUpdateInventory(key, Math.max(0, Math.round((warehouseQty - delta) * 100) / 100));
+        await handleUpdateInventory(key, Math.max(0, Math.round((warehouseQty - delta) * 100) / 100), {
+          actor,
+          occurredAt,
+          notes,
+          correlationKey,
+          metadata: { eventKind: "admin_set_loadout", type },
+          legacy: { truckId, type, notes },
+          skipEventWrite: true,
+        });
         loadLogItems[key] = delta;
+        loadItems.push({ ...getInventoryEventItemMeta(key), qty: delta });
       } else {
-        // Less on truck — return to warehouse
-        await handleUpdateInventory(key, Math.round((warehouseQty + Math.abs(delta)) * 100) / 100);
+        await handleUpdateInventory(key, Math.round((warehouseQty + Math.abs(delta)) * 100) / 100, {
+          actor,
+          occurredAt,
+          notes,
+          correlationKey,
+          metadata: { eventKind: "admin_set_loadout", type },
+          legacy: { truckId, type, notes },
+          skipEventWrite: true,
+        });
         returnLogItems[key] = Math.abs(delta);
+        returnItems.push({ ...getInventoryEventItemMeta(key), qty: Math.abs(delta) });
       }
     }
     await setDoc(truckRef, newState);
     if (Object.keys(loadLogItems).length > 0) {
-      await addDoc(collection(db, "loadLog"), { truckId, items: loadLogItems, notes, type, timestamp: new Date().toISOString() });
+      await addDoc(collection(db, "loadLog"), { truckId, items: loadLogItems, notes, type, timestamp: occurredAt });
     }
     if (Object.keys(returnLogItems).length > 0) {
-      await addDoc(collection(db, "returnLog"), { truckId, items: returnLogItems, notes, type, timestamp: new Date().toISOString() });
+      await addDoc(collection(db, "returnLog"), { truckId, items: returnLogItems, notes, type, timestamp: occurredAt });
     }
+    const transferEvents = [
+      ...adaptTruckTransferToEvents({
+        items: loadItems,
+        truckId,
+        truckName,
+        direction: "load",
+        occurredAt,
+        actor,
+        refs: { correlationKey },
+        metadata: { eventKind: "admin_set_loadout", type },
+        legacy: { truckId, type, notes, source: "handleAdminSetLoadout" },
+      }),
+      ...adaptTruckTransferToEvents({
+        items: returnItems,
+        truckId,
+        truckName,
+        direction: "return",
+        occurredAt,
+        actor,
+        refs: { correlationKey },
+        metadata: { eventKind: "admin_set_loadout", type },
+        legacy: { truckId, type, notes, source: "handleAdminSetLoadout" },
+      }),
+    ];
+    const snapshotEvents = adaptLegacyTruckInventoryToSnapshotEvents({
+      truckId,
+      truckName,
+      truckInventory: newState,
+      occurredAt,
+      actor,
+      legacyDocId: truckId,
+    }).map(event => ({
+      ...event,
+      refs: { ...(event.refs || {}), correlationKey },
+      metadata: { ...(event.metadata || {}), eventKind: "admin_set_loadout_snapshot", type },
+      notes: event.notes || notes || null,
+      legacy: { ...(event.legacy || {}), truckId, type, notes, source: "handleAdminSetLoadout" },
+    }));
+    await writeInventoryEventsBestEffort([...transferEvents, ...snapshotEvents], "admin-set-loadout-dual-write", { truckId, type });
   };
   const handleAdminUnload = async (truckId, itemsToUnload, unloadQtys, notes = "") => {
     const truckRef = doc(db, "truckInventory", truckId);
+    const occurredAt = new Date().toISOString();
+    const truck = trucks.find(tr => tr.id === truckId);
+    const truckName = truck?.vehicleName || truck?.members || truck?.name || null;
+    const actor = { actorName: adminName || null, actorRole: "admin", source: "admin-dashboard" };
+    const correlationKey = ["admin-unload", truckId || "truck", occurredAt].join("::");
     const snap = await getDoc(truckRef);
     const state = snap.exists() ? { ...snap.data() } : {};
     const logItems = {};
+    const returnedItems = [];
     for (const item of itemsToUnload) {
       const qty = parseFloat(unloadQtys[item.key]) || 0;
       if (qty <= 0) continue;
@@ -11407,24 +11766,52 @@ export default function App() {
         }).filter(c => c.qty > 0);
         state._custom = custom;
         logItems["custom_" + item.name] = qty;
-        // Add to warehouse inventory as a custom item (find or create)
         const existingInv = inventory.find(r => r.itemId === "custom_" + item.name);
         const curQty = existingInv?.qty || 0;
-        await handleUpdateInventory("custom_" + item.name, curQty + qty);
+        await handleUpdateInventory("custom_" + item.name, curQty + qty, {
+          actor,
+          occurredAt,
+          notes,
+          correlationKey,
+          metadata: { eventKind: "admin_unload", customItem: true },
+          legacy: { truckId, notes },
+          skipEventWrite: true,
+        });
+        returnedItems.push({ ...getInventoryEventItemMeta("custom_" + item.name), stillHave: qty });
       } else {
         const cur = state[item.key] || 0;
         const newQty = Math.max(0, Math.round((cur - qty) * 100) / 100);
         if (newQty > 0) state[item.key] = newQty; else delete state[item.key];
         logItems[item.key] = qty;
-        // Add back to warehouse inventory
         const existingInv = inventory.find(r => r.itemId === item.key);
         const curQty = existingInv?.qty || 0;
-        await handleUpdateInventory(item.key, Math.round((curQty + qty) * 100) / 100);
+        await handleUpdateInventory(item.key, Math.round((curQty + qty) * 100) / 100, {
+          actor,
+          occurredAt,
+          notes,
+          correlationKey,
+          metadata: { eventKind: "admin_unload" },
+          legacy: { truckId, notes },
+          skipEventWrite: true,
+        });
+        returnedItems.push({ ...getInventoryEventItemMeta(item.key), stillHave: qty });
       }
     }
     await setDoc(truckRef, state);
     if (Object.keys(logItems).length > 0) {
-      await addDoc(collection(db, "returnLog"), { truckId, items: logItems, notes, timestamp: new Date().toISOString() });
+      await addDoc(collection(db, "returnLog"), { truckId, items: logItems, notes, timestamp: occurredAt });
+      const events = adaptTruckTransferToEvents({
+        items: returnedItems,
+        truckId,
+        truckName,
+        direction: "return",
+        occurredAt,
+        actor,
+        refs: { correlationKey },
+        metadata: { eventKind: "admin_unload" },
+        legacy: { truckId, notes, source: "handleAdminUnload" },
+      });
+      await writeInventoryEventsBestEffort(events, "admin-unload-dual-write", { truckId });
     }
   };
   const handleAddJob = async (data) => { await addDoc(collection(db, "jobs"), data); };
@@ -11437,15 +11824,67 @@ export default function App() {
     pmSnap.forEach(async (d) => { await deleteDoc(doc(db, "pmUpdates", d.id)); });
   };
   const handleSubmitUpdate = async (data) => { await addDoc(collection(db, "updates"), { ...data, createdAt: serverTimestamp() }); };
-  const handleEditJob = async (id, data) => { await updateDoc(doc(db, "jobs", id), data); };
+  const handleEditJob = async (id, data) => {
+    const touchesMaterialUsage = !!data && typeof data === "object" && (
+      Object.prototype.hasOwnProperty.call(data, "dailyMaterialLogs")
+      || Object.prototype.hasOwnProperty.call(data, "materialsUsed")
+    );
+
+    if (!touchesMaterialUsage) {
+      await updateDoc(doc(db, "jobs", id), data);
+      return;
+    }
+
+    const jobRef = doc(db, "jobs", id);
+    await runTransaction(db, async (tx) => {
+      const jobSnap = await tx.get(jobRef);
+      if (!jobSnap.exists()) return;
+
+      const existingJob = { id: jobSnap.id, ...jobSnap.data() };
+      const nextJob = { ...existingJob, ...data };
+      const previousUsageByTruck = aggregateJobMaterialsByTruck(existingJob);
+      const nextUsageByTruck = aggregateJobMaterialsByTruck(nextJob);
+      const touchedTruckIds = Array.from(new Set([
+        ...Object.keys(previousUsageByTruck),
+        ...Object.keys(nextUsageByTruck),
+      ].filter(Boolean)));
+
+      for (const truckId of touchedTruckIds) {
+        const truckRef = doc(db, "truckInventory", truckId);
+        const truckSnap = await tx.get(truckRef);
+        const truckState = truckSnap.exists() ? truckSnap.data() : {};
+        tx.set(
+          truckRef,
+          applyTruckUsageDelta(truckState, previousUsageByTruck[truckId] || {}, nextUsageByTruck[truckId] || {}),
+        );
+      }
+
+      tx.update(jobRef, data);
+    });
+  };
   const handleSubmitTicket = async (data) => { await addDoc(collection(db, "tickets"), { ...data, createdAt: serverTimestamp() }); };
   const handleUpdateTicket = async (id, data) => { await updateDoc(doc(db, "tickets", id), data); };
   const handleLogAction = async (action) => { await addDoc(collection(db, "activityLog"), { user: adminName, action, timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
   const handleSubmitPmUpdate = async (data) => { await addDoc(collection(db, "pmUpdates"), { ...data, createdAt: serverTimestamp() }); };
-  const handleUpdateInventory = async (itemId, qty) => {
+  const handleUpdateInventory = async (itemId, qty, options = {}) => {
+    const {
+      actor = { actorName: adminName || null, actorRole: adminName ? "admin" : "system", source: adminName ? "admin-dashboard" : "system" },
+      occurredAt = new Date().toISOString(),
+      notes = null,
+      correlationKey = null,
+      metadata = {},
+      legacy = {},
+      skipEventWrite = false,
+    } = options || {};
     const existing = inventory.find(r => r.itemId === itemId);
+    const beforeQty = roundInventoryQty(existing?.qty || 0);
+    const afterQty = roundInventoryQty(qty);
     if (existing) { await updateDoc(doc(db, "inventory", existing.id), { qty }); }
-    else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: new Date().toISOString() }); }
+    else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: occurredAt }); }
+    if (skipEventWrite || beforeQty === afterQty) return;
+    await writeInventoryEventsBestEffort([
+      buildWarehouseAdjustmentEvent({ itemId, beforeQty, afterQty, occurredAt, actor, notes, correlationKey, metadata, legacy }),
+    ], "warehouse-adjustment-dual-write", { itemId, correlationKey });
   };
 
   const [builders, setBuilders] = React.useState([]);
@@ -11505,54 +11944,8 @@ export default function App() {
     }
   };
 
-  // Deduct job materials from truck. usedMap = { itemId: qty } (tubes and loose pcs as entered by crew).
-  // Reads fresh from Firestore, computes remaining, writes back.
-  const handleDeductFromTruck = async (truckId, usedMap) => {
-    if (!truckId || !usedMap || Object.keys(usedMap).length === 0) return;
-    const truckRef = doc(db, "truckInventory", truckId);
-    const snap = await getDoc(truckRef);
-    const state = snap.exists() ? { ...snap.data() } : {};
-    // Process each tube item that was used
-    INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
-      const used = parseFloat(usedMap[item.id]) || 0;
-      if (item.pcsPerTube) {
-        // For tube items: convert everything to pieces, deduct, convert back
-        const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
-        const usedLoose = pcsItem ? (parseFloat(usedMap[pcsItem.id]) || 0) : 0;
-        if (used === 0 && usedLoose === 0) return; // nothing used for this item
-        const curTubes = state[item.id] || 0;
-        const curLoose = pcsItem ? (state[pcsItem.id] || 0) : 0;
-        const totalPcsOnTruck = curTubes * item.pcsPerTube + curLoose;
-        const totalPcsUsed = used * item.pcsPerTube + usedLoose;
-        const remaining = Math.max(0, totalPcsOnTruck - totalPcsUsed);
-        const newTubes = Math.floor(remaining / item.pcsPerTube);
-        const newLoose = remaining % item.pcsPerTube;
-        if (newTubes > 0) { state[item.id] = newTubes; } else { delete state[item.id]; }
-        if (pcsItem) {
-          if (newLoose > 0) { state[pcsItem.id] = newLoose; } else { delete state[pcsItem.id]; }
-        }
-      } else {
-        if (used === 0) return;
-        // Simple item (bags, foam already converted to barrels)
-        const cur = state[item.id] || 0;
-        const remaining = Math.max(0, Math.round((cur - used) * 100) / 100);
-        if (remaining > 0) { state[item.id] = remaining; } else { delete state[item.id]; }
-      }
-    });
-    await setDoc(truckRef, state);
-  };
-  // Adjust truck inventory by delta between old and new used quantities.
-  // Positive delta (used more) deducts from truck; negative (used less) adds back.
-  const handleSaveTruckToolInventory = async (truckId, counts) => {
-    if (!truckId) return;
-    await setDoc(doc(db, "truckToolInventory", truckId), { ...counts, updatedAt: new Date().toISOString() }, { merge: true });
-  };
-
-  const handleDeltaAdjustTruck = async (truckId, oldUsed, newUsed) => {
-    if (!truckId) return;
-    const truckRef = doc(db, "truckInventory", truckId);
-    const snap = await getDoc(truckRef);
-    const state = snap.exists() ? { ...snap.data() } : {};
+  const applyTruckUsageDelta = (baseState, oldUsed = {}, newUsed = {}) => {
+    const state = { ...(baseState || {}) };
     INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
       const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
       const oldTubes = parseFloat(oldUsed[item.id]) || 0;
@@ -11565,49 +11958,191 @@ export default function App() {
         const curTubes = state[item.id] || 0;
         const curLoose = pcsItem ? (state[pcsItem.id] || 0) : 0;
         const remaining = Math.max(0, curTubes * item.pcsPerTube + curLoose - delta);
-        const newT = Math.floor(remaining / item.pcsPerTube);
-        const newL = remaining % item.pcsPerTube;
-        if (newT > 0) { state[item.id] = newT; } else { delete state[item.id]; }
-        if (pcsItem) { if (newL > 0) { state[pcsItem.id] = newL; } else { delete state[pcsItem.id]; } }
+        const nextTubes = Math.floor(remaining / item.pcsPerTube);
+        const nextLoose = remaining % item.pcsPerTube;
+        if (nextTubes > 0) state[item.id] = nextTubes; else delete state[item.id];
+        if (pcsItem) {
+          if (nextLoose > 0) state[pcsItem.id] = nextLoose; else delete state[pcsItem.id];
+        }
       } else {
         const delta = newTubes - oldTubes;
         if (delta === 0) return;
         const cur = state[item.id] || 0;
         const remaining = Math.max(0, Math.round((cur - delta) * 100) / 100);
-        if (remaining > 0) { state[item.id] = remaining; } else { delete state[item.id]; }
+        if (remaining > 0) state[item.id] = remaining; else delete state[item.id];
       }
     });
-    await setDoc(truckRef, state);
+    return state;
+  };
+
+  const upsertDailyMaterialLog = (logs = [], entry) => {
+    const normalizedEntry = { ...entry, truckId: normalizeMaterialLogTruckId(entry?.truckId) };
+    return [
+      ...logs.filter(e => !(e.date === normalizedEntry.date && materialLogMatchesTruck(e, normalizedEntry.truckId))),
+      normalizedEntry,
+    ];
+  };
+
+  const aggregateJobMaterialsByTruck = (jobLike = {}) => {
+    const usageByTruck = {};
+    const addUsage = (truckId, materials = {}) => {
+      const normalizedTruckId = normalizeMaterialLogTruckId(truckId || jobLike?.truckId);
+      if (!normalizedTruckId) return;
+      Object.entries(materials || {}).forEach(([id, qty]) => {
+        const parsedQty = parseFloat(qty) || 0;
+        if (parsedQty <= 0) return;
+        usageByTruck[normalizedTruckId] ||= {};
+        usageByTruck[normalizedTruckId][id] = (usageByTruck[normalizedTruckId][id] || 0) + parsedQty;
+      });
+    };
+
+    (jobLike?.dailyMaterialLogs || []).forEach((log) => addUsage(log?.truckId, log?.materials));
+    addUsage(jobLike?.truckId, jobLike?.materialsUsed || {});
+
+    return usageByTruck;
+  };
+
+  // Deduct job materials from truck. usedMap = { itemId: qty } (tubes and loose pcs as entered by crew).
+  // Transaction-backed so concurrent saves don't overwrite each other.
+  const handleDeductFromTruck = async (truckId, usedMap) => {
+    if (!truckId || !usedMap || Object.keys(usedMap).length === 0) return;
+    await commitDirectTruckInventoryMutation({
+      truckId,
+      mutationKind: "deduct_from_truck",
+      writeSource: "truck-direct-deduct-dual-write",
+      applyMutation: (state) => applyTruckUsageDelta(state, {}, usedMap),
+      metadata: {
+        eventKind: "direct_truck_inventory_snapshot",
+        adjustmentMode: "deduct",
+      },
+      legacy: {
+        usedMap,
+      },
+    });
+  };
+  // Adjust truck inventory by delta between old and new used quantities.
+  // Positive delta (used more) deducts from truck; negative (used less) adds back.
+  const handleSaveTruckToolInventory = async (truckId, counts) => {
+    if (!truckId) return;
+    await setDoc(doc(db, "truckToolInventory", truckId), { ...counts, updatedAt: new Date().toISOString() }, { merge: true });
+  };
+
+  const handleDeltaAdjustTruck = async (truckId, oldUsed, newUsed) => {
+    if (!truckId) return;
+    await commitDirectTruckInventoryMutation({
+      truckId,
+      mutationKind: "delta_adjust_truck",
+      writeSource: "truck-direct-delta-adjust-dual-write",
+      applyMutation: (state) => applyTruckUsageDelta(state, oldUsed, newUsed),
+      metadata: {
+        eventKind: "direct_truck_inventory_snapshot",
+        adjustmentMode: "delta",
+      },
+      legacy: {
+        oldUsed: oldUsed || {},
+        newUsed: newUsed || {},
+      },
+    });
   };
   const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
     if (!truckId) return;
     const truckRef = doc(db, "truckInventory", truckId);
+    const occurredAt = new Date().toISOString();
+    const truckName = trucks.find((truck) => truck.id === truckId)?.name || null;
     // Read current truck state
     const snap = await getDoc(truckRef);
     const state = snap.exists() ? { ...snap.data() } : {};
     const logItems = {};
+    const canonicalItems = [];
     for (const m of materials) {
       const stillHave = m.stillHave || 0;
       if (stillHave > 0) {
         // Add back to warehouse
         const rec = inventory.find(r => r.itemId === m.itemId);
+        const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
         const current = rec?.qty || 0;
-        await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100);
+        await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100, {
+          actor: {
+            actorId: crewSession?.memberId || null,
+            actorName: crewSession?.crewName || null,
+            actorRole: "crew",
+            source: "crew-dashboard",
+          },
+          occurredAt,
+          notes: returnMode,
+          correlationKey: [truckId, returnMode || "return", occurredAt].join("::"),
+          metadata: {
+            returnMode,
+            eventKind: "truck_transfer_warehouse_adjustment",
+          },
+          legacy: {
+            items: logItems,
+            truckInventoryState: state,
+          },
+          skipEventWrite: true,
+        });
         logItems[m.itemId] = stillHave;
-        // Remove only this item from truck state (don't wipe everything)
-        delete state[m.itemId];
+        canonicalItems.push({
+          itemId: m.itemId,
+          itemName: inventoryItem?.name || rec?.itemName || null,
+          unit: inventoryItem?.unit || rec?.unit || null,
+          category: inventoryItem?.category || null,
+          qty: stillHave,
+        });
+        // Remove only the returned quantity from truck state
+        const currentTruckQty = parseFloat(state[m.itemId]) || 0;
+        const nextTruckQty = Math.round((currentTruckQty - stillHave) * 1000) / 1000;
+        if (nextTruckQty > 0) {
+          state[m.itemId] = nextTruckQty;
+        } else {
+          delete state[m.itemId];
+        }
       }
     }
     if (Object.keys(logItems).length > 0) {
-      await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: new Date().toISOString(), crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
+      await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: occurredAt, crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
     }
     // Write back with only returned items removed
     await setDoc(truckRef, state);
+    if (canonicalItems.length > 0) {
+      const inventoryEvents = adaptTruckTransferToEvents({
+        items: canonicalItems,
+        truckId,
+        truckName,
+        direction: "return",
+        occurredAt,
+        effectiveDate: todayCST(),
+        actor: {
+          actorId: crewSession?.memberId || null,
+          actorName: crewSession?.crewName || null,
+          actorRole: "crew",
+          source: "crew-dashboard",
+        },
+        refs: {
+          legacyCollection: "returnLog",
+          legacyLogType: returnMode,
+          correlationKey: [truckId, returnMode || "return", occurredAt].join("::"),
+        },
+        metadata: {
+          returnMode,
+        },
+        legacy: {
+          items: logItems,
+          truckInventoryState: state,
+        },
+      });
+      try {
+        await writeInventoryEvents(db, inventoryEvents, { writeSource: "truck-return-dual-write" });
+      } catch (error) {
+        console.warn("inventory dual-write skipped for truck return", { truckId, returnMode, error });
+      }
+    }
   };
-  const handleCloseOutJob = async (jobId, materialsUsed) => {
+  const handleCloseOutJob = async (jobId, materialsUsed, truckId = null) => {
     if (!jobId) return;
     const closedAt = new Date().toISOString();
     const todayISO = new Date().toLocaleDateString("en-CA");
+    let closeoutInventoryEvents = [];
     // Fetch weather snapshot for this job (7am–4pm window)
     let weatherLog = null;
     try {
@@ -11643,43 +12178,210 @@ export default function App() {
         }
       }
     } catch {}
-    await updateDoc(doc(db, "jobs", jobId), { closedOut: true, materialsUsed: materialsUsed || null, closedAt, ...(weatherLog ? { weatherLog } : {}) });
+    const jobRef = doc(db, "jobs", jobId);
+    const truckRef = truckId ? doc(db, "truckInventory", truckId) : null;
+    await runTransaction(db, async (tx) => {
+      const jobSnap = await tx.get(jobRef);
+      if (!jobSnap.exists()) return;
+      const jobData = jobSnap.data();
+      const dailyLogged = {};
+      (jobData.dailyMaterialLogs || []).forEach(log => {
+        Object.entries(log.materials || {}).forEach(([id, qty]) => {
+          dailyLogged[id] = (dailyLogged[id] || 0) + (parseFloat(qty) || 0);
+        });
+      });
+      const netNew = {};
+      Object.entries(materialsUsed || {}).forEach(([id, qty]) => {
+        const extra = Math.max(0, (parseFloat(qty) || 0) - (dailyLogged[id] || 0));
+        if (extra > 0) netNew[id] = extra;
+      });
+      closeoutInventoryEvents = adaptCloseoutMaterialsUsedDeltaToEvents({
+        job: { ...jobData, id: jobId, closedAt },
+        materialsUsed: netNew,
+        legacyDocId: jobId,
+        truckId,
+        occurredAt: closedAt,
+        effectiveDate: todayISO,
+        actor: {
+          actorId: crewSession?.memberId || null,
+          actorName: crewSession?.crewName || null,
+          actorRole: "crew",
+          source: "crew-dashboard",
+        },
+      });
+      if (truckRef && Object.keys(netNew).length > 0) {
+        const truckSnap = await tx.get(truckRef);
+        const truckState = truckSnap.exists() ? truckSnap.data() : {};
+        tx.set(truckRef, applyTruckUsageDelta(truckState, {}, netNew));
+      }
+      tx.update(jobRef, { closedOut: true, materialsUsed: materialsUsed || null, closedAt, ...(weatherLog ? { weatherLog } : {}) });
+    });
+    if (closeoutInventoryEvents.length > 0) {
+      try {
+        await writeInventoryEvents(db, closeoutInventoryEvents, { writeSource: "closeout-materials-dual-write" });
+      } catch (error) {
+        console.warn("inventory dual-write skipped for closeout materials", { jobId, error });
+      }
+    }
   };
-  const handleSaveJobMaterials = async (jobId, materialsUsed) => {
-    if (jobId) await updateDoc(doc(db, "jobs", jobId), { materialsUsed: materialsUsed || null });
+  const handleSaveJobMaterials = async (jobId, payload, truckId = null) => {
+    if (!jobId) return;
+    if (!(payload && typeof payload === "object" && payload.date && payload.materials)) {
+      console.warn("Blocked legacy raw materialsUsed write; expected dated daily material log payload.", { jobId, payload });
+      return;
+    }
+    const jobRef = doc(db, "jobs", jobId);
+    const truckRef = truckId ? doc(db, "truckInventory", truckId) : null;
+    let eventWriteContext = null;
+    await runTransaction(db, async (tx) => {
+      const jobSnap = await tx.get(jobRef);
+      if (!jobSnap.exists()) return;
+      const jobData = jobSnap.data();
+      const existingLogs = jobData.dailyMaterialLogs || [];
+      const lookupTruckId = payload.sourceTruckId !== undefined ? payload.sourceTruckId : payload.truckId;
+      const priorEntry = findDailyMaterialLog(existingLogs, payload.date, lookupTruckId);
+      const priorMaterials = priorEntry?.materials || {};
+      const effectiveTruckId = normalizeMaterialLogTruckId(payload.truckId ?? priorEntry?.truckId ?? jobData.truckId ?? null);
+      const priorTruckId = normalizeMaterialLogTruckId(priorEntry?.truckId ?? lookupTruckId ?? null);
+      const nextEntry = { ...priorEntry, ...payload, truckId: effectiveTruckId };
+      eventWriteContext = { jobData, priorEntry, nextEntry };
+      if (priorTruckId && priorTruckId !== effectiveTruckId) {
+        const priorTruckRef = doc(db, "truckInventory", priorTruckId);
+        const priorTruckSnap = await tx.get(priorTruckRef);
+        const priorTruckState = priorTruckSnap.exists() ? priorTruckSnap.data() : {};
+        tx.set(priorTruckRef, applyTruckUsageDelta(priorTruckState, priorMaterials, {}));
+      }
+      if (effectiveTruckId) {
+        const effectiveTruckRef = doc(db, "truckInventory", effectiveTruckId);
+        const effectiveTruckSnap = await tx.get(effectiveTruckRef);
+        const effectiveTruckState = effectiveTruckSnap.exists() ? effectiveTruckSnap.data() : {};
+        const oldForTargetTruck = priorTruckId === effectiveTruckId ? priorMaterials : {};
+        tx.set(effectiveTruckRef, applyTruckUsageDelta(effectiveTruckState, oldForTargetTruck, nextEntry.materials || {}));
+      }
+      const { sourceTruckId, ...jobEntry } = nextEntry;
+      tx.update(jobRef, { dailyMaterialLogs: upsertDailyMaterialLog(existingLogs, jobEntry) });
+    });
+    if (eventWriteContext?.jobData && eventWriteContext?.nextEntry) {
+      const eventLogPayload = {
+        ...eventWriteContext.nextEntry,
+        audit: {
+          source: "crew-dashboard",
+          actorRole: "crew",
+          capturedAt: new Date().toISOString(),
+        },
+      };
+      const inventoryEvents = adaptLiveDailyMaterialLogUpsertToEvents({
+        job: { ...eventWriteContext.jobData, id: jobId },
+        log: eventLogPayload,
+        priorLog: eventWriteContext.priorEntry,
+        actor: {
+          actorId: crewSession?.memberId || null,
+          actorName: payload?.loggedBy || crewSession?.crewName || null,
+          actorRole: "crew",
+          source: "crew-dashboard",
+        },
+        legacyDocId: jobId,
+      });
+      if (inventoryEvents.length > 0) {
+        try {
+          await writeInventoryEvents(db, inventoryEvents, { writeSource: "daily-material-log-dual-write" });
+        } catch (error) {
+          console.warn("inventory dual-write skipped for daily material log save", { jobId, error });
+        }
+      }
+    }
   };
   const handleLogDailyMaterials = async (jobId, entry, upsert = false) => {
-    if (!jobId) return;
-    const jobRef = doc(db, "jobs", jobId);
-    const snap = await getDoc(jobRef);
-    const existing = snap.exists() ? (snap.data().dailyMaterialLogs || []) : [];
-    const updated = upsert
-      ? [...existing.filter(e => e.date !== entry.date), entry]
-      : [...existing, entry];
-    await updateDoc(jobRef, { dailyMaterialLogs: updated });
+    if (!jobId || !entry) return;
+    if (!(entry.date && entry.materials)) {
+      console.warn("Skipped daily materials log without canonical dated payload.", { jobId, entry, upsert });
+      return;
+    }
+    await handleSaveJobMaterials(jobId, {
+      ...entry,
+      truckId: normalizeMaterialLogTruckId(entry?.truckId),
+    }, normalizeMaterialLogTruckId(entry?.truckId));
   };
   const handleLoadTruck = async (itemsLoaded, truckId) => {
     const truckRef = doc(db, "truckInventory", truckId);
+    const occurredAt = new Date().toISOString();
+    const truckName = trucks.find((truck) => truck.id === truckId)?.name || null;
     // Read current truck state so we ADD to existing qty, not overwrite
     const snap = await getDoc(truckRef);
     const currentTruck = snap.exists() ? snap.data() : {};
     const updatedTruck = { ...currentTruck };
     const logItems = {};
+    const canonicalItems = [];
     for (const m of itemsLoaded) {
       if (m.qty > 0) {
         const warehouseRec = inventory.find(r => r.itemId === m.itemId);
+        const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
         const warehouseQty = warehouseRec?.qty || 0;
         // Deduct from warehouse
-        await handleUpdateInventory(m.itemId, Math.max(0, Math.round((warehouseQty - m.qty) * 1000) / 1000));
+        await handleUpdateInventory(m.itemId, Math.max(0, Math.round((warehouseQty - m.qty) * 1000) / 1000), {
+          actor: {
+            actorId: crewSession?.memberId || null,
+            actorName: crewSession?.crewName || null,
+            actorRole: "crew",
+            source: "crew-dashboard",
+          },
+          occurredAt,
+          notes: "load",
+          correlationKey: [truckId, "load", occurredAt].join("::"),
+          metadata: {
+            eventKind: "truck_transfer_warehouse_adjustment",
+          },
+          legacy: {
+            items: logItems,
+            truckInventoryState: updatedTruck,
+          },
+          skipEventWrite: true,
+        });
         // ADD to existing truck qty (not overwrite)
         const existingOnTruck = typeof currentTruck[m.itemId] === "number" ? currentTruck[m.itemId] : 0;
         updatedTruck[m.itemId] = Math.round((existingOnTruck + m.qty) * 1000) / 1000;
         logItems[m.itemId] = m.qty;
+        canonicalItems.push({
+          itemId: m.itemId,
+          itemName: inventoryItem?.name || warehouseRec?.itemName || null,
+          unit: inventoryItem?.unit || warehouseRec?.unit || null,
+          category: inventoryItem?.category || null,
+          qty: m.qty,
+        });
       }
     }
     await setDoc(truckRef, updatedTruck);
     if (Object.keys(logItems).length > 0) {
-      await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: new Date().toISOString(), crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
+      await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: occurredAt, crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
+    }
+    if (canonicalItems.length > 0) {
+      const inventoryEvents = adaptTruckTransferToEvents({
+        items: canonicalItems,
+        truckId,
+        truckName,
+        direction: "load",
+        occurredAt,
+        effectiveDate: todayCST(),
+        actor: {
+          actorId: crewSession?.memberId || null,
+          actorName: crewSession?.crewName || null,
+          actorRole: "crew",
+          source: "crew-dashboard",
+        },
+        refs: {
+          legacyCollection: "loadLog",
+          correlationKey: [truckId, "load", occurredAt].join("::"),
+        },
+        legacy: {
+          items: logItems,
+          truckInventoryState: updatedTruck,
+        },
+      });
+      try {
+        await writeInventoryEvents(db, inventoryEvents, { writeSource: "truck-load-dual-write" });
+      } catch (error) {
+        console.warn("inventory dual-write skipped for truck load", { truckId, error });
+      }
     }
   };
   const handleAddTool = async (data) => { await addDoc(collection(db, "tools"), { ...data, createdAt: new Date().toISOString() }); };
@@ -11706,8 +12408,12 @@ export default function App() {
     await setDoc(doc(db, "employeeFlags", flagId), { employeeName, override, note: note || "", updatedAt: new Date().toISOString() }, { merge: true });
   };
 
-  const handleCrewLogin = (member, truck) => {
-    setCrewSession({ memberId: member.id, crewName: member.name, truckId: truck?.id || null });
+  const handleCrewLogin = async (member, truck) => {
+    const finalTruckId = member.activeTruckId || truck?.id || member.truckId || null;
+    if (member.id) {
+      await updateDoc(doc(db, "crewMembers", member.id), { truckId: finalTruckId });
+    }
+    setCrewSession({ memberId: member.id, crewName: member.name, truckId: finalTruckId });
     setRole("crew");
   };
   const handleAdminLogin = (name) => { setAdminName(name); setRole("admin"); saveOfficeSession(name); addDoc(collection(db, "activityLog"), { user: name, action: "Signed in", timestamp: new Date().toISOString(), createdAt: serverTimestamp() }); };
@@ -11743,7 +12449,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} derivedTruckInventory={derivedTruckInventory[truck?.id] || {}} truckInventoryParity={truckInventoryParity[truck?.id] || null} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   }
   if (role === "mechanic" && mechanicName) {
     return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
@@ -11779,6 +12485,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
   return null;
 }

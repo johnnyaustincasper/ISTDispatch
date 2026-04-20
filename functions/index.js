@@ -17,7 +17,6 @@ const ADMIN_EMAILS = [
   'Johnny@istulsa.com',
   'Jordan@istulsa.com',
   'Skip@istulsa.com',
-  'Duck@istulsa.com',
 ];
 
 const transporter = nodemailer.createTransport({
