@@ -80,6 +80,34 @@ const asNullableString = (value) => {
   const trimmed = `${value}`.trim();
   return trimmed ? trimmed : null;
 };
+const getLegacyMaterialLogTruckAttribution = (logs = []) => {
+  const truckIds = new Set();
+  let hasTrucklessLogs = false;
+
+  (Array.isArray(logs) ? logs : []).forEach((log) => {
+    const hasMaterials = Object.values(log?.materials || {}).some((qty) => roundQty(qty) > 0);
+    if (!hasMaterials) return;
+    const truckId = asNullableString(log?.truckId);
+    if (truckId) truckIds.add(truckId);
+    else hasTrucklessLogs = true;
+  });
+
+  return {
+    truckIds: [...truckIds],
+    hasTrucklessLogs,
+    isAmbiguous: hasTrucklessLogs || truckIds.size > 1,
+  };
+};
+const resolveLegacyJobTruckId = (job = {}, fallbackTruckId = null) => {
+  const explicitTruckId = asNullableString(fallbackTruckId) || asNullableString(job?.closeoutTruckId);
+  if (explicitTruckId) return explicitTruckId;
+
+  const attribution = getLegacyMaterialLogTruckAttribution(job?.dailyMaterialLogs || []);
+  if (attribution.isAmbiguous) return null;
+  if (attribution.truckIds.length === 1) return attribution.truckIds[0];
+
+  return null;
+};
 const compactObject = (value) => Object.fromEntries(
   Object.entries(value || {}).filter(([, item]) => item !== undefined)
 );
@@ -264,7 +292,7 @@ export const adaptLegacyDailyMaterialLogToEvents = ({
   legacyDocId = null,
 } = {}) => {
   const occurredAt = log?.audit?.capturedAt || log?.timestamp || new Date().toISOString();
-  const truckId = asNullableString(log?.truckId || job?.truckId);
+  const truckId = asNullableString(log?.truckId);
   const materials = Object.entries(log?.materials || {});
 
   return materials
@@ -333,7 +361,7 @@ export const adaptLiveDailyMaterialLogUpsertToEvents = ({
   const priorMaterials = priorLog?.materials || {};
   const nextMaterials = log?.materials || {};
   const occurredAt = log?.audit?.capturedAt || log?.timestamp || new Date().toISOString();
-  const truckId = asNullableString(log?.truckId || job?.truckId);
+  const truckId = asNullableString(log?.truckId);
   const clearedItemIds = Object.keys(priorMaterials).filter((itemId) => roundQty(nextMaterials?.[itemId]) <= 0);
 
   const clearedEvents = clearedItemIds
@@ -392,7 +420,7 @@ export const adaptCloseoutMaterialsUsedDeltaToEvents = ({
   effectiveDate = null,
 } = {}) => {
   const resolvedOccurredAt = occurredAt || new Date().toISOString();
-  const resolvedTruckId = asNullableString(truckId || job?.truckId);
+  const resolvedTruckId = resolveLegacyJobTruckId(job, truckId);
   const resolvedEffectiveDate = asNullableString(effectiveDate)
     || asNullableString(job?.closedAt)
     || asNullableString(job?.date);
@@ -531,7 +559,7 @@ export const buildJobUsageBackfillPlan = ({
         ...actor,
       },
       legacyDocId: job.id,
-      truckId: job?.truckId || null,
+      truckId: getLegacyJobTruckFallbackId(job),
       occurredAt: job?.closedAt || job?.updatedAt || job?.date || null,
       effectiveDate: job?.closedAt || job?.date || null,
     }).map((event) => ({
@@ -912,6 +940,11 @@ const WAREHOUSE_DELTA_EVENT_TYPES = new Set([
 const JOB_USAGE_EVENT_TYPES = new Set([
   INVENTORY_EVENT_TYPES.jobUsage,
 ]);
+
+const getLegacyJobTruckFallbackId = (job = {}) => resolveLegacyJobTruckId(job);
+const getLegacyDailyLogScopeTruckId = (job = {}, log = {}) => (
+  asNullableString(log?.truckId) || getLegacyJobTruckFallbackId(job)
+);
 
 const getOccurredAtValue = (event = {}) => {
   const occurredAt = Date.parse(event?.occurredAt || "");
@@ -1332,13 +1365,15 @@ export const deriveJobUsageFromEvents = (legacyJobs = [], events = []) => {
     const expectedKeysByItemId = new Map();
     const expectedScopeKeysByItemId = new Map();
     (job?.dailyMaterialLogs || []).forEach((log) => {
-      const scopeKey = [job.id || "job", log?.date || "date", asNullableString(log?.truckId) || asNullableString(job?.truckId) || "legacy-truck"].join("::");
+      const fallbackTruckId = getLegacyJobTruckFallbackId(job);
+      const scopeTruckId = getLegacyDailyLogScopeTruckId(job, log);
+      const scopeKey = [job.id || "job", log?.date || "date", scopeTruckId || "legacy-truck"].join("::");
       Object.entries(log?.materials || {}).forEach(([itemId, qty]) => {
         if (roundQty(qty) <= 0) return;
         const normalizedItemId = normalizeInventoryItemId(itemId) || itemId;
         if (!normalizedItemId) return;
         const itemKeys = expectedKeysByItemId.get(normalizedItemId) || new Set();
-        itemKeys.add(buildLegacyJobUsageLogicalKey({ jobId: job.id, log, itemId: normalizedItemId, fallbackTruckId: job?.truckId || null }));
+        itemKeys.add(buildLegacyJobUsageLogicalKey({ jobId: job.id, log, itemId: normalizedItemId, fallbackTruckId }));
         expectedKeysByItemId.set(normalizedItemId, itemKeys);
         const itemScopeKeys = expectedScopeKeysByItemId.get(normalizedItemId) || new Set();
         itemScopeKeys.add(scopeKey);
@@ -1489,7 +1524,11 @@ export const getJobUsageParityReport = (legacyJobs = [], events = []) => {
 
   return jobs.map((job) => {
     const dailyLogTotals = {};
+    const legacyTruckFallbackDates = [];
     (job?.dailyMaterialLogs || []).forEach((log) => {
+      if (!asNullableString(log?.truckId) && getLegacyJobTruckFallbackId(job)) {
+        legacyTruckFallbackDates.push(log?.date || null);
+      }
       Object.entries(log?.materials || {}).forEach(([itemId, qty]) => {
         const normalizedItemId = normalizeInventoryItemId(itemId) || itemId;
         if (!normalizedItemId) return;
@@ -1531,6 +1570,12 @@ export const getJobUsageParityReport = (legacyJobs = [], events = []) => {
       vsDailyLogs,
       vsCloseout,
       vsEffectiveLegacy,
+      legacyTruckFallback: {
+        used: legacyTruckFallbackDates.length > 0,
+        fallbackTruckId: getLegacyJobTruckFallbackId(job),
+        fallbackDateCount: legacyTruckFallbackDates.length,
+        fallbackDates: legacyTruckFallbackDates.filter(Boolean),
+      },
       isAligned: vsEffectiveLegacy.mismatchCount === 0,
     };
   });

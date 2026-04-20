@@ -59,17 +59,22 @@ const MAT_RATE = { r11: 0.26, r13: 0.32, r19: 0.38, r30: 0.75, blown: 32, oc_bbl
 const tubeCost = (sqft, rate) => Math.round(sqft * rate * 100) / 100;
 const pcsCost  = (sqft, rate, pcs) => Math.round((sqft * rate / pcs) * 100) / 100;
 const normalizeMaterialLogTruckId = (truckId) => truckId || null;
-const materialLogMatchesTruck = (log, truckId) => normalizeMaterialLogTruckId(log?.truckId) === normalizeMaterialLogTruckId(truckId);
-const findDailyMaterialLog = (logs, date, truckId) => {
+const getLiveTruckId = (value = null) => normalizeMaterialLogTruckId(value);
+const getLegacyJobTruckFallbackId = (job = {}) => getLiveTruckId(job?.truckId ?? null);
+const getCrewAuthoritativeTruckId = (crewTruckId) => getLiveTruckId(crewTruckId ?? null);
+const getAuthoritativeTruckIdForJob = (job = {}, crewTruckId = null) => getCrewAuthoritativeTruckId(crewTruckId) || getLiveTruckId(job?.truckId ?? null);
+const getLegacyMaterialLogTruckId = (log = {}, job = {}) => getLiveTruckId(log?.truckId ?? null) || getLegacyJobTruckFallbackId(job);
+const materialLogMatchesTruck = (log, truckId) => getLiveTruckId(log?.truckId) === getLiveTruckId(truckId);
+const findDailyMaterialLog = (logs, date, truckId, job = null) => {
   const entries = (logs || []).filter(log => log.date === date);
   return entries.find(log => materialLogMatchesTruck(log, truckId))
-    || (entries.length === 1 && !entries[0]?.truckId ? entries[0] : null);
+    || (entries.length === 1 && !entries[0]?.truckId && materialLogMatchesTruck({ truckId: getLegacyMaterialLogTruckId(entries[0], job || {}) }, truckId) ? entries[0] : null);
 };
 const buildMaterialLogEditContext = (job, log = null, fallbackDate = null) => ({
   ...(job || {}),
   _editingDate: log?.date || fallbackDate || null,
   _existingMaterials: log?.materials || {},
-  _logTruckId: normalizeMaterialLogTruckId(log?.truckId ?? job?.truckId ?? null),
+  _logTruckId: normalizeMaterialLogTruckId(log?.truckId ?? null),
   _sourceTruckId: normalizeMaterialLogTruckId(log?.truckId ?? null),
   _sourceDailyLog: log || null,
 });
@@ -83,6 +88,35 @@ const getTruckAwareDailyMaterialLogs = (logs, truckId) => {
   return dates.map(date => findDailyMaterialLog(logs, date, truckId)).filter(Boolean);
 };
 const getTruckAwareLoggedDates = (logs, truckId) => new Set(getTruckAwareDailyMaterialLogs(logs, truckId).map(log => log.date));
+const getMaterialLogTruckAttribution = (logs = []) => {
+  const truckIds = new Set();
+  let hasTrucklessLogs = false;
+
+  (logs || []).forEach((log) => {
+    const hasMaterials = Object.values(log?.materials || {}).some((qty) => (parseFloat(qty) || 0) > 0);
+    if (!hasMaterials) return;
+    const normalizedTruckId = normalizeMaterialLogTruckId(log?.truckId);
+    if (normalizedTruckId) truckIds.add(normalizedTruckId);
+    else hasTrucklessLogs = true;
+  });
+
+  return {
+    truckIds: [...truckIds],
+    hasTrucklessLogs,
+    isMixedTruck: truckIds.size > 1,
+    isAmbiguous: hasTrucklessLogs || truckIds.size > 1,
+  };
+};
+const getCloseoutAttributionTruckId = (jobLike = {}, fallbackTruckId = null) => {
+  const explicitCloseoutTruckId = normalizeMaterialLogTruckId(jobLike?.closeoutTruckId ?? null);
+  if (explicitCloseoutTruckId) return explicitCloseoutTruckId;
+
+  const attribution = getMaterialLogTruckAttribution(jobLike?.dailyMaterialLogs || []);
+  if (attribution.isAmbiguous) return null;
+  if (attribution.truckIds.length === 1) return attribution.truckIds[0];
+
+  return normalizeMaterialLogTruckId(fallbackTruckId ?? null);
+};
 const roundInventoryQty = (value) => Math.round((parseFloat(value) || 0) * 1000) / 1000;
 const JOB_USAGE_PARITY_TOLERANCE = 0.001;
 const formatTruckParityDelta = (delta, unit = "") => {
@@ -1811,11 +1845,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     return [...days].sort();
   };
 
-  const getLogTruckIdForJob = (job) => normalizeMaterialLogTruckId(truck?.id || job?.truckId || null);
+  const getLogTruckIdForJob = (job) => getAuthoritativeTruckIdForJob(job, truck?.id);
   const getMaterialLogsForJob = (job) => getTruckAwareDailyMaterialLogs(job?.dailyMaterialLogs, getLogTruckIdForJob(job));
   const getInventoryForMaterialLog = (jobLike = {}, logLike = null, fallbackTruckId = null) => {
-    const sourceTruckId = normalizeMaterialLogTruckId(
-      logLike?.truckId ?? jobLike?._logTruckId ?? fallbackTruckId ?? jobLike?.truckId ?? null,
+    const sourceTruckId = getLiveTruckId(
+      fallbackTruckId ?? logLike?.truckId ?? jobLike?._logTruckId ?? getLegacyMaterialLogTruckId(logLike || {}, jobLike) ?? null,
     );
     return getTruckInventorySnapshot(allTruckInventory, sourceTruckId);
   };
@@ -1832,7 +1866,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       // Check all worked days have materials logged (including today)
       const missing = getMissingMaterialDays(activeJob);
       const todayStr = todayCST();
-      const todayLogged = !!findDailyMaterialLog(activeJob.dailyMaterialLogs, todayStr, getLogTruckIdForJob(activeJob));
+      const todayLogged = !!findDailyMaterialLog(activeJob.dailyMaterialLogs, todayStr, getLogTruckIdForJob(activeJob), activeJob);
       const allMissing = todayLogged ? missing : [...missing, todayStr];
       if (allMissing.length > 0 && !todayLogged) {
         // Today not logged — show closeout modal to capture today's materials
@@ -2288,7 +2322,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     <button onClick={() => setHistDayJobs(null)} style={{ background: "none", border: "none", color: t.textMuted, fontSize: 18, cursor: "pointer" }}>✕</button>
                   </div>
                   {histDayJobs.jobs.map(job => {
-                    const truckScopedLog = findDailyMaterialLog(job.dailyMaterialLogs, histDayJobs.date, truck?.id || job.truckId || null);
+                    const truckScopedLog = findDailyMaterialLog(job.dailyMaterialLogs, histDayJobs.date, getCrewAuthoritativeTruckId(truck?.id, job.truckId));
                     const fallbackMaterials = (!truckScopedLog && !(job.dailyMaterialLogs || []).length) ? (job.materialsUsed || {}) : {};
                     const hasMaterials = Object.keys(truckScopedLog?.materials || fallbackMaterials).length > 0;
                     return (
@@ -2469,7 +2503,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 );
               }
 
-              const unit = isFoam(item.id) ? "gal" : item.isPieces ? "pcs" : "tubes";
+              const unit = isFoam(item.id) ? "gal" : item.isPieces ? "pcs" : ((item.name || "").toLowerCase().includes("blown") || (item.name || "").toLowerCase().includes("cellulose") ? "bags" : "tubes");
               return (
                 <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px", gap: "4px 8px", alignItems: "center", marginBottom: 12 }}>
                   <div>
@@ -2550,8 +2584,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 )}
                 {mode === "load"
                   ? <button onClick={async () => {
-                      // Everything they entered = total leaving on truck today, all deducted from warehouse
-                      const allItems = INVENTORY_ITEMS.filter(i => (loadQtys[i.id] || 0) > 0).map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] }));
+                      const allItems = INVENTORY_ITEMS.map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] || 0 }));
                       await onLoadTruck(allItems, truck?.id);
                       setLoadTruckMode(false); setLoadQtys({}); setCarriedQtys({});
                     }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 12 }}>
@@ -2671,7 +2704,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     {INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0).map(item => (
                       <div key={item.id + "_foamline"} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
                         <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</span>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>{bblToGals(truckInventory[item.id] || 0, item.id)} gal</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>{isFoam(item.id) ? `${bblToGals(truckInventory[item.id] || 0, item.id)} gal` : `${truckInventory[item.id] || 0} ${item.unit}`}</span>
                       </div>
                     ))}
                     {nonFoamLoaded.filter(i => !i.isPieces).map(item => {
@@ -2801,7 +2834,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
         const today = dailyMaterialsJob._editingDate || dailyMaterialsJob._forceDate || todayCST();
         const isEditingPast = !!dailyMaterialsJob._editingDate || !!dailyMaterialsJob._forceDate;
-        const matchedDailyLog = findDailyMaterialLog(dailyMaterialsJob.dailyMaterialLogs, today, dailyMaterialsJob._logTruckId || dailyMaterialsJob.truckId || truck?.id);
+        const matchedDailyLog = findDailyMaterialLog(dailyMaterialsJob.dailyMaterialLogs, today, normalizeMaterialLogTruckId(truck?.id ?? dailyMaterialsJob._logTruckId ?? null));
         const existingDailyEntry = dailyMaterialsJob._existingMaterials || matchedDailyLog?.materials || {};
         const isEditing = Object.keys(existingDailyEntry).length > 0;
         const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
@@ -2822,7 +2855,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               <strong style={{ color: t.text }}>{dailyMaterialsJob.builder || "No Customer"}</strong><br />{dailyMaterialsJob.address}
               <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>{isEditingPast ? fmtDateLabel(today) : "Job stays open, just logging today's usage"}</div>
               <div style={{ fontSize: 11, marginTop: 4, color: t.textMuted }}>
-                Truck: <strong style={{ color: t.text }}>{trucks.find(tr => tr.id === (dailyMaterialsJob._logTruckId || dailyMaterialsJob.truckId || truck?.id))?.name || "Unassigned"}</strong>
+                Truck: <strong style={{ color: t.text }}>{trucks.find(tr => tr.id === normalizeMaterialLogTruckId(truck?.id ?? dailyMaterialsJob._logTruckId ?? null))?.name || "Unassigned"}</strong>
               </div>
             </div>
             {tubeItems.length === 0 && <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 14 }}>No materials loaded on truck.</div>}
@@ -2928,7 +2961,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 // Delta adjust if editing existing entry, full deduct if new
                 await onSaveJobMaterials(dailyMaterialsJob.id, {
                   date: today,
-                  truckId: dailyMaterialsJob._logTruckId || dailyMaterialsJob.truckId || truck?.id || null,
+                  truckId: normalizeMaterialLogTruckId(truck?.id ?? dailyMaterialsJob._logTruckId ?? null),
                   sourceTruckId: dailyMaterialsJob._sourceTruckId,
                   materials: used,
                   loggedBy: crewName,
@@ -3101,7 +3134,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       {editMaterialsJob && (() => {
         const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
         const editDate = editMaterialsJob._editingDate || todayCST();
-        const targetTruckId = normalizeMaterialLogTruckId(editMaterialsJob._logTruckId ?? truck?.id ?? editMaterialsJob.truckId ?? null);
+        const targetTruckId = normalizeMaterialLogTruckId(truck?.id ?? editMaterialsJob._logTruckId ?? null);
         const targetTruck = trucks.find(tr => tr.id === targetTruckId) || truck || null;
         const targetTruckLabel = targetTruck ? (targetTruck.members || targetTruck.name) : "No Truck";
         const existing = editMaterialsJob._existingMaterials || {};
@@ -8886,12 +8919,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 newMats[id] = isFoamId(id) ? Math.round(qty / (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 10000) / 10000 : qty;
                               }
                             });
-                            const preservedTruckId = normalizeMaterialLogTruckId(log.truckId ?? calViewJob.truckId ?? null);
+                            const preservedTruckId = normalizeMaterialLogTruckId(log.truckId ?? null);
                             await onSaveJobMaterials(calViewJob.id, {
                               ...log,
                               date: log.date,
                               truckId: preservedTruckId,
-                              sourceTruckId: normalizeMaterialLogTruckId(log.truckId ?? null),
+                              sourceTruckId: preservedTruckId,
                               materials: newMats,
                             }, preservedTruckId);
                             setEditMatLogIdx(null); setEditMatLogQtys({});
@@ -11986,7 +12019,7 @@ export default function App() {
   const aggregateJobMaterialsByTruck = (jobLike = {}) => {
     const usageByTruck = {};
     const addUsage = (truckId, materials = {}) => {
-      const normalizedTruckId = normalizeMaterialLogTruckId(truckId || jobLike?.truckId);
+      const normalizedTruckId = normalizeMaterialLogTruckId(truckId || null);
       if (!normalizedTruckId) return;
       Object.entries(materials || {}).forEach(([id, qty]) => {
         const parsedQty = parseFloat(qty) || 0;
@@ -11996,9 +12029,24 @@ export default function App() {
       });
     };
 
-    (jobLike?.dailyMaterialLogs || []).forEach((log) => addUsage(log?.truckId, log?.materials));
-    addUsage(jobLike?.truckId, jobLike?.materialsUsed || {});
+    const dailyLoggedTotals = {};
+    (jobLike?.dailyMaterialLogs || []).forEach((log) => {
+      addUsage(log?.truckId, log?.materials);
+      Object.entries(log?.materials || {}).forEach(([id, qty]) => {
+        const parsedQty = parseFloat(qty) || 0;
+        if (parsedQty <= 0) return;
+        dailyLoggedTotals[id] = (dailyLoggedTotals[id] || 0) + parsedQty;
+      });
+    });
 
+    const closeoutDelta = {};
+    Object.entries(jobLike?.materialsUsed || {}).forEach(([id, qty]) => {
+      const parsedQty = parseFloat(qty) || 0;
+      const leftover = Math.max(0, parsedQty - (dailyLoggedTotals[id] || 0));
+      if (leftover > 0) closeoutDelta[id] = leftover;
+    });
+
+    addUsage(getCloseoutAttributionTruckId(jobLike), closeoutDelta);
     return usageByTruck;
   };
 
@@ -12143,6 +12191,7 @@ export default function App() {
     const closedAt = new Date().toISOString();
     const todayISO = new Date().toLocaleDateString("en-CA");
     let closeoutInventoryEvents = [];
+    let resolvedCloseoutTruckId = null;
     // Fetch weather snapshot for this job (7am–4pm window)
     let weatherLog = null;
     try {
@@ -12179,7 +12228,6 @@ export default function App() {
       }
     } catch {}
     const jobRef = doc(db, "jobs", jobId);
-    const truckRef = truckId ? doc(db, "truckInventory", truckId) : null;
     await runTransaction(db, async (tx) => {
       const jobSnap = await tx.get(jobRef);
       if (!jobSnap.exists()) return;
@@ -12190,16 +12238,17 @@ export default function App() {
           dailyLogged[id] = (dailyLogged[id] || 0) + (parseFloat(qty) || 0);
         });
       });
+      resolvedCloseoutTruckId = getCloseoutAttributionTruckId(jobData, truckId);
       const netNew = {};
       Object.entries(materialsUsed || {}).forEach(([id, qty]) => {
         const extra = Math.max(0, (parseFloat(qty) || 0) - (dailyLogged[id] || 0));
         if (extra > 0) netNew[id] = extra;
       });
       closeoutInventoryEvents = adaptCloseoutMaterialsUsedDeltaToEvents({
-        job: { ...jobData, id: jobId, closedAt },
+        job: { ...jobData, id: jobId, closedAt, closeoutTruckId: resolvedCloseoutTruckId },
         materialsUsed: netNew,
         legacyDocId: jobId,
-        truckId,
+        truckId: resolvedCloseoutTruckId,
         occurredAt: closedAt,
         effectiveDate: todayISO,
         actor: {
@@ -12209,12 +12258,19 @@ export default function App() {
           source: "crew-dashboard",
         },
       });
-      if (truckRef && Object.keys(netNew).length > 0) {
-        const truckSnap = await tx.get(truckRef);
+      if (resolvedCloseoutTruckId && Object.keys(netNew).length > 0) {
+        const resolvedTruckRef = doc(db, "truckInventory", resolvedCloseoutTruckId);
+        const truckSnap = await tx.get(resolvedTruckRef);
         const truckState = truckSnap.exists() ? truckSnap.data() : {};
-        tx.set(truckRef, applyTruckUsageDelta(truckState, {}, netNew));
+        tx.set(resolvedTruckRef, applyTruckUsageDelta(truckState, {}, netNew));
       }
-      tx.update(jobRef, { closedOut: true, materialsUsed: materialsUsed || null, closedAt, ...(weatherLog ? { weatherLog } : {}) });
+      tx.update(jobRef, {
+        closedOut: true,
+        materialsUsed: materialsUsed || null,
+        closeoutTruckId: resolvedCloseoutTruckId,
+        closedAt,
+        ...(weatherLog ? { weatherLog } : {}),
+      });
     });
     if (closeoutInventoryEvents.length > 0) {
       try {
@@ -12231,17 +12287,20 @@ export default function App() {
       return;
     }
     const jobRef = doc(db, "jobs", jobId);
-    const truckRef = truckId ? doc(db, "truckInventory", truckId) : null;
     let eventWriteContext = null;
     await runTransaction(db, async (tx) => {
       const jobSnap = await tx.get(jobRef);
       if (!jobSnap.exists()) return;
       const jobData = jobSnap.data();
       const existingLogs = jobData.dailyMaterialLogs || [];
-      const lookupTruckId = payload.sourceTruckId !== undefined ? payload.sourceTruckId : payload.truckId;
+      const hasExplicitSourceTruck = payload.sourceTruckId !== undefined;
+      const lookupTruckId = hasExplicitSourceTruck ? payload.sourceTruckId : payload.truckId;
       const priorEntry = findDailyMaterialLog(existingLogs, payload.date, lookupTruckId);
       const priorMaterials = priorEntry?.materials || {};
-      const effectiveTruckId = normalizeMaterialLogTruckId(payload.truckId ?? priorEntry?.truckId ?? jobData.truckId ?? null);
+      const explicitTruckId = normalizeMaterialLogTruckId(payload.truckId ?? priorEntry?.truckId ?? null);
+      const effectiveTruckId = hasExplicitSourceTruck
+        ? explicitTruckId
+        : normalizeMaterialLogTruckId(explicitTruckId ?? getCloseoutAttributionTruckId(jobData));
       const priorTruckId = normalizeMaterialLogTruckId(priorEntry?.truckId ?? lookupTruckId ?? null);
       const nextEntry = { ...priorEntry, ...payload, truckId: effectiveTruckId };
       eventWriteContext = { jobData, priorEntry, nextEntry };
@@ -12306,19 +12365,21 @@ export default function App() {
     const truckRef = doc(db, "truckInventory", truckId);
     const occurredAt = new Date().toISOString();
     const truckName = trucks.find((truck) => truck.id === truckId)?.name || null;
-    // Read current truck state so we ADD to existing qty, not overwrite
     const snap = await getDoc(truckRef);
     const currentTruck = snap.exists() ? snap.data() : {};
-    const updatedTruck = { ...currentTruck };
+    const updatedTruck = {};
     const logItems = {};
     const canonicalItems = [];
     for (const m of itemsLoaded) {
-      if (m.qty > 0) {
-        const warehouseRec = inventory.find(r => r.itemId === m.itemId);
-        const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
-        const warehouseQty = warehouseRec?.qty || 0;
-        // Deduct from warehouse
-        await handleUpdateInventory(m.itemId, Math.max(0, Math.round((warehouseQty - m.qty) * 1000) / 1000), {
+      const nextQty = Math.max(0, Math.round((parseFloat(m.qty) || 0) * 1000) / 1000);
+      const priorQty = typeof currentTruck[m.itemId] === "number" ? currentTruck[m.itemId] : 0;
+      const delta = Math.round((nextQty - priorQty) * 1000) / 1000;
+      const warehouseRec = inventory.find(r => r.itemId === m.itemId);
+      const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
+      const warehouseQty = warehouseRec?.qty || 0;
+
+      if (delta > 0) {
+        await handleUpdateInventory(m.itemId, Math.max(0, Math.round((warehouseQty - delta) * 1000) / 1000), {
           actor: {
             actorId: crewSession?.memberId || null,
             actorName: crewSession?.crewName || null,
@@ -12337,16 +12398,37 @@ export default function App() {
           },
           skipEventWrite: true,
         });
-        // ADD to existing truck qty (not overwrite)
-        const existingOnTruck = typeof currentTruck[m.itemId] === "number" ? currentTruck[m.itemId] : 0;
-        updatedTruck[m.itemId] = Math.round((existingOnTruck + m.qty) * 1000) / 1000;
-        logItems[m.itemId] = m.qty;
+      } else if (delta < 0) {
+        await handleUpdateInventory(m.itemId, Math.round((warehouseQty + Math.abs(delta)) * 1000) / 1000, {
+          actor: {
+            actorId: crewSession?.memberId || null,
+            actorName: crewSession?.crewName || null,
+            actorRole: "crew",
+            source: "crew-dashboard",
+          },
+          occurredAt,
+          notes: "loadout-recount-return",
+          correlationKey: [truckId, "load", occurredAt].join("::"),
+          metadata: {
+            eventKind: "truck_transfer_warehouse_adjustment",
+          },
+          legacy: {
+            items: logItems,
+            truckInventoryState: updatedTruck,
+          },
+          skipEventWrite: true,
+        });
+      }
+
+      if (nextQty > 0) updatedTruck[m.itemId] = nextQty;
+      if (delta !== 0) {
+        logItems[m.itemId] = delta;
         canonicalItems.push({
           itemId: m.itemId,
           itemName: inventoryItem?.name || warehouseRec?.itemName || null,
           unit: inventoryItem?.unit || warehouseRec?.unit || null,
           category: inventoryItem?.category || null,
-          qty: m.qty,
+          qty: delta,
         });
       }
     }
@@ -12355,32 +12437,47 @@ export default function App() {
       await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: occurredAt, crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
     }
     if (canonicalItems.length > 0) {
-      const inventoryEvents = adaptTruckTransferToEvents({
-        items: canonicalItems,
-        truckId,
-        truckName,
-        direction: "load",
-        occurredAt,
-        effectiveDate: todayCST(),
-        actor: {
-          actorId: crewSession?.memberId || null,
-          actorName: crewSession?.crewName || null,
-          actorRole: "crew",
-          source: "crew-dashboard",
-        },
-        refs: {
-          legacyCollection: "loadLog",
-          correlationKey: [truckId, "load", occurredAt].join("::"),
-        },
-        legacy: {
-          items: logItems,
-          truckInventoryState: updatedTruck,
-        },
-      });
-      try {
-        await writeInventoryEvents(db, inventoryEvents, { writeSource: "truck-load-dual-write" });
-      } catch (error) {
-        console.warn("inventory dual-write skipped for truck load", { truckId, error });
+      const inventoryEvents = [
+        ...adaptTruckTransferToEvents({
+          items: canonicalItems.filter(item => item.qty > 0),
+          truckId,
+          truckName,
+          direction: "load",
+        }).filter(Boolean),
+        ...adaptTruckTransferToEvents({
+          items: canonicalItems.filter(item => item.qty < 0).map(item => ({ ...item, qty: Math.abs(item.qty) })),
+          truckId,
+          truckName,
+          direction: "return",
+        }).filter(Boolean),
+      ];
+      if (inventoryEvents.length > 0) {
+        const decoratedEvents = inventoryEvents.map(event => ({
+          ...event,
+          occurredAt,
+          effectiveDate: todayCST(),
+          actor: {
+            actorId: crewSession?.memberId || null,
+            actorName: crewSession?.crewName || null,
+            actorRole: "crew",
+            source: "crew-dashboard",
+          },
+          refs: {
+            ...(event.refs || {}),
+            legacyCollection: "loadLog",
+            correlationKey: [truckId, "load", occurredAt].join("::"),
+          },
+          legacy: {
+            ...(event.legacy || {}),
+            items: logItems,
+            truckInventoryState: updatedTruck,
+          },
+        }));
+        try {
+          await writeInventoryEvents(db, decoratedEvents, { writeSource: "truck-load-dual-write" });
+        } catch (error) {
+          console.warn("inventory dual-write skipped for truck load", { truckId, error });
+        }
       }
     }
   };
