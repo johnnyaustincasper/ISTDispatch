@@ -83,6 +83,13 @@ const getTruckInventorySnapshot = (allTruckInventory = {}, truckId = null) => {
   if (!normalizedTruckId) return {};
   return allTruckInventory?.[normalizedTruckId] || {};
 };
+const getTruckInventoryDisplayRows = (inventoryState = {}) => INVENTORY_ITEMS
+  .filter((item) => !item.isPieces && (inventoryState?.[item.id] || 0) > 0)
+  .map((item) => ({
+    ...item,
+    qty: inventoryState?.[item.id] || 0,
+    loosePiecesQty: item.hasPieces ? (inventoryState?.[INVENTORY_ITEMS.find((pieceItem) => pieceItem.parentId === item.id)?.id] || 0) : 0,
+  }));
 const getTruckAwareDailyMaterialLogs = (logs, truckId) => {
   const dates = [...new Set((logs || []).map(log => log.date))].sort();
   return dates.map(date => findDailyMaterialLog(logs, date, truckId)).filter(Boolean);
@@ -150,7 +157,6 @@ const INVENTORY_ITEMS = [
   // Foam — A-side $0 (not priced), B-side only: OC 48gal×$32=$1,536/bbl, CC 50gal×$44=$2,200/bbl
   { id: "oc_a",       name: "Ambit A",                 unit: "bbl",   category: "Foam", cost: 0 },
   { id: "oc_b",       name: "Ambit Open Cell B",       unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
-  { id: "cc_a",       name: "Ambit A",                 unit: "bbl",   category: "Foam", cost: 0 },
   { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
   { id: "env_oc_a",   name: "Enverge A",               unit: "bbl",   category: "Foam", cost: 0 },
   { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
@@ -181,6 +187,8 @@ const INVENTORY_ITEMS = [
   { id: "r19_15_8_pcs",   name: 'R19 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_15_8_t", cost: pcsCost(87.19, MAT_RATE.r19, 9) },
   { id: "r19_19_8_t",     name: 'R19 x 19.25" x 48"',    pcsPerTube: 18, sqftPerTube: 115.5,  unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: tubeCost(115.5, MAT_RATE.r19) },
   { id: "r19_19_8_pcs",   name: 'R19 x 19.25" x 48"',    unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_19_8_t", cost: pcsCost(115.5, MAT_RATE.r19, 18) },
+  { id: "r19_24_48_t",    name: 'R19 x 24" x 48"',       pcsPerTube: 18, sqftPerTube: 144,    unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: tubeCost(144, MAT_RATE.r19) },
+  { id: "r19_24_48_pcs",  name: 'R19 x 24" x 48"',       unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_24_48_t", cost: pcsCost(144, MAT_RATE.r19, 18) },
   { id: "r19_24_8_t",     name: 'R19 x 24" x 96"',       pcsPerTube: 9,  sqftPerTube: 144,    unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: tubeCost(144, MAT_RATE.r19) },
   { id: "r19_24_8_pcs",   name: 'R19 x 24" x 96"',       unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_24_8_t", cost: pcsCost(144, MAT_RATE.r19, 9) },
   // Certainteed R30 ($0.75/sqft)
@@ -201,6 +209,8 @@ const INVENTORY_ITEMS = [
   // Johns Manville R19 ($0.38/sqft)
   { id: "jm_r19_15_8_t",   name: 'JM R19 x 15" x 93"',    pcsPerTube: 9,  sqftPerTube: 87.18,  unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: tubeCost(87.18, MAT_RATE.r19) },
   { id: "jm_r19_15_8_pcs", name: 'JM R19 x 15" x 93"',    unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_15_8_t", cost: pcsCost(87.18, MAT_RATE.r19, 9) },
+  { id: "jm_r19_24_93_t",  name: 'JM R19 x 24" x 93"',    pcsPerTube: 9,  sqftPerTube: 155.00, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: tubeCost(155, MAT_RATE.r19) },
+  { id: "jm_r19_24_93_pcs",name: 'JM R19 x 24" x 93"',    unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_24_93_t", cost: pcsCost(155, MAT_RATE.r19, 9) },
   { id: "jm_r19_19_8_t",   name: 'JM R19 x 19.25" x 48"', pcsPerTube: 18, sqftPerTube: 115.50, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: tubeCost(115.5, MAT_RATE.r19) },
   { id: "jm_r19_19_8_pcs", name: 'JM R19 x 19.25" x 48"', unit: "pcs", category: "Johns Manville R19", isPieces: true, parentId: "jm_r19_19_8_t", cost: pcsCost(115.5, MAT_RATE.r19, 18) },
   { id: "jm_r19_24_8_t",   name: 'JM R19 x 24" x 48"',    pcsPerTube: 18, sqftPerTube: 144.00, unit: "tubes", category: "Johns Manville R19", hasPieces: true, cost: tubeCost(144, MAT_RATE.r19) },
@@ -212,9 +222,9 @@ const INVENTORY_ITEMS = [
   { id: "jm_r30_24_pcs",   name: 'JM R30 x 24" x 48"',    unit: "pcs", category: "Johns Manville R30", isPieces: true, parentId: "jm_r30_24_t", cost: pcsCost(88, MAT_RATE.r30, 11) },
   { id: "lambswool",  name: "Lambswool",         unit: "rolls", category: "Lambswool" },
   // Rockwool
-  { id: "rw_4_t",    name: 'Rockwool 4"',        unit: "tubes", category: "Rockwool", hasPieces: true },
+  { id: "rw_4_t",    name: 'Rockwool 4"',        pcsPerTube: 8, unit: "tubes", category: "Rockwool", hasPieces: true },
   { id: "rw_4_pcs",  name: 'Rockwool 4"',        unit: "pcs",   category: "Rockwool", isPieces: true, parentId: "rw_4_t" },
-  { id: "rw_6_t",    name: 'Rockwool 6"',        unit: "tubes", category: "Rockwool", hasPieces: true },
+  { id: "rw_6_t",    name: 'Rockwool 6"',        pcsPerTube: 8, unit: "tubes", category: "Rockwool", hasPieces: true },
   { id: "rw_6_pcs",  name: 'Rockwool 6"',        unit: "pcs",   category: "Rockwool", isPieces: true, parentId: "rw_6_t" },
 ];
 
@@ -1752,7 +1762,7 @@ function CheckoutLogView({ suppliesCheckouts }) {
 }
 
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, derivedTruckInventory = {}, truckInventoryParity = null, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = null, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
   const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -2078,7 +2088,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             <SectionHeader title="Your Jobs" />
             {/* Truck Inventory Summary Strip */}
             {(() => {
-              const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
+              const truckItems = getTruckInventoryDisplayRows(truckInventory);
+              const secondaryTruckItems = getTruckInventoryDisplayRows(truckSecondaryInventory);
               if (truckItems.length === 0) return (
                 <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "13px", color: "#92400e" }}>
                   🚛 Truck is empty — load up before heading out.
@@ -2091,9 +2102,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 <div style={{ background: "rgba(255,255,255,0.72)", border: "1px solid " + t.border, borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "12px", color: t.text }}>
                   <span style={{ fontWeight: 700 }}>🚛 On Your Truck: </span>
                   {shown.map((item, i) => (
-                    <span key={item.id}>{item.name}: <strong>{truckInventory[item.id]} {item.unit}</strong>{i < shown.length - 1 || extra > 0 ? " | " : ""}</span>
+                    <span key={item.id}>{item.name}: <strong>{item.qty} {item.unit}</strong>{i < shown.length - 1 || extra > 0 ? " | " : ""}</span>
                   ))}
                   {extra > 0 && <span style={{ color: t.textMuted }}>+{extra} more</span>}
+                  {secondaryTruckItems.length > 0 && <div style={{ marginTop: 8, color: t.textMuted }}><strong style={{ color: t.text }}>Reserve stock:</strong> {secondaryTruckItems.slice(0, 3).map((item) => `${item.name}: ${item.qty} ${item.unit}`).join(" | ")}{secondaryTruckItems.length > 3 ? ` | +${secondaryTruckItems.length - 3} more` : ""}</div>}
                 </div>
               );
             })()}
@@ -2395,6 +2407,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
           const loadedItems = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0);
+          const secondaryLoadedItems = getTruckInventoryDisplayRows(truckSecondaryInventory);
           const ocSets = Math.min(truckInventory["oc_a"] || 0, truckInventory["oc_b"] || 0);
           const ccSets = Math.min(truckInventory["cc_a"] || 0, truckInventory["cc_b"] || 0);
           const envOcSets = Math.min(truckInventory["env_oc_a"] || 0, truckInventory["env_oc_b"] || 0);
@@ -2732,6 +2745,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     ))}
                   </>
                 }
+              </Card>
+              <Card style={{ marginBottom: 16, background: "#f8fafc", border: "1px solid " + t.border }}>
+                <div style={{ fontWeight: 700, fontSize: 13, color: t.textMuted, marginBottom: secondaryLoadedItems.length ? 10 : 0 }}>Secondary Inventory, reserve only</div>
+                {secondaryLoadedItems.length === 0
+                  ? <div style={{ fontSize: 13, color: t.textMuted }}>No secondary reserve stock recorded for this truck.</div>
+                  : secondaryLoadedItems.map((item) => (
+                      <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
+                        <div>
+                          <span style={{ fontSize: 13, color: t.text }}>{item.name}</span>
+                          {item.loosePiecesQty > 0 && <div style={{ fontSize: 11, color: t.textMuted, paddingLeft: 8 }}>↳ {item.loosePiecesQty} loose pcs</div>}
+                        </div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: t.textSecondary }}>{item.qty} {item.unit}</span>
+                      </div>
+                    ))
+                }
+                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 10 }}>Visible only in v1. Daily material logs still deduct from primary truck inventory only.</div>
               </Card>
               {/* Procedures */}
               <DailyProcedureCard />
@@ -5086,7 +5115,7 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 // ─── Truck Detail Modal ───
 // ─── 3D Truck Viewer ───
 
-function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, jobs, members, onClose, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onOpenCalendar }) {
+function TruckDetailModal({ truck, truckInventory: ti = {}, truckSecondaryInventory: tsi = {}, loadLog, returnLog, jobs, members, onClose, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onOpenCalendar }) {
   const [tab, setTab] = useState("loadout"); // loadout | history | materials
   const [infoForm, setInfoForm] = useState({ vehicleName: truck.vehicleName || "", description: truck.description || "", year: truck.year || "", make: truck.make || "", model: truck.model || "", notes: truck.notes || "" });
   const [savingInfo, setSavingInfo] = useState(false);
@@ -5104,6 +5133,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
   const inventoryLoadout = INVENTORY_ITEMS.filter(i => !i.isPieces && (ti[i.id] || 0) > 0).map(i => ({ key: i.id, name: i.name, qty: ti[i.id], unit: i.unit, isCustom: false }));
   const customItems = (ti._custom || []);
   const allLoadout = [...inventoryLoadout, ...customItems.map(c => ({ key: "custom_" + c.name, name: c.name, qty: c.qty, unit: c.unit, isCustom: true }))];
+  const secondaryLoadout = getTruckInventoryDisplayRows(tsi);
 
   const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
   const fmtQty = (key, qty) => {
@@ -5199,6 +5229,17 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, loadLog, returnLog, 
       {/* LOADOUT TAB */}
       {tab === "loadout" && (
         <div>
+          <div style={{ background: "#f8fafc", border: "1px solid " + t.border, borderRadius: 8, padding: 10, marginBottom: 12 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Secondary Inventory, read only</div>
+            {secondaryLoadout.length === 0
+              ? <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic" }}>No reserve stock recorded.</div>
+              : secondaryLoadout.map((item) => (
+                  <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
+                    <div style={{ fontSize: 13, color: t.text }}>{item.name}{item.loosePiecesQty > 0 ? ` (${item.loosePiecesQty} loose pcs)` : ""}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: t.textSecondary }}>{item.qty} {item.unit}</div>
+                  </div>
+                ))}
+          </div>
           {allLoadout.length === 0 && !loadoutEditMode && (
             <div style={{ fontSize: 13, color: t.textMuted, fontStyle: "italic", marginBottom: 12 }}>Nothing loaded on this truck.</div>
           )}
@@ -6127,7 +6168,7 @@ function WeatherTab({ jobs, trucks, updates }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   // Builders DB state
@@ -6580,79 +6621,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               ))}
             </div>
 
-            {/* ─── MOBILE: Needs Check / Recently Checked tabs at top ─── */}
-            {!showCheckHistory && (needsCheckJobs.length > 0 || recentlyCheckedJobs.length > 0) && window.innerWidth < 768 && (() => {
-              return (
-                <div style={{ marginBottom: 12 }}>
-                  {/* Tab switcher */}
-                  <div style={{ display: "flex", gap: 0, marginBottom: 0 }}>
-                    <button onClick={() => { setCheckPanelTab("needs"); setNeedsCheckExpanded(p => checkPanelTab !== "needs" ? true : !p); }}
-                      style={{ flex: 1, padding: "10px 8px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "2px solid #f87171", borderRight: "1px solid #f87171", borderRadius: "10px 0 0 0", background: checkPanelTab === "needs" ? "#fff1f2" : "#ffeaea", color: "#b91c1c", borderBottom: checkPanelTab === "needs" && needsCheckExpanded ? "none" : "2px solid #f87171" }}>
-                      ⚠️ Needs Check {needsCheckJobs.length > 0 && <span style={{ background: "#dc2626", color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 11, marginLeft: 4 }}>{needsCheckJobs.length}</span>}
-                    </button>
-                    <button onClick={() => { setCheckPanelTab("recent"); setRecentlyCheckedExpanded(p => checkPanelTab !== "recent" ? true : !p); }}
-                      style={{ flex: 1, padding: "10px 8px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "2px solid #f87171", borderLeft: "1px solid #f87171", borderRadius: "0 10px 0 0", background: checkPanelTab === "recent" ? "#f0fdf4" : "#e8faf0", color: "#15803d", borderBottom: checkPanelTab === "recent" && recentlyCheckedExpanded ? "none" : "2px solid #f87171" }}>
-                      ✅ Recently Checked {recentlyCheckedJobs.length > 0 && <span style={{ background: "#15803d", color: "#fff", borderRadius: 10, padding: "1px 6px", fontSize: 11, marginLeft: 4 }}>{recentlyCheckedJobs.length}</span>}
-                    </button>
-                  </div>
-                  {/* Needs Check panel */}
-                  {checkPanelTab === "needs" && needsCheckExpanded && (
-                    <div style={{ border: "2px solid #f87171", borderTop: "none", borderRadius: "0 0 10px 10px", background: "#fff" }}>
-                      {needsCheckJobs.length === 0
-                        ? <div style={{ padding: "16px 14px", fontSize: 13, color: "#6b7280" }}>No jobs need checking right now.</div>
-                        : needsCheckJobs.map((job) => {
-                          const completedUpd = updates.filter(u => u.jobId === job.id && u.status === "completed").sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0];
-                          const hoursAgo = completedUpd ? Math.floor((Date.now() - new Date(completedUpd.timestamp)) / 3600000) : null;
-                          return (
-                            <div key={job.id} style={{ padding: "12px 14px", borderBottom: "1px solid #fecaca" }}>
-                              {job.builder && <div style={{ fontWeight: 700, fontSize: 15, color: "#111", marginBottom: 2 }}>{job.builder}</div>}
-                              {job.address && <div style={{ fontSize: 14, fontWeight: 600, color: "#1d4ed8", marginBottom: 3 }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
-                              {hoursAgo !== null && <div style={{ fontSize: 11, color: "#ef4444", marginTop: 2 }}>Completed {hoursAgo}h ago</div>}
-                              <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
-                                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
-                              </div>
-                              <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-                                <button onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); setPmNote(""); }} style={{ flex: 1, minHeight: 48, padding: "10px", background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, fontSize: 14, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>✓ Mark as Checked</button>
-                                {adminName === "Johnny" && (
-                                  <button onClick={() => { if (!window.confirm("Clear this job from Needs Check?")) return; onEditJob(job.id, { ...job, jobCheckedAM: "Yes", jobCheckedPM: "Yes", checkedAt: new Date().toISOString(), checkedBy: "Cleared by Johnny" }); }} style={{ flex: 1, minHeight: 48, padding: "10px", background: "#6b7280", color: "#fff", border: "none", borderRadius: 8, fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>🧹 Clear</button>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })
-                      }
-                    </div>
-                  )}
-                  {/* Recently Checked panel */}
-                  {checkPanelTab === "recent" && recentlyCheckedExpanded && (
-                    <div style={{ border: "2px solid #86efac", borderTop: "none", borderRadius: "0 0 10px 10px", background: "#f0fdf4" }}>
-                      {recentlyCheckedJobs.length === 0
-                        ? <div style={{ padding: "16px 14px", fontSize: 13, color: "#6b7280" }}>No jobs checked in the last 48 hours.</div>
-                        : recentlyCheckedJobs.map((job) => {
-                          const checkedTime = new Date(job.checkedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-                          return (
-                            <div key={job.id} style={{ padding: "12px 14px", borderBottom: "1px solid #bbf7d0" }}>
-                              {job.builder && <div style={{ fontWeight: 700, fontSize: 15, color: "#14532d", marginBottom: 2 }}>{job.builder}</div>}
-                              {job.address && <div style={{ fontSize: 14, fontWeight: 600, color: "#15803d", marginBottom: 3 }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
-                              <div style={{ fontSize: 11, color: "#166534", marginTop: 2 }}>✅ Checked by <strong>{job.checkedBy || "—"}</strong> · {checkedTime}</div>
-                              {job.checkedLat && job.checkedLng
-                                ? <div style={{ fontSize: 11, marginTop: 3 }}><a href={`https://www.google.com/maps?q=${job.checkedLat},${job.checkedLng}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>📍 View Check Location</a></div>
-                                : <div style={{ fontSize: 11, color: "#9ca3af", marginTop: 3 }}>📍 Location not recorded</div>
-                              }
-                              <div style={{ display: "flex", gap: 6, marginTop: 5, flexWrap: "wrap" }}>
-                                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
-                                <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 8px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
-                              </div>
-                            </div>
-                          );
-                        })
-                      }
-                    </div>
-                  )}
-                </div>
-              );
-            })()}
 
             {/* ─── TWO-COLUMN LAYOUT WRAPPER (desktop/iPad: schedule + needs-check side by side) ─── */}
             <div style={{ display: "grid", gridTemplateColumns: (!showCheckHistory && (needsCheckJobs.length > 0 || recentlyCheckedJobs.length > 0) && window.innerWidth >= 768) ? "1fr 320px" : "1fr", gap: 20, alignItems: "start" }}>
@@ -6702,60 +6670,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
 
-            {(() => { const uncheckedCount = activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes").length; return (
             <SectionHeader title={scheduleView === "energySeal" ? "Energy Seal Schedule" : "Schedule"} right={<>
-              {uncheckedCount > 0 && <button onClick={() => setShowUncheckedOnly(!showUncheckedOnly)} style={{ padding: "6px 12px", border: "1px solid " + (showUncheckedOnly ? t.danger : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showUncheckedOnly ? t.dangerBg : "#fff", color: showUncheckedOnly ? t.danger : t.textMuted }}>{showUncheckedOnly ? "Show All" : uncheckedCount + " Unchecked"}</button>}
-              <button onClick={() => setShowOngoing(o => !o)} style={{ padding: "6px 12px", border: "1px solid " + (showOngoing ? t.accent : t.border), borderRadius: "6px", fontSize: "12px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", background: showOngoing ? t.accentBg : "#fff", color: showOngoing ? t.accent : t.textMuted, position: "relative" }}>On-going Jobs{onHoldJobs.length > 0 && <span style={{ position: "absolute", top: -5, right: -5, background: t.accent, color: "#fff", fontSize: 9, fontWeight: 700, borderRadius: "50%", width: 15, height: 15, display: "flex", alignItems: "center", justifyContent: "center" }}>{onHoldJobs.length}</span>}</button>
               <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
               <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }}>+ Add Job</Button>
             </>} />
-            ); })()}
-            {showOngoing && (
-              <div style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: 14, marginBottom: 16 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 10 }}>On-going Jobs</div>
-                {onHoldJobs.length === 0
-                  ? <div style={{ fontSize: 13, color: t.textMuted }}>No on-going jobs.</div>
-                  : onHoldJobs.map(job => {
-                    const crew = trucks.find(tr => tr.id === job.truckId);
-                    return (
-                      <div key={job.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: "1px solid " + t.borderLight, gap: 8 }}>
-                        <div style={{ minWidth: 0, cursor: "pointer", flex: 1 }} onClick={() => setCalViewJob(job)}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer"}</div>
-                          <div style={{ fontSize: 11, color: t.textMuted }}>{job.address?.split(",")[0]} · {new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
-                        </div>
-                        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                          <Button onClick={() => onEditJob(job.id, { ...job, onHold: false })} style={{ padding: "5px 10px", fontSize: 11 }}>Resume</Button>
-                          <Button variant="danger" onClick={() => { if (confirm("Delete this job?")) onDeleteJob(job.id); }} style={{ padding: "5px 10px", fontSize: 11 }}>Delete</Button>
-                        </div>
-                      </div>
-                    );
-                  })
-                }
-              </div>
-            )}
             {truckFilterName && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", padding: "8px 12px", background: t.accentBg, borderRadius: "6px", fontSize: "13px", color: t.accent, fontWeight: 500 }}>
                 Showing jobs for {truckFilterName}
                 <button onClick={() => setTruckFilter(null)} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontWeight: 700, fontSize: "14px", fontFamily: "inherit", padding: "0 4px" }}>✕</button>
               </div>
             )}
-            {/* ── Job Search & Filter Bar ── */}
-            <div style={{ marginBottom: 14, background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: "10px 12px" }}>
-              <input type="text" placeholder="🔍 Search address or builder..." value={jobSearch} onChange={e => setJobSearch(e.target.value)} style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 13, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 8 }} />
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
-                {[["active","Active"],["completed","Completed"],["all","All"]].map(([v,l]) => (
-                  <button key={v} onClick={() => setJobStatusFilter(v)} style={{ padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: jobStatusFilter === v ? t.accent : "#f1f5f9", color: jobStatusFilter === v ? "#fff" : t.textMuted, border: "1px solid " + (jobStatusFilter === v ? t.accent : t.border) }}>{l}</button>
-                ))}
-                <span style={{ color: t.border, padding: "0 4px" }}>|</span>
-                {[["all","All Time"],["today","Today"],["week","This Week"]].map(([v,l]) => (
-                  <button key={v} onClick={() => setJobDateFilter(v)} style={{ padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", background: jobDateFilter === v ? "#6d28d9" : "#f1f5f9", color: jobDateFilter === v ? "#fff" : t.textMuted, border: "1px solid " + (jobDateFilter === v ? "#6d28d9" : t.border) }}>{l}</button>
-                ))}
-              </div>
-              <select value={jobCrewFilter} onChange={e => setJobCrewFilter(e.target.value)} style={{ padding: "6px 10px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 12, fontFamily: "inherit", color: t.text, background: "#fff" }}>
-                <option value="">All Crew</option>
-                {members.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
-              </select>
-            </div>
             {(() => {
               const displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
               if (displayJobs.length === 0) return <EmptyState text={showUncheckedOnly ? "All jobs have been checked." : "No active jobs."} />;
@@ -7409,7 +7333,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   {/* Truck inventory */}
                   {(() => {
                     const ti = truckInventory?.[tr.id] || {};
-                    const loaded = INVENTORY_ITEMS.filter(i => (ti[i.id] || 0) > 0);
+                    const tsi = truckSecondaryInventory?.[tr.id] || {};
+                    const loaded = getTruckInventoryDisplayRows(ti);
+                    const secondaryLoaded = getTruckInventoryDisplayRows(tsi);
                     return (
                       <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Loaded on Truck</div>
@@ -7431,7 +7357,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                                     {loaded.map(item => (
                                       <div key={item.id} style={{ fontSize: 12, fontWeight: 600, color: t.text }}>
-                                        {item.name} — {Number(ti[item.id] || 0).toFixed(item.unit === "gal" || item.unit === "set" ? 2 : 0)} {item.unit}
+                                        {item.name} — {Number(item.qty || 0).toFixed(item.unit === "gal" || item.unit === "set" ? 2 : 0)} {item.unit}
                                       </div>
                                     ))}
                                   </div>
@@ -7439,6 +7365,19 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               })()}
                             </div>
                         }
+                        <div style={{ marginTop: 10 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Secondary Inventory, reserve only</div>
+                          {secondaryLoaded.length === 0
+                            ? <div style={{ fontSize: 12, color: t.textMuted }}>No reserve stock recorded.</div>
+                            : <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                                {secondaryLoaded.map((item) => (
+                                  <div key={item.id} style={{ fontSize: 12, fontWeight: 600, color: t.textSecondary }}>
+                                    {item.name} — {Number(item.qty || 0).toFixed(item.unit === "gal" || item.unit === "set" ? 2 : 0)} {item.unit}
+                                  </div>
+                                ))}
+                              </div>
+                          }
+                        </div>
                       </div>
                     );
                   })()}
@@ -7883,7 +7822,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
                     {sortedTrucks.map(tr => {
                       const ti = truckInventory?.[tr.id] || {};
-                      const loadedItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (ti[i.id] || 0) > 0);
+                      const tsi = truckSecondaryInventory?.[tr.id] || {};
+                      const loadedItems = getTruckInventoryDisplayRows(ti);
+                      const secondaryLoadedItems = getTruckInventoryDisplayRows(tsi);
                       return (
                         <div key={tr.id} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: 14, boxShadow: t.shadow }}>
                           <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 4 }}>{tr.name}</div>
@@ -7895,7 +7836,20 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               {loadedItems.map(item => (
                                 <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid " + t.borderLight }}>
                                   <span>{item.name}</span>
-                                  <span style={{ fontWeight: 600, color: t.accent }}>{ti[item.id]} {item.unit}</span>
+                                  <span style={{ fontWeight: 600, color: t.accent }}>{item.qty} {item.unit}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          <div style={{ marginTop: 10, fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Secondary</div>
+                          {secondaryLoadedItems.length === 0 ? (
+                            <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic", marginTop: 4 }}>No reserve stock</div>
+                          ) : (
+                            <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 4 }}>
+                              {secondaryLoadedItems.map(item => (
+                                <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid " + t.borderLight }}>
+                                  <span>{item.name}</span>
+                                  <span style={{ fontWeight: 600, color: t.textSecondary }}>{item.qty} {item.unit}</span>
                                 </div>
                               ))}
                             </div>
@@ -8349,6 +8303,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         <TruckDetailModal
           truck={truckDetailView}
           truckInventory={truckInventory[truckDetailView.id] || {}}
+          truckSecondaryInventory={truckSecondaryInventory[truckDetailView.id] || {}}
           loadLog={loadLog}
           returnLog={returnLog}
           jobs={jobs}
@@ -11510,6 +11465,7 @@ export default function App() {
   const [inventory, setInventory] = useState([]);
   const [inventoryEvents, setInventoryEvents] = useState([]);
   const [truckInventory, setTruckInventory] = useState({});
+  const [truckSecondaryInventory, setTruckSecondaryInventory] = useState({});
   const [truckToolInventory, setTruckToolInventory] = useState({});
   const [tools, setTools] = useState([]);
   const [toolCheckouts, setToolCheckouts] = useState([]);
@@ -11526,6 +11482,7 @@ export default function App() {
     const unsubInv = onSnapshot(collection(db, "inventory"), (snap) => { setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubInventoryEvents = onSnapshot(collection(db, "inventoryEvents"), (snap) => { setInventoryEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
     const unsubTruckInv = onSnapshot(collection(db, "truckInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckInventory(m); });
+    const unsubTruckSecondaryInv = onSnapshot(collection(db, "truckSecondaryInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckSecondaryInventory(m); });
     const unsubTruckToolInv = onSnapshot(collection(db, "truckToolInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckToolInventory(m); });
     const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubLoadLog = onSnapshot(collection(db, "loadLog"), (snap) => { setLoadLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
@@ -11549,7 +11506,7 @@ export default function App() {
     });
     const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckSecondaryInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
   }, []);
 
   const derivedTruckInventory = useMemo(
@@ -12546,7 +12503,7 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} derivedTruckInventory={derivedTruckInventory[truck?.id] || {}} truckInventoryParity={truckInventoryParity[truck?.id] || null} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} truckSecondaryInventory={truckSecondaryInventory[truck?.id] || {}} derivedTruckInventory={derivedTruckInventory[truck?.id] || {}} truckInventoryParity={truckInventoryParity[truck?.id] || null} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   }
   if (role === "mechanic" && mechanicName) {
     return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
@@ -12582,6 +12539,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
   return null;
 }
