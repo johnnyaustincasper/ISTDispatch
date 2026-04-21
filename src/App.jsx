@@ -4586,6 +4586,320 @@ function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckIn
   );
 }
 
+function InventoryAuditView({ inventoryEvents = [], truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobs = [] }) {
+  const eventTypeLabels = {
+    [INVENTORY_EVENT_TYPES.warehouseAdjustment]: "Warehouse Adjustments",
+    [INVENTORY_EVENT_TYPES.warehouseSnapshot]: "Warehouse Snapshots",
+    [INVENTORY_EVENT_TYPES.truckTransfer]: "Truck Transfers",
+    [INVENTORY_EVENT_TYPES.truckSnapshot]: "Truck Snapshots",
+    [INVENTORY_EVENT_TYPES.jobUsage]: "Job Usage",
+    [INVENTORY_EVENT_TYPES.reconciliation]: "Reconciliations",
+  };
+  const [search, setSearch] = useState("");
+  const [eventTypeFilter, setEventTypeFilter] = useState("all");
+  const [scopeFilter, setScopeFilter] = useState("all");
+  const [onlyCorrelated, setOnlyCorrelated] = useState(false);
+  const [selectedChainKey, setSelectedChainKey] = useState(null);
+  const [expandedEventIds, setExpandedEventIds] = useState({});
+
+  const mismatchedTrucks = Object.values(truckInventoryParity || {})
+    .filter((row) => row?.hasMismatch)
+    .sort((a, b) => (b?.mismatchCount || 0) - (a?.mismatchCount || 0) || (b?.totalAbsoluteDelta || 0) - (a?.totalAbsoluteDelta || 0));
+  const mismatchedJobs = jobs
+    .map((job) => ({ job, parity: jobUsageParityByJobId?.[job.id] || null }))
+    .filter(({ parity }) => parity && !parity.isAligned)
+    .sort((a, b) => (b.parity?.vsEffectiveLegacy?.mismatchCount || 0) - (a.parity?.vsEffectiveLegacy?.mismatchCount || 0));
+
+  const eventTypeCounts = Object.entries(
+    (inventoryEvents || []).reduce((acc, event) => {
+      const key = event?.eventType || "unknown";
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {})
+  ).sort((a, b) => b[1] - a[1]);
+
+  const renderEventContext = (event) => [
+    event?.location?.truckId ? `Truck ${event.location.truckName || event.location.truckId}` : null,
+    event?.location?.jobId ? `Job ${event.location.jobAddress || event.location.jobId}` : null,
+    event?.location?.warehouseId ? `Warehouse ${event.location.warehouseId}` : null,
+    event?.effectiveDate ? `Effective ${event.effectiveDate}` : null,
+  ].filter(Boolean).join(" • ");
+  const getScopeLabel = (event) => event?.location?.jobId ? "job" : event?.location?.truckId ? "truck" : event?.location?.warehouseId ? "warehouse" : "other";
+  const describeDelta = (event) => {
+    if (event?.quantity?.delta === undefined || event?.quantity?.delta === null || event?.quantity?.delta === 0) return "Snapshot / no delta";
+    return `${event.quantity.delta > 0 ? "+" : ""}${roundInventoryQty(event.quantity.delta)}${event?.quantity?.unit ? ` ${event.quantity.unit}` : ""}`;
+  };
+  const summarizeObject = (value = {}) => Object.entries(value || {}).filter(([, item]) => item !== undefined && item !== null && item !== "");
+
+  const filteredEvents = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return [...(inventoryEvents || [])]
+      .sort((a, b) => new Date(b.occurredAt || b.createdAt || 0) - new Date(a.occurredAt || a.createdAt || 0))
+      .filter((event) => {
+        if (eventTypeFilter !== "all" && event?.eventType !== eventTypeFilter) return false;
+        if (scopeFilter !== "all" && getScopeLabel(event) !== scopeFilter) return false;
+        const correlated = !!(event?.refs?.correlationKey || event?.refs?.snapshotKey);
+        if (onlyCorrelated && !correlated) return false;
+        if (!term) return true;
+        const haystack = [
+          event?.eventType,
+          event?.item?.itemId,
+          event?.item?.itemName,
+          event?.location?.truckId,
+          event?.location?.truckName,
+          event?.location?.jobId,
+          event?.location?.jobAddress,
+          event?.location?.warehouseId,
+          event?.actor?.actorName,
+          event?.refs?.correlationKey,
+          event?.refs?.snapshotKey,
+          event?.refs?.legacyDocId,
+          event?.notes,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return haystack.includes(term);
+      });
+  }, [inventoryEvents, search, eventTypeFilter, scopeFilter, onlyCorrelated]);
+
+  const filteredChains = useMemo(() => {
+    const groups = new Map();
+    filteredEvents.forEach((event, index) => {
+      const chainKey = event?.refs?.correlationKey
+        || event?.refs?.snapshotKey
+        || [event?.eventType || "event", event?.location?.truckId || "", event?.location?.jobId || "", event?.location?.warehouseId || "", event?.effectiveDate || "", `${event?.occurredAt || event?.createdAt || index}`].join("::");
+      const existing = groups.get(chainKey) || { key: chainKey, events: [] };
+      existing.events.push(event);
+      groups.set(chainKey, existing);
+    });
+    return [...groups.values()]
+      .map((group) => {
+        const events = [...group.events].sort((a, b) => new Date(b.occurredAt || b.createdAt || 0) - new Date(a.occurredAt || a.createdAt || 0));
+        const latest = events[0] || null;
+        const itemIds = [...new Set(events.map((event) => event?.item?.itemId).filter(Boolean))];
+        const actors = [...new Set(events.map((event) => event?.actor?.actorName).filter(Boolean))];
+        const scopeLabels = [...new Set(events.map((event) => getScopeLabel(event)))];
+        const netDelta = events.reduce((sum, event) => sum + (parseFloat(event?.quantity?.delta) || 0), 0);
+        return {
+          ...group,
+          events,
+          latest,
+          itemIds,
+          actors,
+          scopeLabels,
+          netDelta: roundInventoryQty(netDelta),
+          label: latest?.refs?.correlationKey || latest?.refs?.snapshotKey || renderEventContext(latest) || (eventTypeLabels[latest?.eventType] || latest?.eventType || "Event chain"),
+        };
+      })
+      .sort((a, b) => new Date(b.latest?.occurredAt || b.latest?.createdAt || 0) - new Date(a.latest?.occurredAt || a.latest?.createdAt || 0));
+  }, [filteredEvents]);
+
+  useEffect(() => {
+    if (!filteredChains.length) {
+      setSelectedChainKey(null);
+      return;
+    }
+    if (!selectedChainKey || !filteredChains.some((chain) => chain.key === selectedChainKey)) {
+      setSelectedChainKey(filteredChains[0].key);
+    }
+  }, [filteredChains, selectedChainKey]);
+
+  const selectedChain = filteredChains.find((chain) => chain.key === selectedChainKey) || filteredChains[0] || null;
+
+  const toggleExpanded = (eventId) => setExpandedEventIds((prev) => ({ ...prev, [eventId]: !prev[eventId] }));
+
+  return (
+    <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12, marginBottom: 16 }}>
+        {[
+          { label: "Inventory Events", value: inventoryEvents.length || 0, color: t.text },
+          { label: "Filtered Events", value: filteredEvents.length || 0, color: t.accent },
+          { label: "Event Chains", value: filteredChains.length || 0, color: t.text },
+          { label: "Truck Mismatches", value: mismatchedTrucks.length || 0, color: mismatchedTrucks.length ? "#b45309" : "#15803d" },
+          { label: "Warehouse Mismatches", value: warehouseInventoryParity?.mismatchedItemCount || 0, color: warehouseInventoryParity?.mismatchedItemCount ? "#b45309" : "#15803d" },
+          { label: "Job Usage Mismatches", value: mismatchedJobs.length || 0, color: mismatchedJobs.length ? "#b45309" : "#15803d" },
+        ].map((card) => (
+          <div key={card.label} style={{ background: "#fff", border: `1px solid ${t.border}`, borderRadius: 10, padding: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>{card.label}</div>
+            <div style={{ fontSize: 22, fontWeight: 800, color: card.color }}>{card.value}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ background: "#fff", border: `1px solid ${t.border}`, borderRadius: 10, padding: 14, marginBottom: 16 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: t.text, marginBottom: 10 }}>Audit filters and forensic drilldown</div>
+        <div style={{ display: "grid", gridTemplateColumns: "minmax(220px, 1.4fr) repeat(2, minmax(160px, 0.7fr)) auto", gap: 10, alignItems: "center" }}>
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search item, truck, job, actor, correlation key..." style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12.5 }} />
+          <select value={eventTypeFilter} onChange={(e) => setEventTypeFilter(e.target.value)} style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12.5, background: "#fff" }}>
+            <option value="all">All event types</option>
+            {Object.keys(eventTypeLabels).map((eventType) => <option key={eventType} value={eventType}>{eventTypeLabels[eventType]}</option>)}
+          </select>
+          <select value={scopeFilter} onChange={(e) => setScopeFilter(e.target.value)} style={{ padding: "10px 12px", borderRadius: 8, border: `1px solid ${t.border}`, fontSize: 12.5, background: "#fff" }}>
+            <option value="all">All scopes</option>
+            <option value="warehouse">Warehouse</option>
+            <option value="truck">Truck</option>
+            <option value="job">Job</option>
+            <option value="other">Other</option>
+          </select>
+          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12, color: t.textSecondary, whiteSpace: "nowrap" }}>
+            <input type="checkbox" checked={onlyCorrelated} onChange={(e) => setOnlyCorrelated(e.target.checked)} />
+            Correlated chains only
+          </label>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "minmax(360px, 0.95fr) minmax(420px, 1.25fr) 0.7fr", gap: 12, alignItems: "start" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: "#fff", border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ padding: "12px 14px", borderBottom: `1px solid ${t.borderLight}`, background: t.bg }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>Grouped event chains</div>
+              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>Correlation-aware bundles for transfers, snapshots, and related writes.</div>
+            </div>
+            {!filteredChains.length ? <div style={{ padding: 18, fontSize: 13, color: t.textMuted }}>No events match the current filters.</div> : filteredChains.slice(0, 120).map((chain) => (
+              <button key={chain.key} onClick={() => setSelectedChainKey(chain.key)} style={{ width: "100%", textAlign: "left", padding: "12px 14px", border: 0, borderBottom: `1px solid ${t.borderLight}`, background: chain.key === selectedChainKey ? "#f8fafc" : "#fff", cursor: "pointer" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 12.5, fontWeight: 700, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{chain.label}</div>
+                    <div style={{ fontSize: 11, color: t.textMuted, marginTop: 3 }}>{renderEventContext(chain.latest) || "No location context"}</div>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+                      <span style={{ fontSize: 10.5, color: t.textMuted, background: t.bg, border: `1px solid ${t.borderLight}`, borderRadius: 999, padding: "3px 7px" }}>{chain.events.length} event{chain.events.length === 1 ? "" : "s"}</span>
+                      {chain.scopeLabels.map((scope) => <span key={scope} style={{ fontSize: 10.5, color: t.textMuted, background: t.bg, border: `1px solid ${t.borderLight}`, borderRadius: 999, padding: "3px 7px", textTransform: "capitalize" }}>{scope}</span>)}
+                      {chain.itemIds.slice(0, 2).map((itemId) => <span key={itemId} style={{ fontSize: 10.5, color: t.accent, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 999, padding: "3px 7px" }}>{INVENTORY_ITEMS.find((item) => item.id === itemId)?.name || itemId}</span>)}
+                    </div>
+                  </div>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    <div style={{ fontSize: 11, color: t.textMuted }}>{dateStr(chain.latest?.occurredAt || chain.latest?.createdAt)}</div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: chain.netDelta === 0 ? t.textMuted : chain.netDelta > 0 ? "#15803d" : "#b45309", marginTop: 4 }}>{chain.netDelta === 0 ? "Net 0" : `Net ${chain.netDelta > 0 ? "+" : ""}${chain.netDelta}`}</div>
+                  </div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: "#fff", border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ padding: "12px 14px", borderBottom: `1px solid ${t.borderLight}`, background: t.bg }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>Correlation view and event drawer</div>
+              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>Expanded chain detail for forensic review, read-only.</div>
+            </div>
+            {!selectedChain ? <div style={{ padding: 18, fontSize: 13, color: t.textMuted }}>Select an event chain to inspect details.</div> : <div style={{ padding: 14 }}>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
+                {[
+                  { label: "Chain events", value: selectedChain.events.length },
+                  { label: "Actors", value: selectedChain.actors.length || 1 },
+                  { label: "Items touched", value: selectedChain.itemIds.length || 0 },
+                  { label: "Net delta", value: selectedChain.netDelta === 0 ? "0" : `${selectedChain.netDelta > 0 ? "+" : ""}${selectedChain.netDelta}` },
+                ].map((card) => <div key={card.label} style={{ border: `1px solid ${t.borderLight}`, borderRadius: 8, padding: 10, background: t.bg }}><div style={{ fontSize: 10.5, fontWeight: 700, color: t.textMuted, textTransform: "uppercase" }}>{card.label}</div><div style={{ fontSize: 18, fontWeight: 800, color: t.text, marginTop: 4 }}>{card.value}</div></div>)}
+              </div>
+
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+                {selectedChain.latest?.refs?.correlationKey ? <span style={{ fontSize: 11, color: t.textSecondary, background: "#f8fafc", border: `1px solid ${t.borderLight}`, borderRadius: 999, padding: "5px 9px" }}>Correlation: {selectedChain.latest.refs.correlationKey}</span> : null}
+                {selectedChain.latest?.refs?.snapshotKey ? <span style={{ fontSize: 11, color: t.textSecondary, background: "#f8fafc", border: `1px solid ${t.borderLight}`, borderRadius: 999, padding: "5px 9px" }}>Snapshot: {selectedChain.latest.refs.snapshotKey}</span> : null}
+                {selectedChain.latest?.refs?.legacyCollection ? <span style={{ fontSize: 11, color: t.textSecondary, background: "#f8fafc", border: `1px solid ${t.borderLight}`, borderRadius: 999, padding: "5px 9px" }}>Legacy: {selectedChain.latest.refs.legacyCollection}/{selectedChain.latest.refs.legacyDocId || "?"}</span> : null}
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {selectedChain.events.map((event, index) => {
+                  const expanded = !!expandedEventIds[event.id || `${selectedChain.key}-${index}`];
+                  const eventKey = event.id || `${selectedChain.key}-${index}`;
+                  return (
+                    <div key={eventKey} style={{ border: `1px solid ${t.borderLight}`, borderRadius: 10, overflow: "hidden" }}>
+                      <button onClick={() => toggleExpanded(eventKey)} style={{ width: "100%", textAlign: "left", border: 0, background: "#fff", padding: "12px 14px", cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12 }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 12.5, fontWeight: 700, color: t.text }}>{eventTypeLabels[event?.eventType] || event?.eventType || "Unknown Event"}</div>
+                            <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 2 }}>{event?.item?.itemName || event?.item?.itemId || "Snapshot"} • {describeDelta(event)}</div>
+                            <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{renderEventContext(event) || "No location context"}</div>
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0, fontSize: 11, color: t.textMuted }}>
+                            <div>{dateStr(event?.occurredAt || event?.createdAt)}</div>
+                            <div style={{ marginTop: 3 }}>{event?.actor?.actorName || "system"}</div>
+                            <div style={{ marginTop: 5, color: t.accent }}>{expanded ? "Hide details" : "Show details"}</div>
+                          </div>
+                        </div>
+                      </button>
+                      {expanded && (
+                        <div style={{ padding: "0 14px 14px", background: "#fcfcfd", borderTop: `1px solid ${t.borderLight}` }}>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginTop: 12 }}>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", marginBottom: 6 }}>Quantity</div>
+                              <div style={{ fontSize: 12, color: t.textSecondary }}>Delta: {describeDelta(event)}</div>
+                              <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 4 }}>Before: {event?.quantity?.before ?? "—"}</div>
+                              <div style={{ fontSize: 12, color: t.textSecondary, marginTop: 4 }}>After: {event?.quantity?.after ?? "—"}</div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", marginBottom: 6 }}>Refs</div>
+                              {summarizeObject(event?.refs).length === 0 ? <div style={{ fontSize: 12, color: t.textMuted }}>No refs</div> : summarizeObject(event?.refs).map(([key, value]) => <div key={key} style={{ fontSize: 12, color: t.textSecondary, marginTop: 4 }}>{key}: {`${value}`}</div>)}
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", marginBottom: 6 }}>Metadata</div>
+                              {summarizeObject(event?.metadata).length === 0 ? <div style={{ fontSize: 12, color: t.textMuted }}>No metadata</div> : summarizeObject(event?.metadata).slice(0, 8).map(([key, value]) => <div key={key} style={{ fontSize: 12, color: t.textSecondary, marginTop: 4 }}>{key}: {typeof value === "object" ? JSON.stringify(value) : `${value}`}</div>)}
+                            </div>
+                          </div>
+                          {event?.notes ? <div style={{ marginTop: 12, padding: 10, borderRadius: 8, background: "#fff", border: `1px solid ${t.borderLight}` }}><div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", marginBottom: 4 }}>Notes</div><div style={{ fontSize: 12, color: t.textSecondary, whiteSpace: "pre-wrap" }}>{event.notes}</div></div> : null}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>}
+          </div>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ background: "#fff", border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ padding: "12px 14px", borderBottom: `1px solid ${t.borderLight}`, background: t.bg }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>Event mix</div>
+              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>Quick check of live event write coverage.</div>
+            </div>
+            {eventTypeCounts.length === 0 ? <div style={{ padding: 18, fontSize: 13, color: t.textMuted }}>No event data available.</div> : eventTypeCounts.map(([eventType, count]) => (
+              <div key={eventType} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${t.borderLight}` }}>
+                <div style={{ fontSize: 12, color: t.text }}>{eventTypeLabels[eventType] || eventType}</div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: t.accent }}>{count}</div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "#fff", border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ padding: "12px 14px", borderBottom: `1px solid ${t.borderLight}`, background: t.bg }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>Truck parity watchlist</div>
+              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>Legacy truckInventory vs event-derived balances.</div>
+            </div>
+            {mismatchedTrucks.length === 0 ? <div style={{ padding: 18, fontSize: 13, color: "#15803d" }}>All trucks are aligned.</div> : mismatchedTrucks.slice(0, 10).map((row) => (
+              <div key={row.truckId} style={{ padding: "10px 14px", borderBottom: `1px solid ${t.borderLight}` }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+                  <div style={{ fontSize: 12.5, fontWeight: 700, color: t.text }}>{row.truckName || row.truckId}</div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: "#b45309" }}>{row.mismatchCount} mismatch{row.mismatchCount === 1 ? "" : "es"}</div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {row.mismatches.slice(0, 4).map((mismatch) => {
+                    const item = INVENTORY_ITEMS.find((entry) => entry.id === mismatch.itemId);
+                    return <span key={mismatch.itemId} style={{ fontSize: 11, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 999, padding: "4px 8px" }}>{item?.name || mismatch.itemId}: {formatTruckParityDelta(mismatch.delta, item?.unit || "")}</span>;
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{ background: "#fff", border: `1px solid ${t.border}`, borderRadius: 10, overflow: "hidden" }}>
+            <div style={{ padding: "12px 14px", borderBottom: `1px solid ${t.borderLight}`, background: t.bg }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>Job usage mismatches</div>
+              <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>Closed-out jobs where event totals do not match legacy usage.</div>
+            </div>
+            {mismatchedJobs.length === 0 ? <div style={{ padding: 18, fontSize: 13, color: "#15803d" }}>No job usage mismatches detected.</div> : mismatchedJobs.slice(0, 12).map(({ job, parity }) => (
+              <div key={job.id} style={{ padding: "10px 14px", borderBottom: `1px solid ${t.borderLight}` }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: t.text }}>{job.builder || "Unknown Builder"}</div>
+                <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{job.address || job.id}</div>
+                <div style={{ fontSize: 11, color: "#92400e", marginTop: 4 }}>{parity?.vsEffectiveLegacy?.mismatchCount || 0} mismatch{(parity?.vsEffectiveLegacy?.mismatchCount || 0) === 1 ? "" : "es"}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Admin Dashboard ───
 // ─── Roster View ─────────────────────────────────────────────────────────────
 function TimesheetModal({ member, jobs, updates, jobUpdates, weekOffset, setWeekOffset, onClose }) {
@@ -6168,7 +6482,7 @@ function WeatherTab({ jobs, trucks, updates }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   // Builders DB state
@@ -7694,6 +8008,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 {[
                   { id: "materials",     label: "Materials" },
                   { id: "parity",        label: "Parity" },
+                  { id: "audit",         label: "Audit" },
                   { id: "summary",       label: "💰 Value" },
                   { id: "report",        label: "Usage Report" },
                   { id: "trucks",        label: "Truck Loads" },
@@ -7777,6 +8092,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   </div>
                 );
               })()}
+
+              {invTab === "audit" && (
+                <InventoryAuditView
+                  inventoryEvents={inventoryEvents}
+                  truckInventoryParity={truckInventoryParity}
+                  warehouseInventoryParity={warehouseInventoryParity}
+                  jobUsageParityByJobId={jobUsageParityByJobId}
+                  jobs={jobs}
+                />
+              )}
 
 
               {invTab === "report" && (
@@ -12539,6 +12864,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
   return null;
 }
