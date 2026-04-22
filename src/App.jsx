@@ -6742,7 +6742,7 @@ function WeatherTab({ jobs, trucks, updates }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, crewDailyChecklists = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   // Builders DB state
@@ -6827,7 +6827,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const truckWorkWeekLogs = useMemo(() => {
     const weekDates = getCurrentWorkWeekDates();
     const dateSet = new Set(weekDates);
-    const checklistByTruckAndDate = (crewDailyChecklists || []).reduce((acc, entry) => {
+    const checklistByTruckAndDate = (truckDailyLogs || []).reduce((acc, entry) => {
       if (!entry?.truckId || !entry?.date || !dateSet.has(entry.date)) return acc;
       const key = `${entry.truckId}__${entry.date}`;
       const status = entry.completed || entry.status === "completed"
@@ -6844,7 +6844,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         startedAt,
         completedAt,
         durationMinutes,
-        completedByName: entry.completedByName || entry.crewName || "—",
+        completedByName: entry.completedByName || entry.completedBy?.crewName || entry.crewName || "—",
       };
       const current = acc[key];
       const rank = { not_started: 0, in_progress: 1, completed: 2 };
@@ -6857,7 +6857,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       ...(formatChecklistDayDate(date)),
       record: checklistByTruckAndDate[`${truck.id}__${date}`] || null,
     }))]));
-  }, [crewDailyChecklists, trucks]);
+  }, [truckDailyLogs, trucks]);
   const activeJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
@@ -8055,7 +8055,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     return (
                       <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
                         <div style={{ marginBottom: 12 }}>
-                          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Usage</div>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Material Usage</div>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
                             {usageWindows.map(({ days, foamGallons, materialValue }) => (
                               <div key={days} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 8, padding: "8px 10px" }}>
@@ -13267,6 +13267,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} crewDailyChecklists={crewDailyChecklists} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
   return null;
 }
