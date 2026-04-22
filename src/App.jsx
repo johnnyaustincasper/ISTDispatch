@@ -248,6 +248,7 @@ const calcJobMaterialCost = (job) => {
   return total;
 };
 const FOAM_MATERIAL_IDS = new Set(["oc_a", "oc_b", "cc_a", "cc_b", "env_oc_a", "env_oc_b", "env_cc_b"]);
+const FOAM_BSIDE_IDS = new Set(["oc_b", "cc_b", "env_oc_b", "env_cc_b"]);
 const foamQtyToGallons = (itemId, qty) => {
   const gallonsPerBbl = ["cc_a", "cc_b", "env_cc_b"].includes(itemId) ? 50 : 48;
   return (parseFloat(qty) || 0) * gallonsPerBbl;
@@ -276,8 +277,10 @@ const getTruckUsageWindowStats = (jobs = [], truckId = null, windows = [7, 14, 3
         const parsedQty = parseFloat(qty) || 0;
         if (parsedQty <= 0) return;
         if (FOAM_MATERIAL_IDS.has(itemId)) {
-          stats[days].foamGallons += foamQtyToGallons(itemId, parsedQty);
-          stats[days].materialValue += foamCostForQty(itemId, parsedQty);
+          if (FOAM_BSIDE_IDS.has(itemId)) {
+            stats[days].foamGallons += foamQtyToGallons(itemId, parsedQty);
+            stats[days].materialValue += foamCostForQty(itemId, parsedQty);
+          }
           return;
         }
         const item = INVENTORY_ITEMS.find((entry) => entry.id === itemId);
