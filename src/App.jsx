@@ -6815,7 +6815,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [foamPartsQtys, setFoamPartsQtys] = useState({});
   const [projectToolsQtys, setProjectToolsQtys] = useState({});
   const [showEodSummary, setShowEodSummary] = useState(false);
-  const [expandedTruckSections, setExpandedTruckSections] = useState({}); // truckId -> { loads, returns }
+  const [expandedTruckSections, setExpandedTruckSections] = useState({}); // truckId -> { checklist, loads, returns }
   const toggleTruckSection = (truckId, section) => setExpandedTruckSections(prev => ({ ...prev, [truckId]: { ...(prev[truckId] || {}), [section]: !(prev[truckId] || {})[section] } }));
   const [showReconcile, setShowReconcile] = useState(false);
   const [toasts, dismissToast] = useJobUpdateToasts(updates, jobs);
@@ -7943,30 +7943,35 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     };
                     return (
                       <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
-                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Work Week Checklist Log, Mon-Fri</div>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                          {workWeekRows.map((row) => {
-                            const record = row.record;
-                            const meta = statusMeta[record?.status || "not_started"] || statusMeta.not_started;
-                            return (
-                              <div key={row.date} style={{ background: t.bg, border: "1px solid " + t.borderLight, borderRadius: 8, padding: "10px 12px" }}>
-                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
-                                  <div>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{row.dayLabel}</div>
-                                    <div style={{ fontSize: 11, color: t.textMuted }}>{row.dateLabel}</div>
+                        <button onClick={() => toggleTruckSection(tr.id, "checklist")} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", background: "none", border: "none", cursor: "pointer", padding: "4px 0", fontFamily: "inherit", marginBottom: sectState.checklist ? 8 : 0 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>Work Week Checklist Log, Mon-Fri</span>
+                          <span style={{ fontSize: 12, color: t.textMuted }}>{sectState.checklist ? "▲" : "▼"}</span>
+                        </button>
+                        {sectState.checklist && (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            {workWeekRows.map((row) => {
+                              const record = row.record;
+                              const meta = statusMeta[record?.status || "not_started"] || statusMeta.not_started;
+                              return (
+                                <div key={row.date} style={{ background: t.bg, border: "1px solid " + t.borderLight, borderRadius: 8, padding: "10px 12px" }}>
+                                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                                    <div>
+                                      <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{row.dayLabel}</div>
+                                      <div style={{ fontSize: 11, color: t.textMuted }}>{row.dateLabel}</div>
+                                    </div>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: meta.color, background: meta.bg, borderRadius: 999, padding: "3px 8px" }}>{meta.label}</span>
                                   </div>
-                                  <span style={{ fontSize: 11, fontWeight: 700, color: meta.color, background: meta.bg, borderRadius: 999, padding: "3px 8px" }}>{meta.label}</span>
+                                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
+                                    <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Started</strong><span style={{ fontSize: 12, color: t.text }}>{formatChecklistTime(record?.startedAt)}</span></div>
+                                    <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Completed</strong><span style={{ fontSize: 12, color: t.text }}>{formatChecklistTime(record?.completedAt)}</span></div>
+                                    <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Duration</strong><span style={{ fontSize: 12, color: t.text }}>{record?.durationMinutes != null ? `${record.durationMinutes} min` : "—"}</span></div>
+                                    <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Completed By</strong><span style={{ fontSize: 12, color: t.text }}>{record?.completedByName || "—"}</span></div>
+                                  </div>
                                 </div>
-                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
-                                  <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Started</strong><span style={{ fontSize: 12, color: t.text }}>{formatChecklistTime(record?.startedAt)}</span></div>
-                                  <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Completed</strong><span style={{ fontSize: 12, color: t.text }}>{formatChecklistTime(record?.completedAt)}</span></div>
-                                  <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Duration</strong><span style={{ fontSize: 12, color: t.text }}>{record?.durationMinutes != null ? `${record.durationMinutes} min` : "—"}</span></div>
-                                  <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Completed By</strong><span style={{ fontSize: 12, color: t.text }}>{record?.completedByName || "—"}</span></div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
                     );
                   })()}
