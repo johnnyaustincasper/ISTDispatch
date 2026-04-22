@@ -260,6 +260,13 @@ const getTruckUsageWindowStats = (jobs = [], truckId = null, windows = [7, 14, 3
     return [days, start.toLocaleDateString("en-CA", { timeZone: "America/Chicago" })];
   }));
   const stats = Object.fromEntries(windows.map((days) => [days, { foamGallons: 0, materialValue: 0 }]));
+  const foamCostForQty = (itemId, qty) => {
+    const parsedQty = parseFloat(qty) || 0;
+    if (parsedQty <= 0) return 0;
+    if (["oc_b", "env_oc_b"].includes(itemId)) return foamQtyToGallons(itemId, parsedQty) * 32;
+    if (["cc_b", "env_cc_b"].includes(itemId)) return foamQtyToGallons(itemId, parsedQty) * 44;
+    return 0;
+  };
 
   const addMaterialsToWindows = (materials = {}, effectiveDate, targetWindows = windows) => {
     if (!effectiveDate) return;
@@ -268,7 +275,11 @@ const getTruckUsageWindowStats = (jobs = [], truckId = null, windows = [7, 14, 3
       Object.entries(materials || {}).forEach(([itemId, qty]) => {
         const parsedQty = parseFloat(qty) || 0;
         if (parsedQty <= 0) return;
-        if (FOAM_MATERIAL_IDS.has(itemId)) stats[days].foamGallons += foamQtyToGallons(itemId, parsedQty);
+        if (FOAM_MATERIAL_IDS.has(itemId)) {
+          stats[days].foamGallons += foamQtyToGallons(itemId, parsedQty);
+          stats[days].materialValue += foamCostForQty(itemId, parsedQty);
+          return;
+        }
         const item = INVENTORY_ITEMS.find((entry) => entry.id === itemId);
         stats[days].materialValue += (item?.cost || 0) * parsedQty;
       });
@@ -7146,8 +7157,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule", badge: needsCheckJobs.length },
     { key: "calendar", label: "Calendar" },
-    { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "inventory", label: "Inventory" },
+    { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
     { key: "roster", label: "Roster" },
     { key: "weather", label: "Weather" },
@@ -7903,6 +7914,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           <>
             <SectionHeader title="Trucks" right={<Button onClick={() => setShowAddTruck(true)}>+ Add {scheduleView === "energySeal" ? "Technician" : "Truck"}</Button>} />
             {trucks.length === 0 ? <EmptyState text="No crews yet. Add one to get started." /> : sortedTrucks.map((tr, idx) => {
+              const sectState = expandedTruckSections[tr.id] || {};
               const truckJobs = jobs.filter((j) => { if (j.truckId !== tr.id) return false; const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]; return !lat || lat.status !== "completed"; });
               const truckTickets = tickets.filter((tk) => tk.truckId === tr.id && tk.status !== "resolved");
               return (
@@ -8050,8 +8062,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
                     const fmtTs = (ts) => { try { return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Chicago" }); } catch { return ts; } };
                     const itemLabel = (k) => { const found = INVENTORY_ITEMS.find(i => i.id === k); return found ? found.name : k; };
-
-                    const sectState = expandedTruckSections[tr.id] || {};
 
                     return (
                       <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
