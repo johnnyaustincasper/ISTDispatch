@@ -7141,19 +7141,15 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     roster: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg>,
     inventory: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"/></svg>,
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
-    tools: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>,
-    builders: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
     weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
   };
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule", badge: needsCheckJobs.length },
     { key: "calendar", label: "Calendar" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
-    { key: "tools", label: "Tools" },
     { key: "inventory", label: "Inventory" },
     { key: "trucks", label: "Trucks" },
     { key: "roster", label: "Roster" },
-    { key: "builders", label: "Builders" },
     { key: "weather", label: "Weather" },
   ];
 
@@ -8133,29 +8129,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           <RosterView trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} />
         )}
 
-        {view === "tools" && (
-          <ToolsView
-            isOffice={true}
-            tools={tools}
-            toolCheckouts={toolCheckouts}
-            onAddTool={onAddTool}
-            onEditTool={onEditTool}
-            onDeleteTool={onDeleteTool}
-            onCheckout={onCheckout}
-            onReturn={onReturn}
-            adminName={adminName}
-            crewMembers={members}
-            employeeFlags={employeeFlags}
-            onSetFlag={onSetFlag}
-            foamPartsInventory={foamPartsInventory}
-            projectToolsInventory={projectToolsInventory}
-            onUpdateFoamParts={onUpdateFoamParts}
-            onUpdateProjectTools={onUpdateProjectTools}
-            suppliesCheckouts={suppliesCheckouts}
-            onSuppliesCheckout={() => {}}
-          />
-        )}
-
         {view === "inventory" && (() => {
           const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
@@ -8696,111 +8669,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         {view === "weather" && (
           <WeatherTab jobs={jobs} trucks={trucks} updates={updates} />
         )}
-
-        {view === "builders" && (() => {
-          const BUILDER_TAGS = ["Residential", "Production", "Commercial", "Repeat", "One-Time"];
-          const filteredBuilders = (builders || []).filter(b => !builderSearchQuery || b.name.toLowerCase().includes(builderSearchQuery.toLowerCase()) || (b.contact || "").toLowerCase().includes(builderSearchQuery.toLowerCase()));
-          return (
-            <>
-              <SectionHeader title="🏗️ Builder / Customer Database" right={<Button onClick={() => { setBuilderForm({ name: "", contact: "", address: "", notes: "", tags: [], phone: "", email: "" }); setShowAddBuilder(true); }}>+ Add Builder</Button>} />
-              <div style={{ marginBottom: 16 }}>
-                <input type="text" placeholder="Search builders..." value={builderSearchQuery} onChange={e => setBuilderSearchQuery(e.target.value)} style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", background: t.surface, color: t.text, boxSizing: "border-box" }} />
-              </div>
-              {filteredBuilders.length === 0 && <EmptyState text="No builders yet. Add your first builder!" />}
-              {filteredBuilders.map(b => {
-                const bJobs = jobs.filter(j => (j.builder || "").toLowerCase() === b.name.toLowerCase());
-                const totalRev = bJobs.reduce((s, j) => s + (j.revenue || 0), 0);
-                const lastJob = bJobs.sort((a, b2) => new Date(b2.date) - new Date(a.date))[0];
-                const isExpanded = !!expandedBuilders[b.id];
-                return (
-                  <Card key={b.id} style={{ marginBottom: 10 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                      <div style={{ flex: 1, cursor: "pointer" }} onClick={() => setExpandedBuilders(prev => ({ ...prev, [b.id]: !prev[b.id] }))}>
-                        <div style={{ fontWeight: 800, fontSize: 15, color: t.text }}>{b.name}</div>
-                        {b.contact && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{b.contact}</div>}
-                        {b.phone && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 1 }}>📞 {b.phone}</div>}
-                        {b.email && <div style={{ fontSize: 12, color: t.textMuted, marginTop: 1 }}>✉️ {b.email}</div>}
-                        {b.tags && b.tags.length > 0 && (
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 4, marginTop: 6 }}>
-                            {b.tags.map(tag => (
-                              <span key={tag} style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe" }}>{tag}</span>
-                            ))}
-                          </div>
-                        )}
-                        <div style={{ fontSize: 11, color: t.textMuted, marginTop: 6 }}>
-                          {bJobs.length} job{bJobs.length !== 1 ? "s" : ""}
-                          {totalRev > 0 && <span> · ${totalRev.toLocaleString()} total revenue</span>}
-                          {lastJob && <span> · Last: {lastJob.date}</span>}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: 6, alignItems: "flex-start" }}>
-                        <button onClick={() => { setEditingBuilder(b); setBuilderForm({ name: b.name, contact: b.contact || "", address: b.address || "", notes: b.notes || "", tags: b.tags || [], phone: b.phone || "", email: b.email || "" }); }} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid " + t.border, background: "none", cursor: "pointer", fontFamily: "inherit", color: t.textMuted }}>Edit</button>
-                        <button onClick={async () => { if (confirm("Delete " + b.name + "?")) await onDeleteBuilder(b.id); }} style={{ fontSize: 12, padding: "5px 10px", borderRadius: 6, border: "1px solid #fca5a5", background: "#fff1f2", cursor: "pointer", fontFamily: "inherit", color: "#dc2626" }}>Delete</button>
-                      </div>
-                    </div>
-                    {isExpanded && (
-                      <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid " + t.borderLight }}>
-                        {b.address && <div style={{ fontSize: 12, color: t.textSecondary, marginBottom: 4 }}>📍 {b.address}</div>}
-                        {b.notes && <div style={{ fontSize: 12, color: t.textMuted, fontStyle: "italic", marginBottom: 10 }}>{b.notes}</div>}
-                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 6 }}>Job History ({bJobs.length})</div>
-                        {bJobs.length === 0 ? (
-                          <div style={{ fontSize: 12, color: t.textMuted }}>No jobs linked to this builder yet.</div>
-                        ) : bJobs.slice(0, 10).map(j => (
-                          <div key={j.id} style={{ fontSize: 12, padding: "5px 0", borderBottom: "1px solid " + t.borderLight, display: "flex", justifyContent: "space-between" }}>
-                            <div><span style={{ color: t.text, fontWeight: 600 }}>{j.date}</span><span style={{ color: t.textMuted }}> · {j.address}</span><span style={{ color: t.textMuted }}> · {j.type}</span></div>
-                            {j.revenue ? <span style={{ color: "#15803d", fontWeight: 600 }}>${j.revenue.toLocaleString()}</span> : null}
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-                );
-              })}
-
-              {/* Add Builder Modal */}
-              {showAddBuilder && (
-                <Modal title="Add Builder" onClose={() => setShowAddBuilder(false)} footer={<Button onClick={async () => { if (!builderForm.name.trim()) return; await onAddBuilder({ ...builderForm, createdAt: new Date().toISOString() }); setShowAddBuilder(false); }} disabled={!builderForm.name.trim()} style={{ width: "100%" }}>Add Builder</Button>}>
-                  <Input label="Name *" value={builderForm.name} onChange={e => setBuilderForm({ ...builderForm, name: e.target.value })} placeholder="e.g. ABC Builders" />
-                  <Input label="Contact (phone or email)" value={builderForm.contact} onChange={e => setBuilderForm({ ...builderForm, contact: e.target.value })} placeholder="e.g. 918-555-1234" />
-                  <Input label="Phone" value={builderForm.phone || ""} onChange={e => setBuilderForm({ ...builderForm, phone: e.target.value })} placeholder="e.g. 918-555-1234" />
-                  <Input label="Email" value={builderForm.email || ""} onChange={e => setBuilderForm({ ...builderForm, email: e.target.value })} placeholder="e.g. contact@builder.com" />
-                  <Input label="Address" value={builderForm.address} onChange={e => setBuilderForm({ ...builderForm, address: e.target.value })} placeholder="Company address (optional)" />
-                  <TextArea label="Notes" value={builderForm.notes} onChange={e => setBuilderForm({ ...builderForm, notes: e.target.value })} placeholder="Any notes about this builder..." />
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: 8 }}>Tags</label>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {BUILDER_TAGS.map(tag => {
-                        const sel = builderForm.tags.includes(tag);
-                        return <button key={tag} onClick={() => setBuilderForm({ ...builderForm, tags: sel ? builderForm.tags.filter(t2 => t2 !== tag) : [...builderForm.tags, tag] })} style={{ padding: "6px 12px", borderRadius: 99, fontSize: 12, fontWeight: 600, background: sel ? "#2563eb" : "#f1f5f9", color: sel ? "#fff" : "#64748b", border: sel ? "1px solid #2563eb" : "1px dashed #cbd5e1", cursor: "pointer", fontFamily: "inherit" }}>{sel ? "✓ " : ""}{tag}</button>;
-                      })}
-                    </div>
-                  </div>
-                </Modal>
-              )}
-
-              {/* Edit Builder Modal */}
-              {editingBuilder && (
-                <Modal title="Edit Builder" onClose={() => setEditingBuilder(null)} footer={<div style={{ display: "flex", gap: 10 }}><Button variant="secondary" onClick={() => setEditingBuilder(null)} style={{ flex: 1 }}>Cancel</Button><Button onClick={async () => { await onEditBuilder(editingBuilder.id, builderForm); setEditingBuilder(null); }} disabled={!builderForm.name.trim()} style={{ flex: 1 }}>Save</Button></div>}>
-                  <Input label="Name *" value={builderForm.name} onChange={e => setBuilderForm({ ...builderForm, name: e.target.value })} />
-                  <Input label="Contact" value={builderForm.contact} onChange={e => setBuilderForm({ ...builderForm, contact: e.target.value })} />
-                  <Input label="Phone" value={builderForm.phone || ""} onChange={e => setBuilderForm({ ...builderForm, phone: e.target.value })} />
-                  <Input label="Email" value={builderForm.email || ""} onChange={e => setBuilderForm({ ...builderForm, email: e.target.value })} />
-                  <Input label="Address" value={builderForm.address} onChange={e => setBuilderForm({ ...builderForm, address: e.target.value })} />
-                  <TextArea label="Notes" value={builderForm.notes} onChange={e => setBuilderForm({ ...builderForm, notes: e.target.value })} />
-                  <div style={{ marginBottom: 16 }}>
-                    <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: 8 }}>Tags</label>
-                    <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                      {BUILDER_TAGS.map(tag => {
-                        const sel = builderForm.tags.includes(tag);
-                        return <button key={tag} onClick={() => setBuilderForm({ ...builderForm, tags: sel ? builderForm.tags.filter(t2 => t2 !== tag) : [...builderForm.tags, tag] })} style={{ padding: "6px 12px", borderRadius: 99, fontSize: 12, fontWeight: 600, background: sel ? "#2563eb" : "#f1f5f9", color: sel ? "#fff" : "#64748b", border: sel ? "1px solid #2563eb" : "1px dashed #cbd5e1", cursor: "pointer", fontFamily: "inherit" }}>{sel ? "✓ " : ""}{tag}</button>;
-                      })}
-                    </div>
-                  </div>
-                </Modal>
-              )}
-            </>
-          );
-        })()}
       </div>
 
       {showTakeoffImport && (
