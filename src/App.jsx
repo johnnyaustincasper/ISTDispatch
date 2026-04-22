@@ -247,6 +247,60 @@ const calcJobMaterialCost = (job) => {
   }
   return total;
 };
+const FOAM_MATERIAL_IDS = new Set(["oc_a", "oc_b", "cc_a", "cc_b", "env_oc_a", "env_oc_b", "env_cc_b"]);
+const foamQtyToGallons = (itemId, qty) => {
+  const gallonsPerBbl = ["cc_a", "cc_b", "env_cc_b"].includes(itemId) ? 50 : 48;
+  return (parseFloat(qty) || 0) * gallonsPerBbl;
+};
+const getTruckUsageWindowStats = (jobs = [], truckId = null, windows = [7, 14, 30]) => {
+  const today = todayCST();
+  const startDates = Object.fromEntries(windows.map((days) => {
+    const start = new Date();
+    start.setDate(start.getDate() - (days - 1));
+    return [days, start.toLocaleDateString("en-CA", { timeZone: "America/Chicago" })];
+  }));
+  const stats = Object.fromEntries(windows.map((days) => [days, { foamGallons: 0, materialValue: 0 }]));
+
+  const addMaterialsToWindows = (materials = {}, effectiveDate, targetWindows = windows) => {
+    if (!effectiveDate) return;
+    targetWindows.forEach((days) => {
+      if (effectiveDate < startDates[days] || effectiveDate > today) return;
+      Object.entries(materials || {}).forEach(([itemId, qty]) => {
+        const parsedQty = parseFloat(qty) || 0;
+        if (parsedQty <= 0) return;
+        if (FOAM_MATERIAL_IDS.has(itemId)) stats[days].foamGallons += foamQtyToGallons(itemId, parsedQty);
+        const item = INVENTORY_ITEMS.find((entry) => entry.id === itemId);
+        stats[days].materialValue += (item?.cost || 0) * parsedQty;
+      });
+    });
+  };
+
+  (jobs || []).forEach((job) => {
+    getTruckAwareDailyMaterialLogs(job?.dailyMaterialLogs || [], truckId).forEach((log) => {
+      addMaterialsToWindows(log?.materials || {}, log?.date);
+    });
+
+    const closeoutTruckId = getCloseoutAttributionTruckId(job, getAuthoritativeTruckIdForJob(job));
+    if (!job?.closedOut || !job?.materialsUsed || closeoutTruckId !== truckId || !job?.closedAt) return;
+
+    const dailyLoggedTotals = {};
+    (job.dailyMaterialLogs || []).forEach((log) => {
+      Object.entries(log?.materials || {}).forEach(([itemId, qty]) => {
+        dailyLoggedTotals[itemId] = (dailyLoggedTotals[itemId] || 0) + (parseFloat(qty) || 0);
+      });
+    });
+
+    const residualMaterials = {};
+    Object.entries(job.materialsUsed || {}).forEach(([itemId, qty]) => {
+      const residualQty = Math.max(0, (parseFloat(qty) || 0) - (dailyLoggedTotals[itemId] || 0));
+      if (residualQty > 0) residualMaterials[itemId] = residualQty;
+    });
+
+    addMaterialsToWindows(residualMaterials, tsToCST(job.closedAt));
+  });
+
+  return stats;
+};
 const buildJobUsageParityLookup = (jobs = [], events = []) => {
   const lookup = {};
   getJobUsageParityReport(jobs, events).forEach((entry) => {
@@ -398,6 +452,46 @@ const todayStr = todayCST; // alias
 const naturalSort = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
 const timeStr = () => new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 const dateStr = (iso) => { try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
+const toJsDate = (value) => {
+  if (!value) return null;
+  if (value instanceof Date) return value;
+  if (typeof value?.toDate === "function") return value.toDate();
+  if (typeof value?.seconds === "number") return new Date(value.seconds * 1000);
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+const formatChecklistTime = (value) => {
+  const date = toJsDate(value);
+  if (!date) return "—";
+  return date.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone: "America/Chicago",
+  });
+};
+const formatChecklistDayDate = (isoDate) => {
+  const date = isoDate ? new Date(`${isoDate}T12:00:00`) : null;
+  if (!date || Number.isNaN(date.getTime())) return { dayLabel: "", dateLabel: "" };
+  return {
+    dayLabel: date.toLocaleDateString("en-US", { weekday: "short", timeZone: "America/Chicago" }),
+    dateLabel: date.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/Chicago" }),
+  };
+};
+const getCurrentWorkWeekDates = () => {
+  const now = new Date();
+  const local = new Date(now.toLocaleString("en-US", { timeZone: "America/Chicago" }));
+  const day = local.getDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(local);
+  monday.setHours(12, 0, 0, 0);
+  monday.setDate(local.getDate() + diffToMonday);
+  return Array.from({ length: 5 }, (_, index) => {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + index);
+    return date.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
+  });
+};
 const mapsUrl = (addr) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`;
 
 function haversineKm(lat1, lon1, lat2, lon2) {
@@ -1807,7 +1901,7 @@ const CREW_CHECKLIST_REQUIRED_GROUPS = [
   },
 ];
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = null, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout, onSaveCrewChecklist, checklistStatusToday = { status: "not_started" }, checklistEntryToday = null }) {
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = null, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout, onStartCrewChecklist, onSaveCrewChecklist, checklistStatusToday = { status: "not_started" }, checklistEntryToday = null }) {
   const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -2021,7 +2115,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     setChecklistChecks(checklistEntryToday.checks || {});
   }, [showChecklistModal, checklistEntryToday]);
 
-  const handleChecklistOpen = () => {
+  const handleChecklistOpen = async () => {
     if (checklistEntryToday) {
       setSelectedChecklistType(checklistEntryToday.selectedChecklistKey || null);
       setChecklistChecks(checklistEntryToday.checks || {});
@@ -2029,6 +2123,24 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       setSelectedChecklistType(null);
       setChecklistChecks({});
     }
+
+    if (truck?.id && crewMemberId && onStartCrewChecklist) {
+      try {
+        await onStartCrewChecklist({
+          truckId: truck.id,
+          truckName: truck.name,
+          crewMemberId,
+          crewName,
+          date: todayCST(),
+          source: "crew-dashboard",
+        });
+      } catch (error) {
+        console.error("Failed to start crew checklist", error);
+        alert("Could not open checklist. Please try again.");
+        return;
+      }
+    }
+
     setShowChecklistModal(true);
   };
 
@@ -2049,12 +2161,15 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         checklistVersion: 1,
         selectedChecklistKey: selectedChecklistType,
         selectedChecklistLabel: selectedChecklist.label,
+        checklistKey: selectedChecklistType,
+        checklistLabel: selectedChecklist.label,
         checks: checklistChecks,
         completedJobItems: selectedChecklist.items.filter((item) => checklistChecks[`job:${selectedChecklistType}:${item}`]),
         completedRequiredGroups,
         status: "completed",
         completed: true,
         completedAt: new Date().toISOString(),
+        completedBy: { crewMemberId, crewName },
         source: "crew-dashboard",
       });
       setShowChecklistModal(false);
@@ -6627,7 +6742,7 @@ function WeatherTab({ jobs, trucks, updates }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, crewDailyChecklists = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   // Builders DB state
@@ -6709,6 +6824,40 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     trucks.filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : (tr.department !== "energySeal"))
           .map(tr => tr.id)
   );
+  const truckWorkWeekLogs = useMemo(() => {
+    const weekDates = getCurrentWorkWeekDates();
+    const dateSet = new Set(weekDates);
+    const checklistByTruckAndDate = (crewDailyChecklists || []).reduce((acc, entry) => {
+      if (!entry?.truckId || !entry?.date || !dateSet.has(entry.date)) return acc;
+      const key = `${entry.truckId}__${entry.date}`;
+      const status = entry.completed || entry.status === "completed"
+        ? "completed"
+        : Object.keys(entry.checks || {}).length > 0
+          ? "in_progress"
+          : (entry.status || "not_started");
+      const startedAt = toJsDate(entry.startedAt || entry.createdAt || entry.updatedAt);
+      const completedAt = toJsDate(entry.completedAt);
+      const durationMinutes = entry.durationMinutes ?? (startedAt && completedAt ? Math.max(0, Math.round((completedAt.getTime() - startedAt.getTime()) / 60000)) : null);
+      const nextEntry = {
+        ...entry,
+        status,
+        startedAt,
+        completedAt,
+        durationMinutes,
+        completedByName: entry.completedByName || entry.crewName || "—",
+      };
+      const current = acc[key];
+      const rank = { not_started: 0, in_progress: 1, completed: 2 };
+      if (!current || rank[nextEntry.status] >= rank[current.status]) acc[key] = nextEntry;
+      return acc;
+    }, {});
+
+    return Object.fromEntries((trucks || []).map((truck) => [truck.id, weekDates.map((date) => ({
+      date,
+      ...(formatChecklistDayDate(date)),
+      record: checklistByTruckAndDate[`${truck.id}__${date}`] || null,
+    }))]));
+  }, [crewDailyChecklists, trucks]);
   const activeJobs = jobs.filter((j) => {
     if (j.onHold) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
@@ -7789,6 +7938,42 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       <Button variant="danger" onClick={() => handleRemoveTruck(tr)} style={{ padding: "4px 8px", fontSize: "11px" }}>Remove</Button>
                     </div>
                   </div>
+                  {(() => {
+                    const workWeekRows = truckWorkWeekLogs?.[tr.id] || [];
+                    const statusMeta = {
+                      not_started: { label: "Not Started", color: "#6b7280", bg: "#f3f4f6" },
+                      in_progress: { label: "In Progress", color: "#b45309", bg: "#fef3c7" },
+                      completed: { label: "Completed", color: "#15803d", bg: "#dcfce7" },
+                    };
+                    return (
+                      <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Work Week Checklist Log, Mon-Fri</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {workWeekRows.map((row) => {
+                            const record = row.record;
+                            const meta = statusMeta[record?.status || "not_started"] || statusMeta.not_started;
+                            return (
+                              <div key={row.date} style={{ background: t.bg, border: "1px solid " + t.borderLight, borderRadius: 8, padding: "10px 12px" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+                                  <div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: t.text }}>{row.dayLabel}</div>
+                                    <div style={{ fontSize: 11, color: t.textMuted }}>{row.dateLabel}</div>
+                                  </div>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: meta.color, background: meta.bg, borderRadius: 999, padding: "3px 8px" }}>{meta.label}</span>
+                                </div>
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
+                                  <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Started</strong><span style={{ fontSize: 12, color: t.text }}>{formatChecklistTime(record?.startedAt)}</span></div>
+                                  <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Completed</strong><span style={{ fontSize: 12, color: t.text }}>{formatChecklistTime(record?.completedAt)}</span></div>
+                                  <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Duration</strong><span style={{ fontSize: 12, color: t.text }}>{record?.durationMinutes != null ? `${record.durationMinutes} min` : "—"}</span></div>
+                                  <div style={{ fontSize: 11, color: t.textMuted }}><strong style={{ display: "block", fontSize: 10, textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 3 }}>Completed By</strong><span style={{ fontSize: 12, color: t.text }}>{record?.completedByName || "—"}</span></div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                   {/* Truck inventory */}
                   {(() => {
                     const ti = truckInventory?.[tr.id] || {};
@@ -7851,19 +8036,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     );
                   })()}
 
-                  {/* 7-day usage + load/return history */}
+                  {/* Usage summary + load/return history */}
                   {(() => {
-                    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-                    const truckLoads7 = (loadLog || []).filter(r => r.truckId === tr.id && new Date(r.timestamp).getTime() >= sevenDaysAgo);
+                    const usageStats = getTruckUsageWindowStats(jobs, tr.id, [7, 14, 30]);
                     const allLoads = (loadLog || []).filter(r => r.truckId === tr.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     const allReturns = (returnLog || []).filter(r => r.truckId === tr.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-
-                    // Aggregate 7-day usage by item
-                    const usage7 = {};
-                    truckLoads7.forEach(r => { Object.entries(r.items || {}).forEach(([k, v]) => { usage7[k] = (usage7[k] || 0) + (parseFloat(v) || 0); }); });
-                    const usage7Entries = Object.entries(usage7).filter(([, v]) => v > 0);
-                    const maxUsage = Math.max(...usage7Entries.map(([, v]) => v), 1);
-                    const totalLoaded7 = usage7Entries.reduce((s, [, v]) => s + v, 0);
+                    const usageWindows = [7, 14, 30].map((days) => ({
+                      days,
+                      foamGallons: Math.round((usageStats?.[days]?.foamGallons || 0) * 10) / 10,
+                      materialValue: usageStats?.[days]?.materialValue || 0,
+                    }));
 
                     const fmtTs = (ts) => { try { return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Chicago" }); } catch { return ts; } };
                     const itemLabel = (k) => { const found = INVENTORY_ITEMS.find(i => i.id === k); return found ? found.name : k; };
@@ -7872,24 +8054,18 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
                     return (
                       <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
-                        {/* 7-day usage bar chart */}
-                        {usage7Entries.length > 0 && (
-                          <div style={{ marginBottom: 12 }}>
-                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5 }}>7-Day Usage</div>
-                              <div style={{ fontSize: 11, fontWeight: 700, color: t.accent, background: t.accentBg, borderRadius: 6, padding: "2px 8px" }}>Total: {totalLoaded7.toFixed(1)}</div>
-                            </div>
-                            {usage7Entries.map(([k, v]) => (
-                              <div key={k} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                <div style={{ fontSize: 11, color: t.textMuted, width: 130, flexShrink: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{itemLabel(k)}</div>
-                                <div style={{ flex: 1, background: t.borderLight, borderRadius: 4, height: 8, overflow: "hidden" }}>
-                                  <div style={{ width: Math.round((v / maxUsage) * 100) + "%", height: "100%", background: t.accent, borderRadius: 4, transition: "width 0.3s" }} />
-                                </div>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: t.text, width: 40, textAlign: "right", flexShrink: 0 }}>{v % 1 === 0 ? v : v.toFixed(1)}</div>
+                        <div style={{ marginBottom: 12 }}>
+                          <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Usage</div>
+                          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
+                            {usageWindows.map(({ days, foamGallons, materialValue }) => (
+                              <div key={days} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 8, padding: "8px 10px" }}>
+                                <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.4 }}>{days}-Day</div>
+                                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: t.text }}>{foamGallons % 1 === 0 ? foamGallons.toFixed(0) : foamGallons.toFixed(1)} gal foam</div>
+                                <div style={{ marginTop: 3, fontSize: 12, color: t.textMuted }}>Value: <span style={{ color: t.accent, fontWeight: 700 }}>${materialValue.toFixed(2)}</span></div>
                               </div>
                             ))}
                           </div>
-                        )}
+                        </div>
 
                         {/* Load history accordion */}
                         <div style={{ marginBottom: 8 }}>
@@ -11960,7 +12136,7 @@ export default function App() {
   const [tools, setTools] = useState([]);
   const [toolCheckouts, setToolCheckouts] = useState([]);
   const [employeeFlags, setEmployeeFlags] = useState([]);
-  const [crewDailyChecklists, setCrewDailyChecklists] = useState([]);
+  const [truckDailyLogs, setTruckDailyLogs] = useState([]);
 
   useEffect(() => {
     const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
@@ -11997,8 +12173,8 @@ export default function App() {
     });
     const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    const unsubCrewDailyChecklists = onSnapshot(collection(db, "crewDailyChecklists"), (snap) => { setCrewDailyChecklists(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckSecondaryInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); unsubCrewDailyChecklists(); };
+    const unsubTruckDailyLogs = onSnapshot(collection(db, "truckDailyLogs"), (snap) => { setTruckDailyLogs(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckSecondaryInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); unsubTruckDailyLogs(); };
   }, []);
 
   const derivedTruckInventory = useMemo(
@@ -12013,23 +12189,23 @@ export default function App() {
     () => getWarehouseInventoryParityReport({ legacyInventory: inventory, events: inventoryEvents, warehouseId: "main" }),
     [inventory, inventoryEvents],
   );
-  const crewChecklistStateByMemberId = useMemo(() => {
+  const crewChecklistStateByTruckId = useMemo(() => {
     const today = todayCST();
     const statusRank = { not_started: 0, in_progress: 1, completed: 2 };
-    return crewDailyChecklists.reduce((acc, entry) => {
-      if (!entry?.crewMemberId || entry?.date !== today) return acc;
+    return truckDailyLogs.reduce((acc, entry) => {
+      if (!entry?.truckId || entry?.date !== today) return acc;
       const normalizedStatus = entry.completed || entry.status === "completed"
         ? "completed"
-        : Object.keys(entry.checks || {}).length > 0
+        : entry.startedAt || Object.keys(entry.checks || {}).length > 0
           ? "in_progress"
           : "not_started";
-      const current = acc[entry.crewMemberId];
+      const current = acc[entry.truckId];
       if (!current || statusRank[normalizedStatus] >= statusRank[current.status]) {
-        acc[entry.crewMemberId] = { status: normalizedStatus, entry };
+        acc[entry.truckId] = { status: normalizedStatus, entry };
       }
       return acc;
     }, {});
-  }, [crewDailyChecklists]);
+  }, [truckDailyLogs]);
   const jobUsageParityByJobId = useMemo(
     () => buildJobUsageParityLookup(jobs, inventoryEvents),
     [jobs, inventoryEvents],
@@ -12047,14 +12223,57 @@ export default function App() {
   }, [jobs, jobUsageParityByJobId]);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
+  const handleStartCrewChecklist = async (payload) => {
+    if (!payload?.truckId || !payload?.date) throw new Error("Missing truck checklist identity");
+    const docId = `${payload.truckId}_${payload.date}`;
+    const logRef = doc(db, "truckDailyLogs", docId);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(logRef);
+      const existing = snap.exists() ? snap.data() : null;
+      tx.set(logRef, {
+        truckId: payload.truckId,
+        truckName: payload.truckName || existing?.truckName || null,
+        date: payload.date,
+        status: existing?.completed || existing?.status === "completed" ? "completed" : "in_progress",
+        completed: existing?.completed || false,
+        source: payload.source || existing?.source || "crew-dashboard",
+        startedAt: existing?.startedAt || new Date().toISOString(),
+        startedBy: existing?.startedBy || { crewMemberId: payload.crewMemberId || null, crewName: payload.crewName || null },
+        updatedAt: serverTimestamp(),
+        createdAt: existing?.createdAt || serverTimestamp(),
+      }, { merge: true });
+    });
+  };
   const handleSaveCrewChecklist = async (payload) => {
-    if (!payload?.crewMemberId || !payload?.date) throw new Error("Missing crew checklist identity");
-    const docId = `${payload.crewMemberId}_${payload.date}`;
-    await setDoc(doc(db, "crewDailyChecklists", docId), {
-      ...payload,
-      updatedAt: serverTimestamp(),
-      createdAt: payload.createdAt || serverTimestamp(),
-    }, { merge: true });
+    if (!payload?.truckId || !payload?.date) throw new Error("Missing truck checklist identity");
+    const docId = `${payload.truckId}_${payload.date}`;
+    const logRef = doc(db, "truckDailyLogs", docId);
+    await runTransaction(db, async (tx) => {
+      const snap = await tx.get(logRef);
+      const existing = snap.exists() ? snap.data() : null;
+      const startedAt = existing?.startedAt || payload?.startedAt || new Date().toISOString();
+      const startedBy = existing?.startedBy || { crewMemberId: payload.crewMemberId || null, crewName: payload.crewName || null };
+      const completedAt = payload.completedAt || new Date().toISOString();
+      const durationMinutes = Math.max(0, Math.round((new Date(completedAt).getTime() - new Date(startedAt).getTime()) / 60000));
+      tx.set(logRef, {
+        ...existing,
+        ...payload,
+        truckId: payload.truckId,
+        truckName: payload.truckName || existing?.truckName || null,
+        date: payload.date,
+        startedAt,
+        startedBy,
+        completedAt,
+        completedBy: payload.completedBy || { crewMemberId: payload.crewMemberId || null, crewName: payload.crewName || null },
+        durationMinutes,
+        checklistKey: payload.checklistKey || payload.selectedChecklistKey || existing?.checklistKey || null,
+        checklistLabel: payload.checklistLabel || payload.selectedChecklistLabel || existing?.checklistLabel || null,
+        status: "completed",
+        completed: true,
+        updatedAt: serverTimestamp(),
+        createdAt: existing?.createdAt || serverTimestamp(),
+      }, { merge: true });
+    });
   };
   const handleDeleteTruck = async (id) => { await deleteDoc(doc(db, "trucks", id)); };
   const handleReorderTruck = async (id, newOrder) => { await updateDoc(doc(db, "trucks", id), { order: newOrder }); };
@@ -13011,8 +13230,8 @@ export default function App() {
         </div>
       </div>
     );
-    const checklistToday = crewChecklistStateByMemberId[crewSession.memberId] || { status: "not_started", entry: null };
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} truckSecondaryInventory={truckSecondaryInventory[truck?.id] || {}} derivedTruckInventory={derivedTruckInventory[truck?.id] || {}} truckInventoryParity={truckInventoryParity[truck?.id] || null} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} onSaveCrewChecklist={handleSaveCrewChecklist} checklistStatusToday={checklistToday} checklistEntryToday={checklistToday.entry} />;
+    const checklistToday = crewChecklistStateByTruckId[truck.id] || { status: "not_started", entry: null };
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} truckSecondaryInventory={truckSecondaryInventory[truck?.id] || {}} derivedTruckInventory={derivedTruckInventory[truck?.id] || {}} truckInventoryParity={truckInventoryParity[truck?.id] || null} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} onStartCrewChecklist={handleStartCrewChecklist} onSaveCrewChecklist={handleSaveCrewChecklist} checklistStatusToday={checklistToday} checklistEntryToday={checklistToday.entry} />;
   }
   if (role === "mechanic" && mechanicName) {
     return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
@@ -13048,6 +13267,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} crewDailyChecklists={crewDailyChecklists} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
   return null;
 }
