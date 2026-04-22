@@ -2098,7 +2098,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               ‹ Back
             </button>
             <span style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>
-              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : crewView === "tools" ? "Tools" : crewView === "supplies" ? "Supplies" : ""}
+              {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : ""}
             </span>
           </div>
         )}
@@ -2217,16 +2217,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 <line x1="9" y1="8" x2="9" y2="16" strokeDasharray="2 2"/>
               </svg>
             ),
-            tools: (
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
-              </svg>
-            ),
-            supplies: (
-              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3"/>
-              </svg>
-            ),
             checklist: (
               <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M9 11l3 3L22 4"/>
@@ -2240,8 +2230,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             { key: "truck",     label: "My Truck",  sub: "Inventory & load" },
             { key: "history",   label: "Calendar",  sub: "Job history" },
             { key: "tickets",   label: "Tickets",   sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
-            { key: "tools",     label: "Tools",     sub: "Checkout & return" },
-            { key: "supplies",  label: "Supplies",  sub: "Check out consumables" },
           ];
           return (
             <div className="tab-view-enter">
@@ -2973,41 +2961,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         })()}
 
         {crewView === "timesheet" && <div className="tab-view-enter"><div style={{ textAlign: "center", padding: "48px 24px", color: t.textMuted, fontSize: "16px" }}>⏱ Time tracking coming soon — clock-in/clock-out will be available here.</div></div>}
-        {crewView === "tools" && (
-          <ToolsView
-            isOffice={false}
-            tools={tools || []}
-            toolCheckouts={toolCheckouts || []}
-            onAddTool={() => {}}
-            onEditTool={() => {}}
-            onDeleteTool={() => {}}
-            onCheckout={onToolCheckout}
-            onReturn={onToolReturn}
-            adminName={crewName}
-            crewMembers={[]}
-            crewMemberId={crewMemberId}
-            crewMemberName={crewName}
-            truckInventory={truckInventory}
-            truck={truck}
-            allTruckInventory={allTruckInventory}
-            trucks={trucks}
-            truckToolInventory={truckToolInventory}
-            onSaveTruckToolInventory={onSaveTruckToolInventory}
-            onDeltaAdjustTruck={onDeltaAdjustTruck}
-            foamPartsInventory={foamPartsInventory || []}
-            projectToolsInventory={projectToolsInventory || []}
-            onUpdateFoamParts={() => {}}
-            onUpdateProjectTools={() => {}}
-            suppliesCheckouts={[]}
-            onSuppliesCheckout={() => {}}
-          />
-        )}
-
-        {crewView === "supplies" && (
-          <SuppliesCheckoutView truck={truck} crewName={crewName} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={onSuppliesCheckout} />
-        )}
-
-
 
         {crewView === "tickets" && (
           <>
