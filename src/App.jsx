@@ -1762,7 +1762,52 @@ function CheckoutLogView({ suppliesCheckouts }) {
 }
 
 
-function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = null, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout }) {
+const CREW_CHECKLISTS = {
+  attic_removal: {
+    label: "Attic Removal",
+    items: ["Hose", "Removal Machine", "Masking Tape", "Air Chutes", "Plastic", "Corner Protection", "Headlamps", "Batteries", "Gas Can", "Netting"],
+  },
+  attic_recap: {
+    label: "Attic Recap",
+    items: ["Hose", "Required Blown Material", "Masking Tape", "Air Chutes", "Plastic", "Corner Protection", "Headlamps", "Batteries", "Gas Can"],
+  },
+  attic_kneewall: {
+    label: "Attic Kneewall",
+    items: ["Masking Tape", "Air Chutes", "Nitrile Gloves", "Plastic", "Corner Protection", "Headlamps", "Batteries", "Gun Repair Kits/O-Rings"],
+  },
+  retro_foam_attic: {
+    label: "Retro Foam Attic",
+    items: ["Rock Wool", "Masking Tape", "Nitrile Gloves", "Plastic", "Corner Protection", "Headlamps", "Batteries", "Gun Repair Kits/O-Rings", "Netting"],
+  },
+  new_construction_fiberglass: {
+    label: "New Construction Fiberglass",
+    items: ["Required Material", "Air Chutes", "Gas Can", "Netting"],
+  },
+  new_construction_foam: {
+    label: "New Construction Foam",
+    items: ["Rock Wool", "Nitrile Gloves", "Plastic", "Headlamps", "Batteries", "Gun Repair Kits/O-Rings", "Netting"],
+  },
+};
+
+const CREW_CHECKLIST_REQUIRED_GROUPS = [
+  {
+    key: "cleaning_waste",
+    label: "Cleaning & Waste",
+    items: ["Heavy-duty Trash Bags", "Broom and Dustpan", "Shop Vacuum", "Rags/Towels"],
+  },
+  {
+    key: "protective_equipment",
+    label: "Protective Equipment",
+    items: ["Suits", "Gloves", "N95 Masks", "Sock Hats", "Eye Protection", "Respirators", "Respirator Cartridges"],
+  },
+  {
+    key: "general_tools",
+    label: "General Tools",
+    items: ["Staples", "Staple Hammers", "Box Knives", "Extra Box Blades", "Batt Knives", "Duct Tape", "Extension Cords", "Ladders", "Scaffolding"],
+  },
+];
+
+function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdates, tickets, inventory, truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = null, allTruckInventory = {}, trucks = [], truckToolInventory = {}, onSaveTruckToolInventory, tools, toolCheckouts, loadLog, returnLog, onSubmitUpdate, onSubmitTicket, onCloseOutJob, onSaveJobMaterials, onLoadTruck, onReturnMaterial, onDeductFromTruck, onDeltaAdjustTruck, onLogDailyMaterials, onToolCheckout, onToolReturn, onLogout, foamPartsInventory, projectToolsInventory, onSuppliesCheckout, onSaveCrewChecklist, checklistStatusToday = { status: "not_started" }, checklistEntryToday = null }) {
   const todayISO = new Date().toLocaleDateString("en-CA");
   const myJobs = jobs.filter((j) => {
     if (j.onHold) return false;
@@ -1804,6 +1849,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const [eta, setEta] = useState("");
   const [notes, setNotes] = useState("");
   const [showTicketForm, setShowTicketForm] = useState(false);
+  const [showChecklistModal, setShowChecklistModal] = useState(false);
+  const [selectedChecklistType, setSelectedChecklistType] = useState(null);
+  const [checklistChecks, setChecklistChecks] = useState({});
+  const [savingChecklist, setSavingChecklist] = useState(false);
   const [ticketDesc, setTicketDesc] = useState("");
   const [ticketPriority, setTicketPriority] = useState("medium");
   const [ticketType, setTicketType] = useState("equipment");
@@ -1959,6 +2008,63 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   });
   const openTicketCount = myTickets.filter((tk) => tk.status !== "resolved").length;
   const currentTruckParity = truckInventoryParity;
+  const checklistStatusMeta = checklistStatusToday?.status === "complete"
+    ? { sub: "Complete today", badge: "✓" }
+    : checklistStatusToday?.status === "in_progress"
+      ? { sub: "In progress", badge: null }
+      : { sub: "Morning routine", badge: null };
+
+  useEffect(() => {
+    if (!showChecklistModal) return;
+    if (!checklistEntryToday) return;
+    setSelectedChecklistType(checklistEntryToday.selectedChecklistKey || null);
+    setChecklistChecks(checklistEntryToday.checks || {});
+  }, [showChecklistModal, checklistEntryToday]);
+
+  const handleChecklistOpen = () => {
+    if (checklistEntryToday) {
+      setSelectedChecklistType(checklistEntryToday.selectedChecklistKey || null);
+      setChecklistChecks(checklistEntryToday.checks || {});
+    } else {
+      setSelectedChecklistType(null);
+      setChecklistChecks({});
+    }
+    setShowChecklistModal(true);
+  };
+
+  const handleChecklistComplete = async () => {
+    const selectedChecklist = selectedChecklistType ? CREW_CHECKLISTS[selectedChecklistType] : null;
+    if (!selectedChecklist || !onSaveCrewChecklist || !truck?.id || !crewMemberId) return;
+    const completedRequiredGroups = Object.fromEntries(
+      CREW_CHECKLIST_REQUIRED_GROUPS.map((group) => [group.key, group.items.filter((item) => checklistChecks[`required:${group.key}:${item}`])])
+    );
+    setSavingChecklist(true);
+    try {
+      await onSaveCrewChecklist({
+        crewMemberId,
+        crewName,
+        truckId: truck.id,
+        truckName: truck.name,
+        date: todayCST(),
+        checklistVersion: 1,
+        selectedChecklistKey: selectedChecklistType,
+        selectedChecklistLabel: selectedChecklist.label,
+        checks: checklistChecks,
+        completedJobItems: selectedChecklist.items.filter((item) => checklistChecks[`job:${selectedChecklistType}:${item}`]),
+        completedRequiredGroups,
+        status: "completed",
+        completed: true,
+        completedAt: new Date().toISOString(),
+        source: "crew-dashboard",
+      });
+      setShowChecklistModal(false);
+    } catch (error) {
+      console.error("Failed to save crew checklist", error);
+      alert("Could not save checklist. Please try again.");
+    } finally {
+      setSavingChecklist(false);
+    }
+  };
 
   return (
     <div style={{ minHeight: "100dvh", background: t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
@@ -1999,6 +2105,79 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       </div>
 
       <div style={{ padding: "16px 16px 32px", maxWidth: "600px", margin: "0 auto" }}>
+        {showChecklistModal && (() => {
+          const selectedChecklist = selectedChecklistType ? CREW_CHECKLISTS[selectedChecklistType] : null;
+          const selectedItems = selectedChecklist?.items || [];
+          const allRequiredChecked = CREW_CHECKLIST_REQUIRED_GROUPS.every((group) => group.items.every((item) => checklistChecks[`required:${group.key}:${item}`]));
+          const selectedChecked = selectedChecklist ? selectedItems.every((item) => checklistChecks[`job:${selectedChecklistType}:${item}`]) : false;
+          return (
+            <Modal title={selectedChecklist ? `${selectedChecklist.label} Checklist` : "Morning Checklist"} onClose={() => setShowChecklistModal(false)} footer={selectedChecklist ? (
+              <div style={{ display: "flex", gap: 8 }}>
+                <Button variant="secondary" onClick={() => {
+                  setSelectedChecklistType(null);
+                  setChecklistChecks({});
+                }} style={{ flex: 1 }}>Change Job Type</Button>
+                <Button onClick={handleChecklistComplete} disabled={!selectedChecked || !allRequiredChecked || savingChecklist} style={{ flex: 1 }}>{savingChecklist ? "Saving..." : "Finish Morning Check"}</Button>
+              </div>
+            ) : null}>
+              {!selectedChecklist ? (
+                <div style={{ display: "grid", gap: 10 }}>
+                  <div style={{ fontSize: 13, color: t.textMuted, marginBottom: 4 }}>Pick the job type for today, then complete that checklist plus all 3 required daily sections.</div>
+                  {Object.entries(CREW_CHECKLISTS).map(([key, config]) => (
+                    <button key={key} onClick={() => {
+                      setSelectedChecklistType(key);
+                      setChecklistChecks((prev) => {
+                        const next = { ...prev };
+                        Object.keys(next).forEach((entryKey) => {
+                          if (entryKey.startsWith("job:")) delete next[entryKey];
+                        });
+                        return next;
+                      });
+                    }} style={{ textAlign: "left", padding: "14px 16px", borderRadius: 12, border: `1px solid ${t.border}`, background: t.surface, color: t.text, fontSize: 15, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      {config.label}
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  <div style={{ background: t.bg, border: `1px solid ${t.borderLight}`, borderRadius: 10, padding: "10px 12px", fontSize: 13, color: t.textSecondary }}>
+                    Complete every item below. The bottom 3 required sections are mandatory for every crew, every day.
+                  </div>
+                  <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden" }}>
+                    <div style={{ padding: "12px 14px", background: t.surface, fontSize: 14, fontWeight: 800, color: t.text }}>{selectedChecklist.label}</div>
+                    <div style={{ padding: "8px 14px 14px", display: "grid", gap: 10 }}>
+                      {selectedItems.map((item) => {
+                        const key = `job:${selectedChecklistType}:${item}`;
+                        return (
+                          <label key={key} style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 17, color: t.text, padding: "14px 16px", borderRadius: 12, border: `1px solid ${checklistChecks[key] ? t.accent : t.borderLight}`, background: checklistChecks[key] ? "rgba(37,99,235,0.08)" : "#fff", cursor: "pointer", fontWeight: 600, lineHeight: 1.3 }}>
+                            <input type="checkbox" checked={!!checklistChecks[key]} onChange={(e) => setChecklistChecks((prev) => ({ ...prev, [key]: e.target.checked }))} style={{ width: 24, height: 24, accentColor: t.accent, cursor: "pointer", flexShrink: 0 }} />
+                            <span>{item}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {CREW_CHECKLIST_REQUIRED_GROUPS.map((group) => (
+                    <div key={group.key} style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden" }}>
+                      <div style={{ padding: "12px 14px", background: t.surface, fontSize: 14, fontWeight: 800, color: t.text }}>{group.label}</div>
+                      <div style={{ padding: "8px 14px 14px", display: "grid", gap: 10 }}>
+                        {group.items.map((item) => {
+                          const key = `required:${group.key}:${item}`;
+                          return (
+                            <label key={key} style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 17, color: t.text, padding: "14px 16px", borderRadius: 12, border: `1px solid ${checklistChecks[key] ? t.accent : t.borderLight}`, background: checklistChecks[key] ? "rgba(37,99,235,0.08)" : "#fff", cursor: "pointer", fontWeight: 600, lineHeight: 1.3 }}>
+                              <input type="checkbox" checked={!!checklistChecks[key]} onChange={(e) => setChecklistChecks((prev) => ({ ...prev, [key]: e.target.checked }))} style={{ width: 24, height: 24, accentColor: t.accent, cursor: "pointer", flexShrink: 0 }} />
+                              <span>{item}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </Modal>
+          );
+        })()}
         {crewView === "home" && (() => {
           const now = new Date();
           const dateStr = now.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
@@ -2048,9 +2227,16 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z" /><circle cx="12" cy="10" r="3"/>
               </svg>
             ),
+            checklist: (
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 11l3 3L22 4"/>
+                <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
+              </svg>
+            ),
           };
           const navItems = [
             { key: "jobs",      label: "Jobs",      sub: myJobs.length > 0 ? `${myJobs.length} active` : "No active jobs", badge: myJobs.length > 0 ? myJobs.length : null },
+            { key: "checklist", label: "Checklist", sub: checklistStatusMeta.sub, badge: checklistStatusMeta.badge },
             { key: "truck",     label: "My Truck",  sub: "Inventory & load" },
             { key: "history",   label: "Calendar",  sub: "Job history" },
             { key: "tickets",   label: "Tickets",   sub: openTicketCount > 0 ? `${openTicketCount} open` : "Submit a request", badge: openTicketCount > 0 ? openTicketCount : null },
@@ -2065,7 +2251,13 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               </div>
               <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
                 {navItems.map(item => (
-                  <button key={item.key} onClick={() => setCrewView(item.key)}
+                  <button key={item.key} onClick={() => {
+                    if (item.key === "checklist") {
+                      handleChecklistOpen();
+                      return;
+                    }
+                    setCrewView(item.key);
+                  }}
                     style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: "8px", padding: "24px 16px 20px", background: "rgba(255,255,255,0.72)", backdropFilter: "blur(12px)", WebkitBackdropFilter: "blur(12px)", border: "1px solid rgba(255,255,255,0.8)", borderRadius: "16px", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 4px 16px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.95)", transition: "all 0.15s ease", textAlign: "center", minHeight: "120px" }}
                     onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.88)"; e.currentTarget.style.borderColor = t.accent; e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(26,86,219,0.12), inset 0 1px 0 rgba(255,255,255,0.95)"; }}
                     onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.72)"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.8)"; e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 4px 16px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.95)"; }}
@@ -5550,7 +5742,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, truckSecondaryInvent
               : secondaryLoadout.map((item) => (
                   <div key={item.id} style={{ display: "flex", justifyContent: "space-between", gap: 8, padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
                     <div style={{ fontSize: 13, color: t.text }}>{item.name}{item.loosePiecesQty > 0 ? ` (${item.loosePiecesQty} loose pcs)` : ""}</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: t.textSecondary }}>{item.qty} {item.unit}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: t.textSecondary }}>{fmtQty(item.id, item.qty)}</div>
                   </div>
                 ))}
           </div>
@@ -7650,6 +7842,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     const tsi = truckSecondaryInventory?.[tr.id] || {};
                     const loaded = getTruckInventoryDisplayRows(ti);
                     const secondaryLoaded = getTruckInventoryDisplayRows(tsi);
+                    const formatTruckInventoryLine = (item) => {
+                      if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(item.id)) {
+                        const gallonsPerBbl = ["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48;
+                        return `${Math.round((item.qty || 0) * gallonsPerBbl)} gal`;
+                      }
+                      if (item.loosePiecesQty > 0) {
+                        return `${item.qty} ${item.unit} + ${item.loosePiecesQty} pcs`;
+                      }
+                      return `${Number(item.qty || 0).toFixed(item.unit === "gal" || item.unit === "set" ? 2 : 0)} ${item.unit}`;
+                    };
                     return (
                       <div style={{ marginTop: 12, borderTop: "1px solid " + t.borderLight, paddingTop: 10 }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Loaded on Truck</div>
@@ -7670,8 +7872,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                   </div>
                                   <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                                     {loaded.map(item => (
-                                      <div key={item.id} style={{ fontSize: 12, fontWeight: 600, color: t.text }}>
-                                        {item.name} — {Number(item.qty || 0).toFixed(item.unit === "gal" || item.unit === "set" ? 2 : 0)} {item.unit}
+                                      <div key={item.id} style={{ fontSize: 12, fontWeight: 600, color: "#111827", background: "#ffffff", padding: "6px 8px", borderRadius: 6, border: "1px solid #e5e7eb" }}>
+                                        {item.name} — {formatTruckInventoryLine(item)}
                                       </div>
                                     ))}
                                   </div>
@@ -7685,8 +7887,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             ? <div style={{ fontSize: 12, color: t.textMuted }}>No reserve stock recorded.</div>
                             : <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                                 {secondaryLoaded.map((item) => (
-                                  <div key={item.id} style={{ fontSize: 12, fontWeight: 600, color: t.textSecondary }}>
-                                    {item.name} — {Number(item.qty || 0).toFixed(item.unit === "gal" || item.unit === "set" ? 2 : 0)} {item.unit}
+                                  <div key={item.id} style={{ fontSize: 12, fontWeight: 600, color: "#374151", background: "#f9fafb", padding: "6px 8px", borderRadius: 6, border: "1px solid #e5e7eb" }}>
+                                    {item.name} — {formatTruckInventoryLine(item)}
                                   </div>
                                 ))}
                               </div>
@@ -8150,6 +8352,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       const tsi = truckSecondaryInventory?.[tr.id] || {};
                       const loadedItems = getTruckInventoryDisplayRows(ti);
                       const secondaryLoadedItems = getTruckInventoryDisplayRows(tsi);
+                      const formatTruckRowQty = (item) => {
+                        if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(item.id)) {
+                          const gallonsPerBbl = ["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48;
+                          return `${Math.round((item.qty || 0) * gallonsPerBbl)} gal`;
+                        }
+                        if (item.loosePiecesQty > 0) {
+                          return `${item.qty} ${item.unit} + ${item.loosePiecesQty} pcs`;
+                        }
+                        return `${item.qty} ${item.unit}`;
+                      };
                       return (
                         <div key={tr.id} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 10, padding: 14, boxShadow: t.shadow }}>
                           <div style={{ fontWeight: 700, fontSize: 14, color: t.text, marginBottom: 4 }}>{tr.name}</div>
@@ -8161,7 +8373,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               {loadedItems.map(item => (
                                 <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid " + t.borderLight }}>
                                   <span>{item.name}</span>
-                                  <span style={{ fontWeight: 600, color: t.accent }}>{item.qty} {item.unit}</span>
+                                  <span style={{ fontWeight: 600, color: t.accent }}>{formatTruckRowQty(item)}</span>
                                 </div>
                               ))}
                             </div>
@@ -8174,7 +8386,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               {secondaryLoadedItems.map(item => (
                                 <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", borderBottom: "1px solid " + t.borderLight }}>
                                   <span>{item.name}</span>
-                                  <span style={{ fontWeight: 600, color: t.textSecondary }}>{item.qty} {item.unit}</span>
+                                  <span style={{ fontWeight: 600, color: t.textSecondary }}>{formatTruckRowQty(item)}</span>
                                 </div>
                               ))}
                             </div>
@@ -11795,6 +12007,7 @@ export default function App() {
   const [tools, setTools] = useState([]);
   const [toolCheckouts, setToolCheckouts] = useState([]);
   const [employeeFlags, setEmployeeFlags] = useState([]);
+  const [crewDailyChecklists, setCrewDailyChecklists] = useState([]);
 
   useEffect(() => {
     const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
@@ -11831,7 +12044,8 @@ export default function App() {
     });
     const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckSecondaryInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); };
+    const unsubCrewDailyChecklists = onSnapshot(collection(db, "crewDailyChecklists"), (snap) => { setCrewDailyChecklists(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckSecondaryInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); unsubCrewDailyChecklists(); };
   }, []);
 
   const derivedTruckInventory = useMemo(
@@ -11846,6 +12060,23 @@ export default function App() {
     () => getWarehouseInventoryParityReport({ legacyInventory: inventory, events: inventoryEvents, warehouseId: "main" }),
     [inventory, inventoryEvents],
   );
+  const crewChecklistStateByMemberId = useMemo(() => {
+    const today = todayCST();
+    const statusRank = { not_started: 0, in_progress: 1, completed: 2 };
+    return crewDailyChecklists.reduce((acc, entry) => {
+      if (!entry?.crewMemberId || entry?.date !== today) return acc;
+      const normalizedStatus = entry.completed || entry.status === "completed"
+        ? "completed"
+        : Object.keys(entry.checks || {}).length > 0
+          ? "in_progress"
+          : "not_started";
+      const current = acc[entry.crewMemberId];
+      if (!current || statusRank[normalizedStatus] >= statusRank[current.status]) {
+        acc[entry.crewMemberId] = { status: normalizedStatus, entry };
+      }
+      return acc;
+    }, {});
+  }, [crewDailyChecklists]);
   const jobUsageParityByJobId = useMemo(
     () => buildJobUsageParityLookup(jobs, inventoryEvents),
     [jobs, inventoryEvents],
@@ -11863,6 +12094,15 @@ export default function App() {
   }, [jobs, jobUsageParityByJobId]);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
+  const handleSaveCrewChecklist = async (payload) => {
+    if (!payload?.crewMemberId || !payload?.date) throw new Error("Missing crew checklist identity");
+    const docId = `${payload.crewMemberId}_${payload.date}`;
+    await setDoc(doc(db, "crewDailyChecklists", docId), {
+      ...payload,
+      updatedAt: serverTimestamp(),
+      createdAt: payload.createdAt || serverTimestamp(),
+    }, { merge: true });
+  };
   const handleDeleteTruck = async (id) => { await deleteDoc(doc(db, "trucks", id)); };
   const handleReorderTruck = async (id, newOrder) => { await updateDoc(doc(db, "trucks", id), { order: newOrder }); };
   const handleUpdateTruck = async (id, fields) => { await updateDoc(doc(db, "trucks", id), fields); };
@@ -12647,11 +12887,13 @@ export default function App() {
     const truckRef = doc(db, "truckInventory", truckId);
     const occurredAt = new Date().toISOString();
     const truckName = trucks.find((truck) => truck.id === truckId)?.name || null;
+    const correlationKey = [truckId, "load", occurredAt].join("::");
     const snap = await getDoc(truckRef);
     const currentTruck = snap.exists() ? snap.data() : {};
     const updatedTruck = {};
     const logItems = {};
     const canonicalItems = [];
+    const warehouseUpdates = [];
     for (const m of itemsLoaded) {
       const nextQty = Math.max(0, Math.round((parseFloat(m.qty) || 0) * 1000) / 1000);
       const priorQty = typeof currentTruck[m.itemId] === "number" ? currentTruck[m.itemId] : 0;
@@ -12659,48 +12901,6 @@ export default function App() {
       const warehouseRec = inventory.find(r => r.itemId === m.itemId);
       const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
       const warehouseQty = warehouseRec?.qty || 0;
-
-      if (delta > 0) {
-        await handleUpdateInventory(m.itemId, Math.max(0, Math.round((warehouseQty - delta) * 1000) / 1000), {
-          actor: {
-            actorId: crewSession?.memberId || null,
-            actorName: crewSession?.crewName || null,
-            actorRole: "crew",
-            source: "crew-dashboard",
-          },
-          occurredAt,
-          notes: "load",
-          correlationKey: [truckId, "load", occurredAt].join("::"),
-          metadata: {
-            eventKind: "truck_transfer_warehouse_adjustment",
-          },
-          legacy: {
-            items: logItems,
-            truckInventoryState: updatedTruck,
-          },
-          skipEventWrite: true,
-        });
-      } else if (delta < 0) {
-        await handleUpdateInventory(m.itemId, Math.round((warehouseQty + Math.abs(delta)) * 1000) / 1000, {
-          actor: {
-            actorId: crewSession?.memberId || null,
-            actorName: crewSession?.crewName || null,
-            actorRole: "crew",
-            source: "crew-dashboard",
-          },
-          occurredAt,
-          notes: "loadout-recount-return",
-          correlationKey: [truckId, "load", occurredAt].join("::"),
-          metadata: {
-            eventKind: "truck_transfer_warehouse_adjustment",
-          },
-          legacy: {
-            items: logItems,
-            truckInventoryState: updatedTruck,
-          },
-          skipEventWrite: true,
-        });
-      }
 
       if (nextQty > 0) updatedTruck[m.itemId] = nextQty;
       if (delta !== 0) {
@@ -12712,9 +12912,39 @@ export default function App() {
           category: inventoryItem?.category || null,
           qty: delta,
         });
+        warehouseUpdates.push({
+          itemId: m.itemId,
+          nextQty: delta > 0
+            ? Math.max(0, Math.round((warehouseQty - delta) * 1000) / 1000)
+            : Math.round((warehouseQty + Math.abs(delta)) * 1000) / 1000,
+          notes: delta > 0 ? "load" : "loadout-recount-return",
+        });
       }
     }
+
     await setDoc(truckRef, updatedTruck);
+
+    for (const update of warehouseUpdates) {
+      await handleUpdateInventory(update.itemId, update.nextQty, {
+        actor: {
+          actorId: crewSession?.memberId || null,
+          actorName: crewSession?.crewName || null,
+          actorRole: "crew",
+          source: "crew-dashboard",
+        },
+        occurredAt,
+        notes: update.notes,
+        correlationKey,
+        metadata: {
+          eventKind: "truck_transfer_warehouse_adjustment",
+        },
+        legacy: {
+          items: logItems,
+          truckInventoryState: updatedTruck,
+        },
+        skipEventWrite: true,
+      });
+    }
     if (Object.keys(logItems).length > 0) {
       await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: occurredAt, crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
     }
@@ -12747,7 +12977,7 @@ export default function App() {
           refs: {
             ...(event.refs || {}),
             legacyCollection: "loadLog",
-            correlationKey: [truckId, "load", occurredAt].join("::"),
+            correlationKey,
           },
           legacy: {
             ...(event.legacy || {}),
@@ -12828,7 +13058,8 @@ export default function App() {
         </div>
       </div>
     );
-    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} truckSecondaryInventory={truckSecondaryInventory[truck?.id] || {}} derivedTruckInventory={derivedTruckInventory[truck?.id] || {}} truckInventoryParity={truckInventoryParity[truck?.id] || null} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+    const checklistToday = crewChecklistStateByMemberId[crewSession.memberId] || { status: "not_started", entry: null };
+    return <CrewDashboard truck={truck} crewName={crewSession.crewName} crewMemberId={crewSession.memberId} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} inventory={inventory} truckInventory={truckInventory[truck?.id] || {}} truckSecondaryInventory={truckSecondaryInventory[truck?.id] || {}} derivedTruckInventory={derivedTruckInventory[truck?.id] || {}} truckInventoryParity={truckInventoryParity[truck?.id] || null} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={handleSaveTruckToolInventory} tools={tools} toolCheckouts={toolCheckouts} loadLog={loadLog} returnLog={returnLog} onSubmitUpdate={handleSubmitUpdate} onSubmitTicket={handleSubmitTicket} onCloseOutJob={handleCloseOutJob} onSaveJobMaterials={handleSaveJobMaterials} onLoadTruck={handleLoadTruck} onReturnMaterial={handleReturnMaterial} onDeductFromTruck={handleDeductFromTruck} onDeltaAdjustTruck={handleDeltaAdjustTruck} onLogDailyMaterials={handleLogDailyMaterials} onToolCheckout={handleToolCheckout} onToolReturn={handleToolReturn} onLogout={() => { setCrewSession(null); setRole(null); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onSuppliesCheckout={handleSuppliesCheckout} onSaveCrewChecklist={handleSaveCrewChecklist} checklistStatusToday={checklistToday} checklistEntryToday={checklistToday.entry} />;
   }
   if (role === "mechanic" && mechanicName) {
     return <MechanicDashboard mechanicName={mechanicName} trucks={trucks} tickets={tickets} onSubmitTicket={handleSubmitTicket} onUpdateTicket={handleUpdateTicket} onReorderTruck={handleReorderTruck} onLogout={() => { setMechanicName(null); setRole(null); }} />;
