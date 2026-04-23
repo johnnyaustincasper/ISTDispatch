@@ -362,7 +362,12 @@ export const adaptLiveDailyMaterialLogUpsertToEvents = ({
   const nextMaterials = log?.materials || {};
   const occurredAt = log?.audit?.capturedAt || log?.timestamp || new Date().toISOString();
   const truckId = asNullableString(log?.truckId);
-  const clearedItemIds = Object.keys(priorMaterials).filter((itemId) => roundQty(nextMaterials?.[itemId]) <= 0);
+  const priorTruckId = asNullableString(priorLog?.truckId);
+  const clearTruckId = priorTruckId && priorTruckId !== truckId ? priorTruckId : truckId;
+  const clearedItemIds = Array.from(new Set([
+    ...Object.keys(priorMaterials).filter((itemId) => roundQty(nextMaterials?.[itemId]) <= 0),
+    ...(priorTruckId && priorTruckId !== truckId ? Object.keys(priorMaterials) : []),
+  ]));
 
   const clearedEvents = clearedItemIds
     .map((itemId) => {
@@ -381,7 +386,7 @@ export const adaptLiveDailyMaterialLogUpsertToEvents = ({
         item: { itemId },
         quantity: { delta: 0, before: -Math.abs(priorQty), after: 0 },
         location: {
-          truckId,
+          truckId: clearTruckId,
           jobId: asNullableString(job?.id),
           jobAddress: asNullableString(job?.address),
         },
@@ -389,12 +394,13 @@ export const adaptLiveDailyMaterialLogUpsertToEvents = ({
           legacyCollection: "jobs",
           legacyDocId: legacyDocId || asNullableString(job?.id),
           legacyLogType: "dailyMaterialLogs",
-          correlationKey: [job?.id || "job", log?.date || "date", truckId || "legacy-truck"].join("::"),
+          correlationKey: [job?.id || "job", log?.date || "date", clearTruckId || "legacy-truck"].join("::"),
           siteKey: buildJobSiteKey(job?.address),
         },
         metadata: {
           upsert: true,
           cleared: true,
+          movedTruck: !!(priorTruckId && priorTruckId !== truckId),
           eventKind: "daily_material_log_upsert",
           jobSiteKey: buildJobSiteKey(job?.address),
         },

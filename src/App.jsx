@@ -260,7 +260,7 @@ const getTruckUsageWindowStats = (jobs = [], truckId = null, windows = [7, 14, 3
     start.setDate(start.getDate() - (days - 1));
     return [days, start.toLocaleDateString("en-CA", { timeZone: "America/Chicago" })];
   }));
-  const stats = Object.fromEntries(windows.map((days) => [days, { foamGallons: 0, materialValue: 0 }]));
+  const stats = Object.fromEntries(windows.map((days) => [days, { foamGallons: 0, materialValue: 0, materialBreakdown: {} }]));
   const foamCostForQty = (itemId, qty) => {
     const parsedQty = parseFloat(qty) || 0;
     if (parsedQty <= 0) return 0;
@@ -280,11 +280,13 @@ const getTruckUsageWindowStats = (jobs = [], truckId = null, windows = [7, 14, 3
           if (FOAM_BSIDE_IDS.has(itemId)) {
             stats[days].foamGallons += foamQtyToGallons(itemId, parsedQty);
             stats[days].materialValue += foamCostForQty(itemId, parsedQty);
+            stats[days].materialBreakdown[itemId] = (stats[days].materialBreakdown[itemId] || 0) + parsedQty;
           }
           return;
         }
         const item = INVENTORY_ITEMS.find((entry) => entry.id === itemId);
         stats[days].materialValue += (item?.cost || 0) * parsedQty;
+        stats[days].materialBreakdown[itemId] = (stats[days].materialBreakdown[itemId] || 0) + parsedQty;
       });
     });
   };
@@ -6756,7 +6758,7 @@ function WeatherTab({ jobs, trucks, updates }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onCloseOutJob, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   // Builders DB state
@@ -6819,6 +6821,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [invCatFilter, setInvCatFilter] = useState(null);
   const [invSort, setInvSort] = useState("category");
   const [invStatusFilter, setInvStatusFilter] = useState("all");
+  const [inventoryUiMock, setInventoryUiMock] = useState("current");
   const [invTab, setInvTab] = useState("materials");
   const [jobSearch, setJobSearch] = useState("");
   const [jobStatusFilter, setJobStatusFilter] = useState("active");
@@ -7455,7 +7458,18 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 </div>
                               );
                             })()}
-                            {/* Reopen button — office only */}
+                            {/* Office close / reopen controls */}
+                            {onSubmitUpdate && onCloseOutJob && !job.closedOut && (
+                              <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                                <button onClick={async () => {
+                                  if (!window.confirm("Close this job from the office now? This will mark it completed without requiring materials logs.")) return;
+                                  await onSubmitUpdate({ jobId: job.id, truckId: job.truckId, status: "completed", notes: "Closed by office", eta: "", crewName: adminName, timestamp: new Date().toISOString(), timeStr: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
+                                  await onCloseOutJob(job.id, Object.keys(job.materialsUsed || {}).length ? job.materialsUsed : null, getAuthoritativeTruckIdForJob(job));
+                                }} style={{ width: "100%", padding: "11px 8px", borderRadius: "99px", border: "none", background: "#15803d", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                                  ✅ Close Job Now
+                                </button>
+                              </div>
+                            )}
                             {latest?.status === "completed" && onSubmitUpdate && (
                               <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
                                 <button onClick={() => {
@@ -8061,6 +8075,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       days,
                       foamGallons: Math.round((usageStats?.[days]?.foamGallons || 0) * 10) / 10,
                       materialValue: usageStats?.[days]?.materialValue || 0,
+                      materialBreakdown: usageStats?.[days]?.materialBreakdown || {},
                     }));
 
                     const fmtTs = (ts) => { try { return new Date(ts).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit", hour12: true, timeZone: "America/Chicago" }); } catch { return ts; } };
@@ -8071,13 +8086,21 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                         <div style={{ marginBottom: 12 }}>
                           <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 6 }}>Material Usage</div>
                           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
-                            {usageWindows.map(({ days, foamGallons, materialValue }) => (
-                              <div key={days} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 8, padding: "8px 10px" }}>
-                                <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.4 }}>{days}-Day</div>
-                                <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: t.text }}>{foamGallons % 1 === 0 ? foamGallons.toFixed(0) : foamGallons.toFixed(1)} gal foam</div>
-                                <div style={{ marginTop: 3, fontSize: 12, color: t.textMuted }}>Value: <span style={{ color: t.accent, fontWeight: 700 }}>${materialValue.toFixed(2)}</span></div>
-                              </div>
-                            ))}
+                            {usageWindows.map(({ days, foamGallons, materialValue, materialBreakdown }) => {
+                              const breakdownEntries = Object.entries(materialBreakdown || {}).filter(([, qty]) => (parseFloat(qty) || 0) > 0);
+                              return (
+                                <div key={days} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: 8, padding: "8px 10px" }}>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: t.textMuted, textTransform: "uppercase", letterSpacing: 0.4 }}>{days}-Day</div>
+                                  <div style={{ marginTop: 6, fontSize: 13, fontWeight: 700, color: t.text }}>{foamGallons % 1 === 0 ? foamGallons.toFixed(0) : foamGallons.toFixed(1)} gal foam</div>
+                                  <div style={{ marginTop: 3, fontSize: 12, color: t.textMuted }}>Value: <span style={{ color: t.accent, fontWeight: 700 }}>${materialValue.toFixed(2)}</span></div>
+                                  {breakdownEntries.length > 0 && (
+                                    <div style={{ marginTop: 6, fontSize: 11, color: t.textMuted, lineHeight: 1.4 }}>
+                                      {breakdownEntries.map(([itemId, qty]) => `${itemLabel(itemId)}: ${Number(qty).toFixed(2)}`).join(" • ")}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
 
@@ -8593,101 +8616,194 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               })()}
 
               {/* ── Materials tab content ── */}
-              {invTab === "materials" && <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-              {/* ── Stat filter buttons row ── */}
-              <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
-                <button onClick={() => setInvStatusFilter("all")} style={{
-                  padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: invStatusFilter === "all" ? 800 : 600,
-                  border: "1px solid " + (invStatusFilter === "all" ? "#2563eb" : "#e2e8f0"),
-                  background: invStatusFilter === "all" ? "#2563eb" : "#ffffff",
-                  color: invStatusFilter === "all" ? "#ffffff" : "#64748b",
-                  cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                  boxShadow: invStatusFilter === "all" ? "0 1px 3px rgba(37,99,235,0.2)" : "none",
-                  transition: "all 0.15s",
-                }}>All SKUs ({totalSKUs})</button>
-                <StatFilterBtn id="ok" label="In Stock" count={inStockItems.length} color="#16a34a" activeBg="#f0fdf4" activeBorder="#bbf7d0" />
-                <StatFilterBtn id="low" label="Low Stock" count={lowItems.length} color="#d97706" activeBg="#fffbeb" activeBorder="#fde68a" />
-                <StatFilterBtn id="out" label="Out of Stock" count={outItems.length} color="#dc2626" activeBg="#fef2f2" activeBorder="#fecaca" />
-                <div style={{ flex: 1 }} />
-                <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                  {(() => {
-                    const totalVal = INVENTORY_ITEMS.reduce((sum, item) => {
-                      if (!item.cost || item.isPieces) return sum;
-                      return sum + (item.cost || 0) * ((inventory || []).find(r => r.itemId === item.id)?.qty || 0);
-                    }, 0);
-                    return (
-                      <span style={{ fontSize: 10, fontWeight: 700, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 99, padding: "2px 8px" }}>
-                        ${totalVal.toLocaleString("en-US", { maximumFractionDigits: 0 })} inv. value
-                      </span>
-                    );
-                  })()}
-                  <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5 }}>● LIVE</span>
-                  <span style={{ fontSize: 10, color: lk.textMuted, fontWeight: 500 }}>Updated {lastUpdatedStr}</span>
-                </div>
-              </div>
-
-
-
-              {/* ── Search bar ── */}
-              <div style={{ flexShrink: 0, padding: "6px 12px", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", alignItems: "center", gap: 8 }}>
-                <input
-                  type="text"
-                  placeholder="Search inventory…"
-                  value={invSearch}
-                  onChange={e => setInvSearch(e.target.value)}
-                  style={{ flex: 1, padding: "5px 10px", border: "1px solid " + lk.inputBorder, borderRadius: 8, fontSize: 12, fontFamily: "inherit", background: lk.inputBg, color: lk.text, outline: "none" }}
-                />
-                {invSearch && (
-                  <button onClick={() => setInvSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: lk.textMuted, fontSize: 16, lineHeight: 1, padding: "2px 4px", fontFamily: "inherit" }}>×</button>
-                )}
-              </div>
-              {/* ── Materials grid ── */}
-              <MaterialsGrid inventory={inventory} onUpdateInventory={onUpdateInventory} invStatusFilter={invStatusFilter} invSearch={invSearch} stockStatus={stockStatus} stockColors={stockColors} isFoam={isFoam} bblToGals={bblToGals} galsToBbl={galsToBbl} sortAllItems={sortAllItems} statusFilterFn={statusFilterFn} searchLower={searchLower} />
-
-              {/* ─── Truck Reconciliation ─── */}
-              <div style={{ flexShrink: 0, borderTop: "1px solid #e2e8f0", background: "#fff" }}>
-                <button
-                  onClick={() => setShowReconcile(r => !r)}
-                  style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "12px 16px", borderBottom: showReconcile ? "1px solid #e2e8f0" : "none" }}
-                >
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>🚛 Today's Truck Reconciliation</span>
-                  <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: "auto" }}>{showReconcile ? "▲ Hide" : "▼ Show"}</span>
-                </button>
-                {showReconcile && (
-                  <div style={{ padding: "12px 16px", maxHeight: 320, overflowY: "auto" }}>
-                    <TruckReconcileView trucks={trucks} loadLog={loadLog} returnLog={returnLog} jobs={jobs} updates={updates} truckInventory={truckInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} />
+              {invTab === "materials" && (
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+                  <div style={{ flexShrink: 0, padding: "8px 10px", borderBottom: "1px solid " + lk.headerBorder, background: "#f8fafc", display: "flex", gap: 6, overflowX: "auto" }}>
+                    {[
+                      { id: "current", label: "Current" },
+                      { id: "ledger", label: "Ledger Mock" },
+                      { id: "shelf", label: "Shelf Mock" },
+                      { id: "table", label: "Table Mock" },
+                    ].map(opt => (
+                      <button
+                        key={opt.id}
+                        onClick={() => setInventoryUiMock(opt.id)}
+                        style={{
+                          padding: "5px 10px",
+                          borderRadius: 999,
+                          border: "1px solid " + (inventoryUiMock === opt.id ? "#2563eb" : "#e2e8f0"),
+                          background: inventoryUiMock === opt.id ? "#2563eb" : "#ffffff",
+                          color: inventoryUiMock === opt.id ? "#ffffff" : "#64748b",
+                          cursor: "pointer",
+                          fontFamily: "inherit",
+                          fontSize: 11,
+                          fontWeight: 700,
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
-                )}
-              </div>
-              </div>}
+
+                  {inventoryUiMock !== "current" ? (
+                    <div style={{ flex: 1, overflowY: "auto", padding: 12, background: "#f8fafc" }}>
+                      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, marginBottom: 12 }}>
+                        <div style={{ fontSize: 12, fontWeight: 800, color: "#2563eb", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
+                          {inventoryUiMock === "ledger" ? "Ledger mock" : inventoryUiMock === "shelf" ? "Shelf mock" : "Table mock"}
+                        </div>
+                        <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
+                          Visual direction only. Live inventory editing stays untouched until we pick a winner.
+                        </div>
+                      </div>
+
+                      {inventoryUiMock === "ledger" && (
+                        <div style={{ display: "grid", gap: 8 }}>
+                          {sortAllItems(INVENTORY_ITEMS.filter(i => !i.isPieces).slice(0, 14)).map(item => {
+                            const qty = getQty(item.id);
+                            const sc = stockColors[stockStatus(qty)];
+                            return (
+                              <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #e2e8f0", borderLeft: `4px solid ${sc.bar}`, borderRadius: 12, padding: "10px 12px" }}>
+                                <div>
+                                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{item.name}</div>
+                                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{item.category} • {item.unit}</div>
+                                </div>
+                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                                  <button style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #dbeafe", background: "#eff6ff", color: "#2563eb", fontWeight: 800 }}>−</button>
+                                  <div style={{ minWidth: 68, textAlign: "center" }}>
+                                    <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{isFoam(item.id) ? qty.toFixed(2) : qty}</div>
+                                    <div style={{ fontSize: 10, color: sc.badgeColor, fontWeight: 700 }}>{sc.label || "IN STOCK"}</div>
+                                  </div>
+                                  <button style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #dbeafe", background: "#eff6ff", color: "#2563eb", fontWeight: 800 }}>+</button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {inventoryUiMock === "shelf" && (
+                        <div style={{ display: "grid", gap: 14 }}>
+                          {visibleCats2.slice(0, 4).map(cat => {
+                            const items = sortAllItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces)).slice(0, 4);
+                            return (
+                              <div key={cat} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 12 }}>
+                                <div style={{ fontSize: 12, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{cat}</div>
+                                <div style={{ display: "grid", gap: 8 }}>
+                                  {items.map(item => {
+                                    const qty = getQty(item.id);
+                                    return (
+                                      <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", padding: "8px 10px", background: "#f8fafc", borderRadius: 10 }}>
+                                        <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{item.name}</div>
+                                        <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", minWidth: 54, textAlign: "right" }}>{isFoam(item.id) ? qty.toFixed(2) : qty}</div>
+                                        <div style={{ fontSize: 11, color: "#64748b" }}>{item.unit}</div>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {inventoryUiMock === "table" && (
+                        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, overflow: "auto" }}>
+                          <div style={{ minWidth: 640 }}>
+                            <div style={{ display: "grid", gridTemplateColumns: "2.4fr .8fr .7fr 1fr", padding: "10px 12px", background: "#eff6ff", borderBottom: "1px solid #dbeafe", fontSize: 11, fontWeight: 800, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: 0.4 }}>
+                              <div>Item</div><div>Qty</div><div>Unit</div><div>Adjust</div>
+                            </div>
+                            {sortAllItems(INVENTORY_ITEMS.filter(i => !i.isPieces).slice(0, 16)).map((item, idx) => {
+                              const qty = getQty(item.id);
+                              return (
+                                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "2.4fr .8fr .7fr 1fr", padding: "10px 12px", borderBottom: "1px solid #eef2f7", background: idx % 2 ? "#fcfdff" : "#fff", alignItems: "center" }}>
+                                  <div>
+                                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{item.name}</div>
+                                    <div style={{ fontSize: 11, color: "#64748b" }}>{item.category}</div>
+                                  </div>
+                                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>{isFoam(item.id) ? qty.toFixed(2) : qty}</div>
+                                  <div style={{ fontSize: 12, color: "#64748b" }}>{item.unit}</div>
+                                  <div style={{ display: "flex", gap: 6 }}>
+                                    <button style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #dbeafe", background: "#eff6ff", color: "#2563eb", fontWeight: 800 }}>−</button>
+                                    <button style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #dbeafe", background: "#eff6ff", color: "#2563eb", fontWeight: 800 }}>+</button>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <>
+                      <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
+                        <button onClick={() => setInvStatusFilter("all")} style={{
+                          padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: invStatusFilter === "all" ? 800 : 600,
+                          border: "1px solid " + (invStatusFilter === "all" ? "#2563eb" : "#e2e8f0"),
+                          background: invStatusFilter === "all" ? "#2563eb" : "#ffffff",
+                          color: invStatusFilter === "all" ? "#ffffff" : "#64748b",
+                          cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                          boxShadow: invStatusFilter === "all" ? "0 1px 3px rgba(37,99,235,0.2)" : "none",
+                          transition: "all 0.15s",
+                        }}>All SKUs ({totalSKUs})</button>
+                        <StatFilterBtn id="ok" label="In Stock" count={inStockItems.length} color="#16a34a" activeBg="#f0fdf4" activeBorder="#bbf7d0" />
+                        <StatFilterBtn id="low" label="Low Stock" count={lowItems.length} color="#d97706" activeBg="#fffbeb" activeBorder="#fde68a" />
+                        <StatFilterBtn id="out" label="Out of Stock" count={outItems.length} color="#dc2626" activeBg="#fef2f2" activeBorder="#fecaca" />
+                        <div style={{ flex: 1 }} />
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                          {(() => {
+                            const totalVal = INVENTORY_ITEMS.reduce((sum, item) => {
+                              if (!item.cost || item.isPieces) return sum;
+                              return sum + (item.cost || 0) * ((inventory || []).find(r => r.itemId === item.id)?.qty || 0);
+                            }, 0);
+                            return (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 99, padding: "2px 8px" }}>
+                                ${totalVal.toLocaleString("en-US", { maximumFractionDigits: 0 })} inv. value
+                              </span>
+                            );
+                          })()}
+                          <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5 }}>● LIVE</span>
+                          <span style={{ fontSize: 10, color: lk.textMuted, fontWeight: 500 }}>Updated {lastUpdatedStr}</span>
+                        </div>
+                      </div>
+
+                      <div style={{ flexShrink: 0, padding: "6px 12px", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", alignItems: "center", gap: 8 }}>
+                        <input
+                          type="text"
+                          placeholder="Search inventory…"
+                          value={invSearch}
+                          onChange={e => setInvSearch(e.target.value)}
+                          style={{ flex: 1, padding: "5px 10px", border: "1px solid " + lk.inputBorder, borderRadius: 8, fontSize: 12, fontFamily: "inherit", background: lk.inputBg, color: lk.text, outline: "none" }}
+                        />
+                        {invSearch && (
+                          <button onClick={() => setInvSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: lk.textMuted, fontSize: 16, lineHeight: 1, padding: "2px 4px", fontFamily: "inherit" }}>×</button>
+                        )}
+                      </div>
+
+                      <MaterialsGrid inventory={inventory} onUpdateInventory={onUpdateInventory} invStatusFilter={invStatusFilter} invSearch={invSearch} stockStatus={stockStatus} stockColors={stockColors} isFoam={isFoam} bblToGals={bblToGals} galsToBbl={galsToBbl} sortAllItems={sortAllItems} statusFilterFn={statusFilterFn} searchLower={searchLower} />
+
+                      <div style={{ flexShrink: 0, borderTop: "1px solid #e2e8f0", background: "#fff" }}>
+                        <button
+                          onClick={() => setShowReconcile(r => !r)}
+                          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "12px 16px", borderBottom: showReconcile ? "1px solid #e2e8f0" : "none" }}
+                        >
+                          <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>🚛 Today's Truck Reconciliation</span>
+                          <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: "auto" }}>{showReconcile ? "▲ Hide" : "▼ Show"}</span>
+                        </button>
+                        {showReconcile && (
+                          <div style={{ padding: "12px 16px", maxHeight: 320, overflowY: "auto" }}>
+                            <TruckReconcileView trucks={trucks} loadLog={loadLog} returnLog={returnLog} jobs={jobs} updates={updates} truckInventory={truckInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} />
+                          </div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           );
         })()}
-
-        {view === "log" && (
-          <>
-            <SectionHeader title="Activity Log" right={<span style={{ fontSize: "12.5px", color: t.textMuted }}>Office actions only</span>} />
-            {sortedLog.length === 0 ? <EmptyState text="No activity recorded yet." /> : sortedLog.map((entry) => (
-              <Card key={entry.id}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px" }}>
-                  <div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
-                      <div style={{ width: "26px", height: "26px", borderRadius: "6px", background: t.accentBg, color: t.accent, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "11px", fontWeight: 700, flexShrink: 0 }}>{entry.user?.[0]}</div>
-                      <span style={{ fontWeight: 600, color: t.text, fontSize: "13.5px" }}>{entry.user}</span>
-                    </div>
-                    <div style={{ fontSize: "13.5px", color: t.textSecondary, paddingLeft: "34px" }}>{entry.action}</div>
-                  </div>
-                  <span style={{ fontSize: "11.5px", color: t.textMuted, flexShrink: 0, whiteSpace: "nowrap" }}>{dateStr(entry.timestamp)}</span>
-                </div>
-              </Card>
-            ))}
-          </>
-        )}
-
-        {view === "weather" && (
-          <WeatherTab jobs={jobs} trucks={trucks} updates={updates} />
-        )}
-      </div>
+          </div>
 
       {showTakeoffImport && (
         <Modal title="Import from Takeoff" onClose={() => setShowTakeoffImport(false)}>
@@ -12557,7 +12673,48 @@ export default function App() {
     }
   };
 
+  const getInventoryValidationError = ({ inventoryState = {}, oldUsed = {}, newUsed = {}, warehouseState = {} } = {}) => {
+    for (const item of INVENTORY_ITEMS.filter(i => !i.isPieces)) {
+      const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+      const itemLabel = item.name || item.id;
+      const oldTubes = parseFloat(oldUsed[item.id]) || 0;
+      const newTubes = parseFloat(newUsed[item.id]) || 0;
+      const oldLoose = pcsItem ? (parseFloat(oldUsed[pcsItem.id]) || 0) : 0;
+      const newLoose = pcsItem ? (parseFloat(newUsed[pcsItem.id]) || 0) : 0;
+      if (item.pcsPerTube) {
+        const deltaPieces = (newTubes * item.pcsPerTube + newLoose) - (oldTubes * item.pcsPerTube + oldLoose);
+        const currentPieces = ((parseFloat(inventoryState[item.id]) || 0) * item.pcsPerTube) + (pcsItem ? (parseFloat(inventoryState[pcsItem.id]) || 0) : 0);
+        if (deltaPieces > currentPieces + 1e-9) return `${itemLabel} exceeds truck inventory.`;
+      } else {
+        const delta = newTubes - oldTubes;
+        const current = parseFloat(inventoryState[item.id]) || 0;
+        if (delta > current + 1e-9) return `${itemLabel} exceeds truck inventory.`;
+      }
+    }
+
+    for (const [itemId, nextQtyRaw] of Object.entries(newUsed || {})) {
+      const nextQty = parseFloat(nextQtyRaw) || 0;
+      if (nextQty < -1e-9) {
+        const invItem = INVENTORY_ITEMS.find((item) => item.id === itemId);
+        return `${invItem?.name || itemId} cannot go below zero.`;
+      }
+    }
+
+    for (const [itemId, nextQtyRaw] of Object.entries(warehouseState || {})) {
+      const nextQty = parseFloat(nextQtyRaw);
+      if (!Number.isFinite(nextQty)) continue;
+      if (nextQty < -1e-9) {
+        const invItem = INVENTORY_ITEMS.find((item) => item.id === itemId);
+        return `${invItem?.name || itemId} exceeds warehouse inventory.`;
+      }
+    }
+
+    return null;
+  };
+
   const applyTruckUsageDelta = (baseState, oldUsed = {}, newUsed = {}) => {
+    const validationError = getInventoryValidationError({ inventoryState: baseState, oldUsed, newUsed });
+    if (validationError) throw new Error(validationError);
     const state = { ...(baseState || {}) };
     INVENTORY_ITEMS.filter(i => !i.isPieces).forEach(item => {
       const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
@@ -12689,6 +12846,8 @@ export default function App() {
         const rec = inventory.find(r => r.itemId === m.itemId);
         const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
         const current = rec?.qty || 0;
+        const currentTruckQty = parseFloat(state[m.itemId]) || 0;
+        if (stillHave > currentTruckQty + 1e-9) throw new Error(`${inventoryItem?.name || m.itemId} exceeds truck inventory.`);
         await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100, {
           actor: {
             actorId: crewSession?.memberId || null,
@@ -12718,7 +12877,6 @@ export default function App() {
           qty: stillHave,
         });
         // Remove only the returned quantity from truck state
-        const currentTruckQty = parseFloat(state[m.itemId]) || 0;
         const nextTruckQty = Math.round((currentTruckQty - stillHave) * 1000) / 1000;
         if (nextTruckQty > 0) {
           state[m.itemId] = nextTruckQty;
@@ -12960,6 +13118,7 @@ export default function App() {
       const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
       const warehouseQty = warehouseRec?.qty || 0;
 
+      if (delta > warehouseQty + 1e-9) throw new Error(`${inventoryItem?.name || m.itemId} exceeds warehouse inventory.`);
       if (nextQty > 0) updatedTruck[m.itemId] = nextQty;
       if (delta !== 0) {
         logItems[m.itemId] = delta;
@@ -13153,6 +13312,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
   return null;
 }
