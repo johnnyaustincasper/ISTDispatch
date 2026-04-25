@@ -8293,7 +8293,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               return { group, items: group === "Blown/Other" ? items : [...items].sort((a, b) => getQty(b.id) - getQty(a.id)) };
             }).filter(section => section.items.length);
             const boardColors = { Foam: "#2563eb", "Blown/Other": "#16a34a", R11: "#7c3aed", "R13/R15": "#0f766e", "R19+": "#ea580c", "R30+": "#be123c", Other: "#64748b" };
-            const formatQty = (item, qty) => isFoam(item.id) ? `${bblToGals(qty, item.id)}g` : String(qty);
+            const formatQty = (item, qty) => isFoam(item.id) ? qty.toFixed(2) : String(qty);
+            const formatUnit = (item) => isFoam(item.id) ? "bbl" : item.unit;
+            const formatValue = (item, qty) => `$${((item.cost || 0) * qty).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
 
             if (!allVisible.length) {
               return <div style={{ flex: 1, display: "grid", placeItems: "center", color: "#94a3b8", fontSize: 14, background: "#f8fafc" }}>No materials match those filters.</div>;
@@ -8315,19 +8317,21 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                           const sc = stockColors[status];
                           const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
                           const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
+                          const lineValue = formatValue(item, qty);
                           return (
                             <div key={item.id} style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 4, padding: "2px 5px", borderBottom: idx < items.length - 1 ? "1px solid #edf2f7" : "none", background: status === "out" ? "#fff1f2" : status === "low" ? "#fffbeb" : "#fff" }}>
                               <div style={{ minWidth: 0 }}>
                                 <div title={item.name} style={{ fontSize: 11, fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{shortName(item)}</div>
                                 <div style={{ display: "flex", gap: 3, alignItems: "center", minWidth: 0, marginTop: 1 }}>
                                   <span style={{ fontSize: 8.5, fontWeight: 900, color: sc.badgeColor, lineHeight: 1 }}>{sc.label || "OK"}</span>
+                                  <span style={{ fontSize: 8.5, color: "#15803d", fontWeight: 900, lineHeight: 1 }}>{lineValue}</span>
                                   {pcsItem && pcsQty > 0 && <span style={{ fontSize: 8.5, color: "#4f46e5", fontWeight: 900, lineHeight: 1 }}>+{pcsQty}pc</span>}
                                 </div>
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                                 <div style={{ textAlign: "right", minWidth: 26 }}>
                                   <div style={{ fontSize: 15, fontWeight: 950, color: sc.text, lineHeight: 1, letterSpacing: "-0.5px" }}>{formatQty(item, qty)}</div>
-                                  <div style={{ fontSize: 8.5, color: "#64748b", fontWeight: 800, lineHeight: 1 }}>{isFoam(item.id) ? "gal" : item.unit}</div>
+                                  <div style={{ fontSize: 8.5, color: "#64748b", fontWeight: 800, lineHeight: 1 }}>{formatUnit(item)}</div>
                                 </div>
                                 <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
                               </div>
