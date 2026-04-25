@@ -7150,6 +7150,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const todayMonth = new Date().getMonth();
   const todayYear = new Date().getFullYear();
   const todaysJobs = activeJobs.filter((j) => j.date === todayCST());
+  const getLatestJobStatusValue = (jobId) => updates
+    .filter((u) => u.jobId === jobId)
+    .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]?.status || "not_started";
+  const notStartedTodayCount = todaysJobs.filter((j) => getLatestJobStatusValue(j.id) === "not_started").length;
+  const inProgressTodayCount = todaysJobs.filter((j) => getLatestJobStatusValue(j.id) === "in_progress").length;
   const unassignedActiveJobs = activeJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
   const completedTodayCount = updates.filter((u) => u.status === "completed" && tsToCST(u.timestamp) === todayCST()).length;
 
@@ -7251,7 +7256,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: 14 }}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · {scheduleView === "energySeal" ? "Energy Seal" : "Insulation"}</div>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(88px, 1fr))", gap: 10, minWidth: 360 }}>
-                  {[{ label: "Today", value: todaysJobs.length }, { label: "Active", value: activeJobs.length }, { label: "Done", value: completedTodayCount }, { label: "Unassigned", value: unassignedActiveJobs.length }].map((stat) => (
+                  {[{ label: "Not Started", value: notStartedTodayCount }, { label: "In Progress", value: inProgressTodayCount }, { label: "Done", value: completedTodayCount }, { label: "Unassigned", value: unassignedActiveJobs.length }].map((stat) => (
                     <div key={stat.label} style={{ padding: "13px 14px", borderRadius: 18, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.16)", backdropFilter: "blur(12px)" }}>
                       <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: "-0.8px" }}>{stat.value}</div>
                       <div style={{ fontSize: 11, color: "rgba(255,255,255,0.68)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em" }}>{stat.label}</div>
