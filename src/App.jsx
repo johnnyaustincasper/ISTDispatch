@@ -7180,7 +7180,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
       {/* Top header — premium wordmark + session */}
-      <div className="glass-header" style={{ padding: "9px 20px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 18px 45px rgba(15,23,42,0.22)", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+      <div style={{ padding: "9px 20px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", boxShadow: "0 18px 45px rgba(15,23,42,0.16)", borderBottom: "1px solid rgba(148,163,184,0.24)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1480, margin: "0 auto", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
             <div style={{ width: 46, height: 46, borderRadius: 16, display: "grid", placeItems: "center", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 12px 30px rgba(37,99,235,0.30), inset 0 1px 0 rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.16)", flexShrink: 0 }}>
@@ -7203,7 +7203,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       </div>
 
       {/* Left dock nav */}
-      <div style={{ position: "fixed", top: "calc(72px + env(safe-area-inset-top, 0px))", left: 14, bottom: 18, zIndex: 200, width: 58, display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: "10px 6px", background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", border: "1px solid rgba(148,163,184,0.24)", borderRadius: 24, boxShadow: "0 24px 60px rgba(15,23,42,0.16)" }}>
+      <div style={{ position: "fixed", top: "calc(72px + env(safe-area-inset-top, 0px))", left: 14, bottom: 18, zIndex: 200, width: 66, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, padding: "10px 7px", background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", border: "1px solid rgba(148,163,184,0.24)", borderRadius: 24, boxShadow: "0 24px 60px rgba(15,23,42,0.16)" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
           return (
@@ -7212,16 +7212,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               title={item.label}
               onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }}
               style={{
-                width: 46,
-                minHeight: 48,
+                width: "100%",
+                flex: 1,
+                minHeight: 0,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: "6px 4px",
+                padding: "8px 4px",
                 background: isActive ? "linear-gradient(135deg,#2563eb,#0f172a)" : "transparent",
                 border: isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent",
-                borderRadius: 17,
+                borderRadius: 18,
                 cursor: "pointer",
                 fontFamily: "inherit",
                 position: "relative",
@@ -7230,7 +7231,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 boxShadow: isActive ? "0 14px 30px rgba(37,99,235,0.28)" : "none",
               }}>
               <span style={{ lineHeight: 1, color: isActive ? "#fff" : "#64748b", transform: isActive ? "scale(1.08)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
-              <span style={{ fontSize: "8.5px", fontWeight: 850, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", maxWidth: 42, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
+              <span style={{ fontSize: "9px", fontWeight: 900, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", maxWidth: 42, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
               {item.badge > 0 && <span style={{ position: "absolute", top: "-3px", right: "-3px", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
             </button>
           );
