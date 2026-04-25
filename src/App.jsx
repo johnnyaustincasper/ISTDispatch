@@ -775,6 +775,19 @@ const kbStyles = `
     .avatar-btn > div { width: 56px !important; height: 56px !important; border-radius: 17px !important; font-size: 20px !important; }
     .avatar-btn span { font-size: 11.5px !important; line-height: 1.15 !important; }
   }
+  @media (max-width: 640px) {
+    .crew-portal-shell { padding-top: calc(62px + env(safe-area-inset-top, 0px)) !important; min-height: 100dvh !important; }
+    .crew-portal-header { padding: 8px 16px !important; padding-top: calc(8px + env(safe-area-inset-top,0px)) !important; }
+    .crew-portal-logout { white-space: nowrap !important; min-width: 76px !important; padding: 9px 12px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; line-height: 1 !important; }
+    .crew-portal-body { padding: 14px 16px 26px !important; }
+    .crew-home-hero { margin-bottom: 14px !important; padding: 18px 18px !important; border-radius: 24px !important; color: #fff !important; background: radial-gradient(circle at 90% 10%, rgba(96,165,250,0.70), transparent 38%), linear-gradient(135deg,#172554,#2563eb) !important; box-shadow: 0 18px 48px rgba(37,99,235,0.22) !important; }
+    .crew-home-hero-title { color: #fff !important; font-size: 28px !important; font-weight: 950 !important; letter-spacing: -0.9px !important; }
+    .crew-home-hero-date { color: rgba(255,255,255,0.76) !important; font-weight: 750 !important; }
+    .crew-home-grid { gap: 11px !important; }
+    .crew-nav-card { min-height: 116px !important; border-radius: 22px !important; background: rgba(255,255,255,0.82) !important; border-color: rgba(148,163,184,0.22) !important; box-shadow: 0 14px 34px rgba(15,23,42,0.09), inset 0 1px 0 rgba(255,255,255,0.92) !important; }
+    .crew-nav-card:last-child { grid-column: 1 / -1 !important; min-height: 86px !important; flex-direction: row !important; justify-content: flex-start !important; text-align: left !important; padding: 18px 22px !important; }
+    .crew-nav-card:last-child > span:first-of-type { flex-shrink: 0 !important; }
+  }
   .office-mobile-bottom-nav { display: none; }
   @media (max-width: 640px) {
     .office-app-shell { padding-left: 0 !important; padding-top: calc(58px + env(safe-area-inset-top, 0px)) !important; padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)) !important; overflow-x: hidden; }
@@ -2288,13 +2301,13 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   };
 
   return (
-    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div className="crew-portal-shell" style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
       {wrapUpToast && (
         <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 80px)", left: "50%", transform: "translateX(-50%)", background: "#15803d", color: "#fff", padding: "12px 24px", borderRadius: "99px", fontSize: "15px", fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap" }}>
           ✅ Job wrapped up!
         </div>
       )}
-      <div style={{ padding: "9px 16px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", boxShadow: "0 18px 45px rgba(15,23,42,0.16)", borderBottom: "1px solid rgba(148,163,184,0.24)" }}>
+      <div className="crew-portal-header" style={{ padding: "9px 16px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", boxShadow: "0 18px 45px rgba(15,23,42,0.16)", borderBottom: "1px solid rgba(148,163,184,0.24)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 680, margin: "0 auto", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
             <div style={{ width: 46, height: 46, borderRadius: 16, display: "grid", placeItems: "center", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 12px 30px rgba(37,99,235,0.30), inset 0 1px 0 rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.16)", flexShrink: 0 }}>
@@ -2309,7 +2322,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               <div style={{ marginTop: 3, color: "rgba(15,23,42,0.64)", fontSize: 11, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{crewName}</div>
             </div>
           </div>
-          <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999 }}>Log Out</Button>
+          <Button className="crew-portal-logout" variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999, whiteSpace: "nowrap" }}>Log Out</Button>
         </div>
         {crewView !== "home" && (
           <div style={{ display: "flex", alignItems: "center", gap: "8px", maxWidth: 680, margin: "8px auto 0" }}>
@@ -2323,7 +2336,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         )}
       </div>
 
-      <div style={{ padding: "16px 16px 32px", maxWidth: "600px", margin: "0 auto" }}>
+      <div className="crew-portal-body" style={{ padding: "16px 16px 32px", maxWidth: "600px", margin: "0 auto" }}>
         {showChecklistModal && (() => {
           const selectedChecklist = selectedChecklistType ? CREW_CHECKLISTS[selectedChecklistType] : null;
           const selectedItems = selectedChecklist?.items || [];
@@ -2452,13 +2465,13 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           ];
           return (
             <div className="tab-view-enter">
-              <div style={{ marginBottom: "24px", paddingTop: "4px" }}>
-                <div style={{ fontSize: "22px", fontWeight: 800, color: t.text, letterSpacing: "-0.3px" }}>Hey {firstName} 👋</div>
-                <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>{dateStr}</div>
+              <div className="crew-home-hero" style={{ marginBottom: "24px", paddingTop: "4px" }}>
+                <div className="crew-home-hero-title" style={{ fontSize: "22px", fontWeight: 800, color: t.text, letterSpacing: "-0.3px" }}>Hey {firstName} 👋</div>
+                <div className="crew-home-hero-date" style={{ fontSize: "13px", color: t.textMuted, marginTop: "4px" }}>{dateStr}</div>
               </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
+              <div className="crew-home-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "12px" }}>
                 {navItems.map(item => (
-                  <button key={item.key} onClick={() => {
+                  <button className="crew-nav-card" key={item.key} onClick={() => {
                     if (item.key === "checklist") {
                       handleChecklistOpen();
                       return;
@@ -7266,7 +7279,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </div>
           <div className="office-session-actions" style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
             <span style={{ fontSize: "12px", color: "#0f172a", padding: "7px 10px", borderRadius: 999, background: "rgba(255,255,255,0.52)", border: "1px solid rgba(15,23,42,0.10)" }}>{adminName}</span>
-            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999 }}>Log Out</Button>
+            <Button className="crew-portal-logout" variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999, whiteSpace: "nowrap" }}>Log Out</Button>
           </div>
         </div>
       </div>
