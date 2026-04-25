@@ -1464,55 +1464,42 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
         {(step === "pin" || step === "setup" || step === "confirm" || step === "truck") && (
           <>
             {step === "truck" && (
-              <div style={{ marginBottom: 18 }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
-                  <div style={{ fontSize: 12, fontWeight: 900, color: t.textSecondary, textTransform: "uppercase", letterSpacing: "0.8px" }}>Today's truck</div>
-                  {recommendedTruckId && <div style={{ fontSize: 11, fontWeight: 900, color: "#1d4ed8", background: "#dbeafe", border: "1px solid #bfdbfe", borderRadius: 999, padding: "5px 9px", whiteSpace: "nowrap" }}>Assigned truck highlighted</div>}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: t.textSecondary, textTransform: "uppercase", letterSpacing: "0.8px" }}>Tap your truck</div>
+                  {recommendedTruckId && <div style={{ fontSize: 10.5, fontWeight: 900, color: "#1d4ed8", background: "#dbeafe", border: "1px solid #bfdbfe", borderRadius: 999, padding: "4px 8px", whiteSpace: "nowrap" }}>Assigned highlighted</div>}
                 </div>
 
-                <div style={{ display: "grid", gap: 14 }}>
-                  {truckGroups.length === 0 ? (
-                    <div style={{ border: "1px dashed " + t.border, borderRadius: 18, padding: 18, textAlign: "center", color: t.textMuted, background: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: 700 }}>No trucks available. Ask the office to add one first.</div>
-                  ) : truckGroups.map(group => (
-                    <div key={group.key} style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(148,163,184,0.28)", borderRadius: 20, padding: 12, boxShadow: "0 12px 28px rgba(15,23,42,0.06)" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 10px" }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 99, background: group.accent, boxShadow: `0 0 0 4px ${group.accent}18` }} />
-                        <div style={{ color: t.text, fontSize: 14, fontWeight: 950, letterSpacing: "-0.2px" }}>{group.title}</div>
-                      </div>
-                      <div style={{ display: "grid", gap: 9 }}>
-                        {group.trucks.map(tr => {
-                          const active = selectedTruckId === tr.id;
-                          const recommended = recommendedTruckId === tr.id;
-                          return (
-                            <button
-                              key={tr.id}
-                              onClick={() => { setSelectedTruckId(tr.id); setError(""); }}
-                              type="button"
-                              aria-pressed={active}
-                              style={{ width: "100%", minHeight: 68, padding: "13px 14px", borderRadius: 16, border: "2px solid " + (active ? group.accent : recommended ? "#93c5fd" : "rgba(148,163,184,0.34)"), background: active ? `linear-gradient(135deg, ${group.accent}, #0f172a)` : recommended ? "linear-gradient(135deg,#eff6ff,#ffffff)" : "rgba(255,255,255,0.9)", color: active ? "#fff" : t.text, fontFamily: "inherit", cursor: "pointer", textAlign: "left", boxShadow: active ? `0 16px 30px ${group.accent}33` : "0 8px 20px rgba(15,23,42,0.05)", WebkitTapHighlightColor: "transparent" }}
-                            >
-                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
-                                <div style={{ minWidth: 0 }}>
-                                  <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: "-0.35px", overflowWrap: "anywhere" }}>{truckLabel(tr)}</div>
-                                  <div style={{ marginTop: 3, fontSize: 12, fontWeight: 700, color: active ? "rgba(255,255,255,0.78)" : t.textMuted, overflowWrap: "anywhere" }}>{truckCrewLabel(tr)}</div>
-                                </div>
-                                <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 6 }}>
-                                  {recommended && <span style={{ fontSize: 10.5, fontWeight: 950, borderRadius: 999, padding: "5px 8px", background: active ? "rgba(255,255,255,0.18)" : "#dbeafe", color: active ? "#fff" : "#1d4ed8" }}>Assigned</span>}
-                                  <span style={{ width: 24, height: 24, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid " + (active ? "rgba(255,255,255,0.72)" : "rgba(148,163,184,0.45)"), background: active ? "rgba(255,255,255,0.16)" : "#fff", color: active ? "#fff" : "transparent", fontSize: 13, fontWeight: 950 }}>✓</span>
-                                </div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                {truckGroups.length === 0 ? (
+                  <div style={{ border: "1px dashed " + t.border, borderRadius: 14, padding: 14, textAlign: "center", color: t.textMuted, background: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: 700 }}>No trucks available. Ask the office to add one first.</div>
+                ) : (
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
+                    {visibleTrucks.map(tr => {
+                      const active = selectedTruckId === tr.id;
+                      const recommended = recommendedTruckId === tr.id;
+                      const accent = truckGroups.find(group => group.key === truckTypeKey(tr))?.accent || "#2563eb";
+                      return (
+                        <button
+                          key={tr.id}
+                          onClick={() => { setSelectedTruckId(tr.id); setError(""); }}
+                          type="button"
+                          aria-pressed={active}
+                          style={{ minHeight: 52, padding: "9px 10px", borderRadius: 14, border: "2px solid " + (active ? accent : recommended ? "#93c5fd" : "rgba(148,163,184,0.32)"), background: active ? `linear-gradient(135deg, ${accent}, #0f172a)` : recommended ? "linear-gradient(135deg,#eff6ff,#ffffff)" : "rgba(255,255,255,0.92)", color: active ? "#fff" : t.text, fontFamily: "inherit", cursor: "pointer", textAlign: "center", boxShadow: active ? `0 12px 22px ${accent}2e` : "0 6px 16px rgba(15,23,42,0.04)", WebkitTapHighlightColor: "transparent", position: "relative" }}
+                        >
+                          {recommended && <span style={{ position: "absolute", top: -7, right: 8, fontSize: 8.5, fontWeight: 950, borderRadius: 999, padding: "2px 6px", background: active ? "#fff" : "#dbeafe", color: active ? accent : "#1d4ed8", border: "1px solid #bfdbfe" }}>Assigned</span>}
+                          <div style={{ fontSize: 13.5, fontWeight: 950, letterSpacing: "-0.25px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{truckLabel(tr)}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
 
-                <div style={{ marginTop: 14, borderRadius: 18, padding: 14, background: selectedTruck ? "linear-gradient(135deg,#ecfdf5,#eff6ff)" : "rgba(248,250,252,0.9)", border: "1px solid " + (selectedTruck ? "#bfdbfe" : t.border), boxShadow: "0 12px 24px rgba(15,23,42,0.05)" }}>
-                  <div style={{ fontSize: 11, fontWeight: 950, textTransform: "uppercase", letterSpacing: "0.8px", color: selectedTruck ? "#1d4ed8" : t.textMuted }}>Selected</div>
-                  <div style={{ marginTop: 5, fontSize: 18, fontWeight: 950, color: t.text, letterSpacing: "-0.4px" }}>{selectedTruck ? truckLabel(selectedTruck) : "Pick a truck to continue"}</div>
-                  <div style={{ marginTop: 3, fontSize: 12.5, fontWeight: 700, color: t.textMuted }}>{selectedTruck ? truckCrewLabel(selectedTruck) : "Your daily loadout and jobs will open under this truck."}</div>
+                <div style={{ marginTop: 10, minHeight: 42, borderRadius: 14, padding: "9px 12px", background: selectedTruck ? "linear-gradient(135deg,#eff6ff,#ecfdf5)" : "rgba(248,250,252,0.9)", border: "1px solid " + (selectedTruck ? "#bfdbfe" : t.border), display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 10, fontWeight: 950, textTransform: "uppercase", letterSpacing: "0.8px", color: selectedTruck ? "#1d4ed8" : t.textMuted }}>Selected</div>
+                    <div style={{ marginTop: 2, fontSize: 14, fontWeight: 950, color: t.text, letterSpacing: "-0.25px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{selectedTruck ? truckLabel(selectedTruck) : "Pick a truck"}</div>
+                  </div>
+                  {selectedTruck && <div style={{ width: 24, height: 24, borderRadius: 999, background: "#2563eb", color: "#fff", display: "grid", placeItems: "center", fontSize: 13, fontWeight: 950, flexShrink: 0 }}>✓</div>}
                 </div>
               </div>
             )}
