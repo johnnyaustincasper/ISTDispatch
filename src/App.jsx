@@ -7172,14 +7172,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     trucks: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
     roster: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg>,
     inventory: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"/></svg>,
-    tools: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8z"/></svg>,
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
     weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
   };
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
     { key: "calendar", label: "Calendar" },
-    { key: "tools", label: "Tools" },
     { key: "inventory", label: "Inventory" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
@@ -8158,10 +8156,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
         {view === "weather" && (
           <WeatherTab jobs={jobs} trucks={trucks} updates={updates} />
-        )}
-
-        {view === "tools" && (
-          <ToolsView isOffice={true} tools={tools} toolCheckouts={toolCheckouts} onAddTool={onAddTool} onEditTool={onEditTool} onDeleteTool={onDeleteTool} onCheckout={onCheckout} onReturn={onReturn} adminName={adminName} crewMembers={members} employeeFlags={employeeFlags} onSetFlag={onSetFlag} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={onSaveTruckToolInventory} onDeltaAdjustTruck={onDeltaAdjustTruck} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={onUpdateFoamParts} onUpdateProjectTools={onUpdateProjectTools} suppliesCheckouts={suppliesCheckouts} />
         )}
 
         {view === "inventory" && (() => {
