@@ -779,6 +779,11 @@ const kbStyles = `
     .office-mobile-bottom-nav { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 250; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 7px; border-radius: 22px; background: rgba(255,255,255,0.86); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); border: 1px solid rgba(148,163,184,0.28); box-shadow: 0 18px 48px rgba(15,23,42,0.20); }
     .office-mobile-nav-btn { min-width: 0; height: 54px; padding: 6px 2px; border-radius: 16px; }
     .office-mobile-nav-label { font-size: 9px !important; max-width: 100%; }
+    .office-inventory-shell { height: calc(100dvh - 158px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; margin: 0 -10px !important; border-radius: 0 !important; }
+    .office-inventory-tabs, .materials-filter-row, .materials-search-row { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+    .materials-search-row { padding: 8px 10px !important; }
+    .materials-board-wrap { overflow-x: auto !important; overflow-y: hidden !important; -webkit-overflow-scrolling: touch; }
+    .materials-board-grid { min-width: 760px !important; grid-template-columns: repeat(7, minmax(104px, 1fr)) !important; }
     .office-schedule-hero { border-radius: 22px !important; padding: 18px 15px !important; margin-bottom: 12px !important; }
     .office-schedule-hero h1 { font-size: 30px !important; letter-spacing: -1.1px !important; line-height: 1.02 !important; }
     .office-schedule-hero > div:nth-child(2) { flex-direction: column !important; gap: 14px !important; }
@@ -8375,8 +8380,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             }
 
             return (
-              <div style={{ flex: 1, overflow: "hidden", background: "#f8fafc", padding: 8 }}>
-                <div style={{ height: "100%", display: "grid", gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))`, gap: 6 }}>
+              <div className="materials-board-wrap" style={{ flex: 1, overflow: "hidden", background: "#f8fafc", padding: 8 }}>
+                <div className="materials-board-grid" style={{ height: "100%", display: "grid", gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))`, gap: 6 }}>
                   {groups.map(({ group, items }) => (
                     <section key={group} style={{ minWidth: 0, background: "#ffffff", border: "1px solid #dbe3ef", borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
                       <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 7px", background: boardColors[group], color: "#fff" }}>
@@ -8423,10 +8428,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
 
           return (
-            <div style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 168px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))", overflow: "hidden", margin: "0 -20px -20px", padding: 0, background: lk.bg }}>
+            <div className="office-inventory-shell" style={{ display: "flex", flexDirection: "column", height: "calc(100dvh - 168px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))", overflow: "hidden", margin: "0 -20px -20px", padding: 0, background: lk.bg }}>
 
               {/* ── Tab nav ── */}
-              <div style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
+              <div className="office-inventory-tabs" style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
                 {[
                   { id: "materials",     label: "Materials" },
                   { id: "parity",        label: "Parity" },
@@ -8695,7 +8700,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               {/* ── Materials tab content ── */}
               {invTab === "materials" && (
                 <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#f8fafc" }}>
-                  <div style={{ flexShrink: 0, padding: "10px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #e2e8f0", background: "rgba(255,255,255,0.92)", overflowX: "auto" }}>
+                  <div className="materials-filter-row" style={{ flexShrink: 0, padding: "10px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #e2e8f0", background: "rgba(255,255,255,0.92)", overflowX: "auto" }}>
                     <button onClick={() => setInvStatusFilter("all")} style={{
                       padding: "7px 12px", borderRadius: 999, fontSize: 12, fontWeight: invStatusFilter === "all" ? 900 : 750,
                       border: "1px solid " + (invStatusFilter === "all" ? "#2563eb" : "#e2e8f0"),
@@ -8720,7 +8725,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     </div>
                   </div>
 
-                  <div style={{ flexShrink: 0, padding: "10px 12px", background: "#ffffff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8 }}>
+                  <div className="materials-search-row" style={{ flexShrink: 0, padding: "10px 12px", background: "#ffffff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8 }}>
                     <input
                       type="text"
                       placeholder="Search materials…"
