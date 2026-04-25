@@ -762,6 +762,19 @@ const kbStyles = `
   .avatar-search { width:100%; padding:10px 14px; background:rgba(255,255,255,0.92); border:1px solid rgba(148,163,184,0.34); border-radius:12px; color:#0f172a; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; margin-bottom:16px; box-shadow:0 8px 22px rgba(15,23,42,0.04); }
   .avatar-search::placeholder { color:#94a3b8; }
   .avatar-search:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,0.12); }
+  @media (max-width: 640px) {
+    .auth-shell { padding: calc(env(safe-area-inset-top,0px) + 8px) 14px calc(env(safe-area-inset-bottom,0px) + 24px) !important; }
+    .auth-shell .kb-content { padding: 14px 16px 18px !important; border-radius: 26px !important; max-width: 512px !important; }
+    .crew-login-back { margin-bottom: 8px !important; }
+    .crew-login-title { margin-bottom: 12px !important; }
+    .crew-login-title > div:first-child { font-size: 26px !important; line-height: 1.05 !important; }
+    .crew-login-title > div:last-child { margin-top: 4px !important; }
+    .avatar-search { margin-bottom: 12px !important; padding: 9px 13px !important; }
+    .avatar-grid { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 10px !important; }
+    .avatar-btn { padding: 10px 6px !important; border-radius: 16px !important; gap: 6px !important; }
+    .avatar-btn > div { width: 56px !important; height: 56px !important; border-radius: 17px !important; font-size: 20px !important; }
+    .avatar-btn span { font-size: 11.5px !important; line-height: 1.15 !important; }
+  }
   .office-mobile-bottom-nav { display: none; }
   @media (max-width: 640px) {
     .office-app-shell { padding-left: 0 !important; padding-top: calc(58px + env(safe-area-inset-top, 0px)) !important; padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)) !important; overflow-x: hidden; }
@@ -829,7 +842,7 @@ const kbStyles = `
 
 function AuthShell({ children, centered = false, wide = false, kiosk = false }) {
   return (
-    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg }}>
+    <div className="auth-shell" style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg }}>
       <div className="auth-glow" />
       <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: wide ? "680px" : "420px", width: "100%", boxSizing: "border-box", background: wide ? "rgba(255,255,255,0.42)" : "rgba(255,255,255,0.54)", border: "1px solid rgba(255,255,255,0.62)", borderRadius: 30, padding: "22px", boxShadow: "0 28px 80px rgba(15,23,42,0.14)", WebkitBackdropFilter: "blur(18px)", backdropFilter: "blur(18px)" }}>
         {children}
@@ -1364,9 +1377,9 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
 
   return (
     <AuthShell wide kiosk>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: t.textSecondary, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+        <button className="crew-login-back" onClick={onBack} style={{ background: "none", border: "none", color: t.textSecondary, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         {step === "pick" ? (
-          <div style={{ textAlign: "center", marginBottom: "24px" }}>
+          <div className="crew-login-title" style={{ textAlign: "center", marginBottom: "24px" }}>
             <div style={{ fontSize: "28px", fontWeight: 950, color: t.text, letterSpacing: "-0.8px" }}>Who are you?</div>
             <div style={{ color: t.textSecondary, fontSize: "13.5px", marginTop: "6px" }}>Tap your name to get started</div>
           </div>
