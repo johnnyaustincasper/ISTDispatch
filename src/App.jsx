@@ -787,8 +787,10 @@ const kbStyles = `
     .office-schedule-hero { border-radius: 22px !important; padding: 18px 15px !important; margin-bottom: 12px !important; }
     .office-schedule-hero h1 { font-size: 30px !important; letter-spacing: -1.1px !important; line-height: 1.02 !important; }
     .office-schedule-hero > div:nth-child(2) { flex-direction: column !important; gap: 14px !important; }
-    .office-schedule-stats { width: 100% !important; min-width: 0 !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
-    .office-schedule-stats > div { padding: 10px 11px !important; border-radius: 16px !important; }
+    .office-schedule-stats { width: 100% !important; min-width: 0 !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px !important; }
+    .office-schedule-stats > div { min-width: 0 !important; padding: 10px 8px !important; border-radius: 16px !important; overflow: hidden !important; }
+    .office-schedule-stats > div > div:first-child { font-size: 24px !important; }
+    .office-schedule-stats > div > div:last-child { font-size: 9px !important; letter-spacing: 0.08em !important; overflow-wrap: anywhere !important; }
     .office-dept-toggle { width: 100% !important; display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin-bottom: 12px !important; }
     .office-dept-toggle button { padding: 10px 8px !important; font-size: 12px !important; }
     .office-schedule-toolbar { align-items: stretch !important; padding: 12px !important; border-radius: 20px !important; margin-bottom: 12px !important; }
