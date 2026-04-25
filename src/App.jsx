@@ -2302,6 +2302,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
   return (
     <div className="crew-portal-shell" style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
+      <style>{kbStyles}</style>
       {wrapUpToast && (
         <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 80px)", left: "50%", transform: "translateX(-50%)", background: "#15803d", color: "#fff", padding: "12px 24px", borderRadius: "99px", fontSize: "15px", fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap" }}>
           ✅ Job wrapped up!
