@@ -465,7 +465,9 @@ const MECHANIC_PROFILES = ["Turrell", "Nick"];
 const todayCST = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 const tsToCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 const todayStr = todayCST; // alias
-const naturalSort = (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: "base" });
+const normalizeEnergySealLabel = (label) => String(label || "").trim().toLowerCase() === "energy seal technician" ? "Energy Seal Van" : label;
+const truckDisplayName = (tr) => normalizeEnergySealLabel(tr?.vehicleName || tr?.members || tr?.name) || "Truck";
+const naturalSort = (a, b) => truckDisplayName(a).localeCompare(truckDisplayName(b), undefined, { numeric: true, sensitivity: "base" });
 const timeStr = () => new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 const dateStr = (iso) => { try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
 const toJsDate = (value) => {
@@ -1401,9 +1403,8 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
   const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "truck" ? "Choose the truck you’re using today" : "Enter your PIN";
   const recommendedTruckId = selectedMember?.truckId || "";
   const selectedTruck = visibleTrucks.find(tr => tr.id === selectedTruckId) || null;
-  const normalizeTruckLabel = (label) => String(label || "").trim().toLowerCase() === "energy seal technician" ? "Energy Seal Van" : label;
-  const truckLabel = (tr) => normalizeTruckLabel(tr?.vehicleName || tr?.name || tr?.members) || "Truck";
-  const truckCrewLabel = (tr) => tr?.members && normalizeTruckLabel(tr.members) !== truckLabel(tr) ? normalizeTruckLabel(tr.members) : "Tap to use this truck today";
+  const truckLabel = (tr) => truckDisplayName(tr);
+  const truckCrewLabel = (tr) => tr?.members && normalizeEnergySealLabel(tr.members) !== truckLabel(tr) ? normalizeEnergySealLabel(tr.members) : "Tap to use this truck today";
   const truckTypeKey = (tr) => {
     const haystack = [tr?.department, tr?.vehicleName, tr?.name, tr?.members, tr?.description, tr?.notes].filter(Boolean).join(" ").toLowerCase();
     if (haystack.includes("foam")) return "foam";
@@ -7141,7 +7142,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     return new Date(b.timestamp) - new Date(a.timestamp);
   });
   const orderSort = (a, b) => (a.order ?? 999) - (b.order ?? 999) || naturalSort(a, b);
-  const sortedTrucks = [...trucks].filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : tr.department !== "energySeal").sort(orderSort);
+  const sortedTrucks = [...trucks]
+    .filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : tr.department !== "energySeal")
+    .sort(orderSort)
+    .filter((tr, idx, arr) => scheduleView !== "energySeal" || arr.findIndex(other => truckDisplayName(other).toLowerCase() === truckDisplayName(tr).toLowerCase()) === idx)
+    .map(tr => scheduleView === "energySeal" ? { ...tr, name: normalizeEnergySealLabel(tr.name), vehicleName: normalizeEnergySealLabel(tr.vehicleName), members: normalizeEnergySealLabel(tr.members) } : tr);
   const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
@@ -9013,7 +9018,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </div>
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} inputMode="text" autoComplete="street-address" />
           <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: truckDisplayName(tr) }))]} />
           {/* Employee tap-to-toggle — source of truth for timesheet */}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>Assign Crew <span style={{ fontWeight: 400, color: t.textMuted }}>(timesheet source of truth)</span></label>
@@ -9251,7 +9256,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
           </div>
           <Select label="Crew / Truck" value={adminTicketForm.truckId} onChange={e => setAdminTicketForm(f => ({...f, truckId: e.target.value}))}
-            options={[{value:"",label:"— Office / General —"}, ...sortedTrucks.map(tr => ({value: tr.id, label: tr.members || tr.name}))]} />
+            options={[{value:"",label:"— Office / General —"}, ...sortedTrucks.map(tr => ({value: tr.id, label: truckDisplayName(tr)}))]} />
           <Select label="Priority" value={adminTicketForm.priority} onChange={e => setAdminTicketForm(f => ({...f, priority: e.target.value}))}
             options={TICKET_PRIORITIES.map(p => ({value: p.value, label: p.label}))} />
           <TextArea label="Description" placeholder="Describe the issue..." value={adminTicketForm.description} onChange={e => setAdminTicketForm(f => ({...f, description: e.target.value}))} />
@@ -9259,7 +9264,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <Button variant="secondary" onClick={() => setShowAdminTicketForm(false)} style={{ flex: 1 }}>Cancel</Button>
             <Button disabled={!adminTicketForm.description.trim()} onClick={() => {
               const tr = sortedTrucks.find(t => t.id === adminTicketForm.truckId);
-              onSubmitTicket({ truckId: adminTicketForm.truckId || null, truckName: tr ? (tr.members || tr.name) : "Office", submittedBy: adminName, description: adminTicketForm.description, priority: adminTicketForm.priority, ticketType: adminTicketForm.ticketType, status: "open", timestamp: new Date().toISOString() });
+              onSubmitTicket({ truckId: adminTicketForm.truckId || null, truckName: tr ? truckDisplayName(tr) : "Office", submittedBy: adminName, description: adminTicketForm.description, priority: adminTicketForm.priority, ticketType: adminTicketForm.ticketType, status: "open", timestamp: new Date().toISOString() });
               onLogAction("Admin submitted ticket: " + adminTicketForm.description);
               setAdminTicketForm({ truckId: "", description: "", priority: "medium", ticketType: "equipment" });
               setShowAdminTicketForm(false);
@@ -9300,7 +9305,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
           <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
-          <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: tr.members || tr.name }))]} />
+          <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: truckDisplayName(tr) }))]} />
           {/* Employee tap-to-toggle for edit form */}
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "8px" }}>
