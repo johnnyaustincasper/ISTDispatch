@@ -725,8 +725,9 @@ const kbStyles = `
     50% { transform: scale(1.15); }
   }
   @keyframes ticketRingPulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.62), 0 0 0 4px rgba(220,38,38,0.18); }
-    50% { box-shadow: 0 0 0 7px rgba(220,38,38,0), 0 0 0 4px rgba(220,38,38,0.30); }
+    0% { transform: scale(1); opacity: 0.95; }
+    70% { transform: scale(1.18); opacity: 0; }
+    100% { transform: scale(1.18); opacity: 0; }
   }
   @keyframes toastSlide {
     from { opacity: 0; transform: translateX(40px); }
@@ -7241,9 +7242,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 position: "relative",
                 gap: "3px",
                 transition: "all 0.15s ease",
-                boxShadow: hasTicketAlert ? "0 0 0 4px rgba(220,38,38,0.20)" : isActive ? "0 14px 30px rgba(37,99,235,0.28)" : "none",
-                animation: hasTicketAlert ? "ticketRingPulse 1.55s ease-in-out infinite" : "none",
+                boxShadow: isActive ? "0 14px 30px rgba(37,99,235,0.28)" : "none",
               }}>
+              {hasTicketAlert && <span aria-hidden="true" style={{ position: "absolute", inset: -5, border: "2px solid rgba(220,38,38,0.9)", borderRadius: 22, pointerEvents: "none", animation: "ticketRingPulse 1.4s ease-out infinite" }} />}
               <span style={{ lineHeight: 1, color: isActive ? "#fff" : "#64748b", transform: isActive ? "scale(1.08)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
               <span style={{ fontSize: "9px", fontWeight: 900, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", maxWidth: 42, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
               {item.badge > 0 && <span style={{ position: "absolute", top: "-3px", right: "-3px", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
