@@ -766,7 +766,7 @@ const kbStyles = `
 
 function AuthShell({ children, centered = false, wide = false, kiosk = false }) {
   return (
-    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto", background: "radial-gradient(circle at 18% 0%, rgba(37,99,235,0.30), transparent 34%), radial-gradient(circle at 92% 10%, rgba(15,23,42,0.18), transparent 30%), linear-gradient(135deg,#dbeafe 0%,#eef3f9 42%,#cbd5e1 100%)" }}>
+    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg }}>
       <div className="auth-glow" />
       <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: wide ? "680px" : "420px", width: "100%", boxSizing: "border-box", background: wide ? "rgba(255,255,255,0.42)" : "rgba(255,255,255,0.54)", border: "1px solid rgba(255,255,255,0.62)", borderRadius: 30, padding: "22px", boxShadow: "0 28px 80px rgba(15,23,42,0.14)", WebkitBackdropFilter: "blur(18px)", backdropFilter: "blur(18px)" }}>
         {children}
@@ -2202,37 +2202,35 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   };
 
   return (
-    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 18% 0%, rgba(37,99,235,0.30), transparent 34%), radial-gradient(circle at 92% 10%, rgba(15,23,42,0.18), transparent 30%), linear-gradient(135deg,#dbeafe 0%,#eef3f9 42%,#cbd5e1 100%)", paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
       {wrapUpToast && (
         <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 80px)", left: "50%", transform: "translateX(-50%)", background: "#15803d", color: "#fff", padding: "12px 24px", borderRadius: "99px", fontSize: "15px", fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap" }}>
           ✅ Job wrapped up!
         </div>
       )}
-      <div className="glass-header" style={{ padding: "12px 16px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
-          <svg width="130" height="36" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-            <rect width="360" height="100" fill="#0f172a" rx="8"/>
-            <rect x="18" y="14" width="4" height="72" fill="#2563eb" rx="2"/>
-            <text x="32" y="80" fontFamily="Arial Black,sans-serif" fontSize="72" fontWeight="900" fill="white" letterSpacing="-3">IST</text>
-            <line x1="168" y1="16" x2="168" y2="84" stroke="#1e3a5f" strokeWidth="1.5"/>
-            <text x="180" y="38" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">INSULATION</text>
-            <text x="180" y="56" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">SERVICES</text>
-            <text x="180" y="74" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">OF TULSA</text>
-          </svg>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <div style={{ textAlign: "right" }}>
-              <div style={{ fontSize: "13px", fontWeight: 700, color: "#fff", lineHeight: 1.2 }}>{crewName}</div>
-              <div style={{ fontSize: "11px", color: "rgba(255,255,255,0.55)", marginTop: "2px" }}>{truck.name}</div>
+      <div style={{ padding: "9px 16px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", boxShadow: "0 18px 45px rgba(15,23,42,0.16)", borderBottom: "1px solid rgba(148,163,184,0.24)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 680, margin: "0 auto", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 16, display: "grid", placeItems: "center", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 12px 30px rgba(37,99,235,0.30), inset 0 1px 0 rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.16)", flexShrink: 0 }}>
+              <span style={{ color: "#fff", fontSize: 20, fontWeight: 950, letterSpacing: "-1.5px" }}>IST</span>
             </div>
-            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a" }}>Log Out</Button>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                <div style={{ color: t.text, fontSize: 17, fontWeight: 950, letterSpacing: "-0.6px", lineHeight: 1 }}>Employee Portal</div>
+                <span style={{ width: 5, height: 5, borderRadius: 99, background: "#60a5fa", boxShadow: "0 0 16px #60a5fa" }} />
+                <div style={{ color: t.accent, fontSize: 10, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase" }}>{truck?.name || "Crew"}</div>
+              </div>
+              <div style={{ marginTop: 3, color: "rgba(15,23,42,0.64)", fontSize: 11, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{crewName}</div>
+            </div>
           </div>
+          <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999 }}>Log Out</Button>
         </div>
         {crewView !== "home" && (
-          <div style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "2px" }}>
-            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(255,255,255,0.35)", border: "1px solid rgba(255,255,255,0.4)", color: "#0f172a", padding: "8px 16px", fontSize: "15px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s ease", minHeight: "44px", borderRadius: "20px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px", maxWidth: 680, margin: "8px auto 0" }}>
+            <button onClick={() => setCrewView("home")} style={{ display: "flex", alignItems: "center", gap: "4px", background: "rgba(255,255,255,0.78)", border: "1px solid rgba(148,163,184,0.28)", color: t.text, padding: "8px 16px", fontSize: "14px", fontWeight: 800, cursor: "pointer", fontFamily: "inherit", transition: "opacity 0.15s ease", minHeight: "40px", borderRadius: "999px", boxShadow: "0 8px 22px rgba(15,23,42,0.06)" }}>
               ‹ Back
             </button>
-            <span style={{ fontSize: "14px", fontWeight: 700, color: "#fff" }}>
+            <span style={{ fontSize: "14px", fontWeight: 850, color: t.text }}>
               {crewView === "jobs" ? "Jobs" : crewView === "truck" ? "My Truck" : crewView === "history" ? "Calendar" : crewView === "timesheet" ? "Timesheet" : crewView === "tickets" ? "Tickets" : ""}
             </span>
           </div>
@@ -7186,7 +7184,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   ];
 
   return (
-    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 18% 0%, rgba(37,99,235,0.30), transparent 34%), radial-gradient(circle at 92% 10%, rgba(15,23,42,0.18), transparent 30%), linear-gradient(135deg,#dbeafe 0%,#eef3f9 42%,#cbd5e1 100%)", paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
       {/* Top header — premium wordmark + session */}
