@@ -6801,6 +6801,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [truckFilter, setTruckFilter] = useState(null);
   const [showUncheckedOnly, setShowUncheckedOnly] = useState(false);
   const [showOngoing, setShowOngoing] = useState(false);
+  const [showOnHold, setShowOnHold] = useState(false);
   const [showCheckHistory, setShowCheckHistory] = useState(false);
   const [showUsageTrends, setShowUsageTrends] = useState(false);
   const [needsCheckExpanded, setNeedsCheckExpanded] = useState(false);
@@ -7326,6 +7327,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
+                <Button variant="secondary" onClick={() => setShowOnHold((p) => !p)} style={{ fontSize: 12, background: showOnHold ? "linear-gradient(135deg,#f59e0b,#92400e)" : "rgba(255,255,255,0.9)", color: showOnHold ? "#fff" : t.textSecondary, boxShadow: showOnHold ? "0 14px 30px rgba(245,158,11,0.24)" : "0 8px 20px rgba(15,23,42,0.05)" }}>⏸ On Hold {onHoldJobs.length > 0 ? `(${onHoldJobs.length})` : ""}</Button>
                 <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }} style={{ background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.28)" }}>+ Add Job</Button>
               </div>
             </div>
@@ -7333,6 +7335,28 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", padding: "8px 12px", background: t.accentBg, borderRadius: "6px", fontSize: "13px", color: t.accent, fontWeight: 500 }}>
                 Showing jobs for {truckFilterName}
                 <button onClick={() => setTruckFilter(null)} style={{ background: "none", border: "none", color: t.accent, cursor: "pointer", fontWeight: 700, fontSize: "14px", fontFamily: "inherit", padding: "0 4px" }}>✕</button>
+              </div>
+            )}
+            {showOnHold && (
+              <div style={{ marginBottom: 18, padding: 14, borderRadius: 24, background: "linear-gradient(135deg,#fffbeb,#fff7ed)", border: "1px solid #fed7aa", boxShadow: "0 16px 42px rgba(245,158,11,0.12)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: "#b45309" }}>Paused work</div>
+                    <div style={{ fontSize: 18, fontWeight: 950, color: "#78350f", letterSpacing: "-0.4px" }}>Jobs on Hold</div>
+                  </div>
+                  <Button variant="secondary" onClick={() => setShowOnHold(false)} style={{ fontSize: 12 }}>Hide</Button>
+                </div>
+                {onHoldJobs.length === 0 ? <div style={{ color: "#92400e", fontSize: 13 }}>No jobs are currently on hold.</div> : onHoldJobs.map((job) => (
+                  <Card key={job.id} style={{ marginBottom: 8, borderRadius: 18, border: "1px solid #fed7aa", boxShadow: "0 10px 24px rgba(146,64,14,0.08)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontWeight: 900, color: t.text, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.builder || "No Customer Listed"}</div>
+                        <a href={mapsUrl(job.address || "")} target="_blank" rel="noreferrer" style={{ color: t.accent, fontSize: 12, fontWeight: 700, textDecoration: "none" }}>📍 {job.address}</a>
+                      </div>
+                      <Button variant="secondary" onClick={() => onEditJob(job.id, { ...job, onHold: false })} style={{ fontSize: 12 }}>Resume</Button>
+                    </div>
+                  </Card>
+                ))}
               </div>
             )}
             {(() => {
