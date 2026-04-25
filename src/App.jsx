@@ -7336,7 +7336,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   <h1 style={{ margin: 0, fontSize: "clamp(28px, 4vw, 48px)", letterSpacing: "-1.6px", lineHeight: 1 }}>Today’s schedule</h1>
                   <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: 14 }}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · {scheduleView === "energySeal" ? "Energy Seal" : "Insulation"}</div>
                 </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(88px, 1fr))", gap: 10, minWidth: 360 }}>
+                <div className="office-schedule-stats" style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8, minWidth: 0, width: "100%" }}>
                   {[{ label: "Not Started", value: notStartedTodayCount }, { label: "In Progress", value: inProgressTodayCount }, { label: "Done", value: completedTodayCount }, { label: "Unassigned", value: unassignedActiveJobs.length }].map((stat) => (
                     <div key={stat.label} style={{ padding: "13px 14px", borderRadius: 18, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.16)", backdropFilter: "blur(12px)" }}>
                       <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: "-0.8px" }}>{stat.value}</div>
