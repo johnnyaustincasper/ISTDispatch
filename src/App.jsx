@@ -808,8 +808,20 @@ const kbStyles = `
     .office-inventory-shell { height: calc(100dvh - 158px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; margin: 0 -10px !important; border-radius: 0 !important; }
     .office-inventory-tabs, .materials-filter-row, .materials-search-row { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
     .materials-search-row { padding: 8px 10px !important; }
-    .materials-board-wrap { overflow-x: auto !important; overflow-y: hidden !important; -webkit-overflow-scrolling: touch; }
-    .materials-board-grid { min-width: 760px !important; grid-template-columns: repeat(7, minmax(104px, 1fr)) !important; }
+    .materials-board-wrap { overflow-x: auto !important; overflow-y: hidden !important; -webkit-overflow-scrolling: touch; padding: 0 !important; scroll-padding: 10px; scroll-snap-type: x mandatory; }
+    .materials-board-grid { min-width: 0 !important; width: max-content !important; display: grid !important; grid-auto-flow: column !important; grid-auto-columns: calc(100vw - 28px) !important; grid-template-columns: none !important; gap: 10px !important; padding: 8px 10px 12px !important; box-sizing: border-box !important; }
+    .materials-board-section { scroll-snap-align: start; scroll-snap-stop: always; border-radius: 14px !important; }
+    .materials-board-header { padding: 9px 11px !important; }
+    .materials-board-header span:first-child { font-size: 13px !important; }
+    .materials-board-header span:last-child { font-size: 11px !important; }
+    .materials-board-rows { display: block !important; overflow-y: auto !important; -webkit-overflow-scrolling: touch; }
+    .materials-board-row { min-height: 48px !important; padding: 7px 9px !important; gap: 8px !important; }
+    .materials-item-name { font-size: 13px !important; line-height: 1.15 !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; }
+    .materials-item-meta { gap: 6px !important; margin-top: 3px !important; flex-wrap: wrap !important; }
+    .materials-item-meta span { font-size: 10px !important; }
+    .materials-qty-stack { min-width: 42px !important; }
+    .materials-qty-stack > div:first-child { font-size: 18px !important; }
+    .materials-qty-stack > div:last-child { font-size: 10px !important; }
     .office-schedule-hero { border-radius: 22px !important; padding: 18px 15px !important; margin-bottom: 12px !important; }
     .office-schedule-hero h1 { font-size: 30px !important; letter-spacing: -1.1px !important; line-height: 1.02 !important; }
     .office-schedule-hero > div:nth-child(2) { flex-direction: column !important; gap: 14px !important; }
@@ -8540,12 +8552,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <div className="materials-board-wrap" style={{ flex: 1, overflow: "hidden", background: "#f8fafc", padding: 8 }}>
                 <div className="materials-board-grid" style={{ height: "100%", display: "grid", gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))`, gap: 6 }}>
                   {groups.map(({ group, items }) => (
-                    <section key={group} style={{ minWidth: 0, background: "#ffffff", border: "1px solid #dbe3ef", borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 7px", background: boardColors[group], color: "#fff" }}>
+                    <section key={group} className="materials-board-section" style={{ minWidth: 0, background: "#ffffff", border: "1px solid #dbe3ef", borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                      <div className="materials-board-header" style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 7px", background: boardColors[group], color: "#fff" }}>
                         <span style={{ fontSize: 11, fontWeight: 950, letterSpacing: "0.02em" }}>{group}</span>
                         <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.9 }}>{items.length}</span>
                       </div>
-                      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` }}>
+                      <div className="materials-board-rows" style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` }}>
                         {items.map((item, idx) => {
                           const qty = getQty(item.id);
                           const status = stockStatus(qty);
@@ -8554,17 +8566,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                           const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
                           const lineValue = formatValue(item, qty);
                           return (
-                            <div key={item.id} style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 4, padding: "2px 5px", borderBottom: idx < items.length - 1 ? "1px solid #edf2f7" : "none", background: status === "out" ? "#fff1f2" : status === "low" ? "#fffbeb" : "#fff" }}>
+                            <div key={item.id} className="materials-board-row" style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 4, padding: "2px 5px", borderBottom: idx < items.length - 1 ? "1px solid #edf2f7" : "none", background: status === "out" ? "#fff1f2" : status === "low" ? "#fffbeb" : "#fff" }}>
                               <div style={{ minWidth: 0 }}>
-                                <div title={item.name} style={{ fontSize: 11, fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{shortName(item)}</div>
-                                <div style={{ display: "flex", gap: 3, alignItems: "center", minWidth: 0, marginTop: 1 }}>
+                                <div className="materials-item-name" title={item.name} style={{ fontSize: 11, fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{shortName(item)}</div>
+                                <div className="materials-item-meta" style={{ display: "flex", gap: 3, alignItems: "center", minWidth: 0, marginTop: 1 }}>
                                   <span style={{ fontSize: 8.5, fontWeight: 900, color: sc.badgeColor, lineHeight: 1 }}>{sc.label || "OK"}</span>
                                   <span style={{ fontSize: 8.5, color: "#15803d", fontWeight: 900, lineHeight: 1 }}>{lineValue}</span>
                                   {pcsItem && pcsQty > 0 && <span style={{ fontSize: 8.5, color: "#4f46e5", fontWeight: 900, lineHeight: 1 }}>+{pcsQty}pc</span>}
                                 </div>
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                <div style={{ textAlign: "right", minWidth: 26 }}>
+                                <div className="materials-qty-stack" style={{ textAlign: "right", minWidth: 26 }}>
                                   <div style={{ fontSize: 15, fontWeight: 950, color: sc.text, lineHeight: 1, letterSpacing: "-0.5px" }}>{formatQty(item, qty)}</div>
                                   <div style={{ fontSize: 8.5, color: "#64748b", fontWeight: 800, lineHeight: 1 }}>{formatUnit(item)}</div>
                                 </div>
