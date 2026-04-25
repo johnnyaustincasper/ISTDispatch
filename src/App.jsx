@@ -1305,7 +1305,15 @@ function AdminLogin({ onLogin, onBack }) {
 }
 
 function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
-  const visibleTrucks = (trucks || []).filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+  const visibleTrucks = (trucks || [])
+    .filter(tr => tr.department !== "energySeal" || truckDisplayName(tr).toLowerCase() === "energy seal van")
+    .sort((a, b) => {
+      const aIsVan = truckDisplayName(a).toLowerCase() === "energy seal van";
+      const bIsVan = truckDisplayName(b).toLowerCase() === "energy seal van";
+      if (aIsVan !== bIsVan) return aIsVan ? 1 : -1;
+      return (a.order ?? 0) - (b.order ?? 0);
+    })
+    .filter((tr, idx, arr) => arr.findIndex(other => truckDisplayName(other).toLowerCase() === truckDisplayName(tr).toLowerCase()) === idx);
   const [members, setMembers] = useState(rosterMembers || []);
   const [loadingMembers, setLoadingMembers] = useState(!(rosterMembers || []).length);
   const [step, setStep] = useState("pick"); // pick | pin | setup | confirm | email
