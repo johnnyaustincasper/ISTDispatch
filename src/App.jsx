@@ -7161,7 +7161,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
   };
   const NAV_ITEMS = [
-    { key: "schedule", label: "Schedule", badge: needsCheckJobs.length },
+    { key: "schedule", label: "Schedule" },
     { key: "calendar", label: "Calendar" },
     { key: "inventory", label: "Inventory" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
@@ -7243,9 +7243,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
 
 
-            {/* ─── TWO-COLUMN LAYOUT WRAPPER (desktop/iPad: schedule + needs-check side by side) ─── */}
-            <div style={{ display: "grid", gridTemplateColumns: (!showCheckHistory && (needsCheckJobs.length > 0 || recentlyCheckedJobs.length > 0) && window.innerWidth >= 768) ? "1fr 320px" : "1fr", gap: 20, alignItems: "start" }}>
-              {/* ─── LEFT COLUMN: everything except Needs Check ─── */}
+            <div>
               <div>
 
             {/* ─── CHECK HISTORY VIEW ─── */}
@@ -7633,95 +7631,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             })()}
               </div>{/* end left column */}
 
-              {/* ─── RIGHT COLUMN: Needs Check / Recently Checked panel (desktop/iPad only) ─── */}
-              {!showCheckHistory && (needsCheckJobs.length > 0 || recentlyCheckedJobs.length > 0) && window.innerWidth >= 768 && (() => {
-                return (
-                  <div style={{ position: "sticky", top: 80 }}>
-                    {/* Tab switcher */}
-                    <div style={{ display: "flex", gap: 0, marginBottom: 0 }}>
-                      <button onClick={() => setCheckPanelTab("needs")}
-                        style={{ flex: 1, padding: "9px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "2px solid #f87171", borderRight: "1px solid #f87171", borderRadius: "10px 0 0 0", background: checkPanelTab === "needs" ? "#fff1f2" : "#ffe4e4", color: "#b91c1c", borderBottom: checkPanelTab === "needs" ? "none" : "2px solid #f87171" }}>
-                        ⚠️ Needs Check {needsCheckJobs.length > 0 && <span style={{ background: "#dc2626", color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 10, marginLeft: 3 }}>{needsCheckJobs.length}</span>}
-                      </button>
-                      <button onClick={() => setCheckPanelTab("recent")}
-                        style={{ flex: 1, padding: "9px 8px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", border: "2px solid #86efac", borderLeft: "1px solid #86efac", borderRadius: "0 10px 0 0", background: checkPanelTab === "recent" ? "#f0fdf4" : "#e5faf0", color: "#15803d", borderBottom: checkPanelTab === "recent" ? "none" : "2px solid #86efac" }}>
-                        ✅ Recently Checked {recentlyCheckedJobs.length > 0 && <span style={{ background: "#15803d", color: "#fff", borderRadius: 10, padding: "1px 5px", fontSize: 10, marginLeft: 3 }}>{recentlyCheckedJobs.length}</span>}
-                      </button>
-                    </div>
-
-                    {/* Needs Check panel */}
-                    {checkPanelTab === "needs" && (
-                      <div style={{ background: "#fff1f2", border: "2px solid #f87171", borderTop: "none", borderRadius: "0 0 12px 12px", overflow: "hidden" }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", borderBottom: "1px solid #fca5a5" }}>
-                          <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 600 }}>{needsCheckJobs.length} job{needsCheckJobs.length !== 1 ? "s" : ""} waiting review</div>
-                          <button onClick={() => setShowCheckHistory(true)} style={{ fontSize: 11, color: "#b91c1c", background: "none", border: "1px solid #f87171", borderRadius: 6, padding: "4px 8px", cursor: "pointer", fontFamily: "inherit", fontWeight: 600 }}>History</button>
-                        </div>
-                        <div style={{ maxHeight: "60vh", overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-                          {needsCheckJobs.length === 0
-                            ? <div style={{ fontSize: 13, color: "#6b7280", padding: "8px 0" }}>No jobs need checking.</div>
-                            : needsCheckJobs.map((job) => {
-                              const completedUpd = updates.filter(u => u.jobId === job.id && u.status === "completed").sort((a,b) => new Date(b.timestamp)-new Date(a.timestamp))[0];
-                              const completedTime = completedUpd ? new Date(completedUpd.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Unknown";
-                              const completedBy = completedUpd?.crewName || "Unknown";
-                              const isFullyChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
-                              return (
-                                <div key={job.id} style={{ background: "#fff", border: "1px solid #fca5a5", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
-                                  {job.builder && <div style={{ fontSize: 14, fontWeight: 800, color: "#111" }}>{job.builder}</div>}
-                                  {job.address && <div style={{ fontSize: 13, fontWeight: 700, color: "#1d4ed8" }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
-                                  <div style={{ fontSize: 11, color: "#b91c1c" }}>By <strong>{completedBy}</strong> · {completedTime}</div>
-                                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                                    <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
-                                    <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
-                                  </div>
-                                  <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-                                    <button onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ flex: 1, background: "#dc2626", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>✓ Mark as Checked</button>
-                                    {adminName === "Johnny" && (
-                                      <button onClick={() => { if (!window.confirm("Clear this job from Needs Check?")) return; onEditJob(job.id, { ...job, jobCheckedAM: "Yes", jobCheckedPM: "Yes", checkedAt: new Date().toISOString(), checkedBy: "Cleared by Johnny" }); }} style={{ flex: 1, background: "#6b7280", color: "#fff", border: "none", borderRadius: 8, padding: "10px", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>🧹 Clear</button>
-                                    )}
-                                  </div>
-                                </div>
-                              );
-                            })
-                          }
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Recently Checked panel */}
-                    {checkPanelTab === "recent" && (
-                      <div style={{ background: "#f0fdf4", border: "2px solid #86efac", borderTop: "none", borderRadius: "0 0 12px 12px", overflow: "hidden" }}>
-                        <div style={{ padding: "10px 14px", borderBottom: "1px solid #bbf7d0" }}>
-                          <div style={{ fontSize: 11, color: "#15803d", fontWeight: 600 }}>{recentlyCheckedJobs.length} job{recentlyCheckedJobs.length !== 1 ? "s" : ""} checked in last 48h</div>
-                        </div>
-                        <div style={{ maxHeight: "60vh", overflowY: "auto", padding: "10px 12px", display: "flex", flexDirection: "column", gap: 8 }}>
-                          {recentlyCheckedJobs.length === 0
-                            ? <div style={{ fontSize: 13, color: "#6b7280", padding: "8px 0" }}>No jobs checked in the last 48 hours.</div>
-                            : recentlyCheckedJobs.map((job) => {
-                              const checkedTime = new Date(job.checkedAt).toLocaleString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-                              return (
-                                <div key={job.id} style={{ background: "#fff", border: "1px solid #86efac", borderRadius: 8, padding: "10px 12px", display: "flex", flexDirection: "column", gap: 5 }}>
-                                  {job.builder && <div style={{ fontSize: 14, fontWeight: 800, color: "#14532d" }}>{job.builder}</div>}
-                                  {job.address && <div style={{ fontSize: 13, fontWeight: 700, color: "#15803d" }}><a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(job.address)}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline", cursor: "pointer" }}>📍 {job.address}</a></div>}
-                                  <div style={{ fontSize: 11, color: "#166534" }}>✅ Checked by <strong>{job.checkedBy || "—"}</strong> · {checkedTime}</div>
-                                  {job.checkedLat && job.checkedLng
-                                    ? <div style={{ fontSize: 11 }}><a href={`https://www.google.com/maps?q=${job.checkedLat},${job.checkedLng}`} target="_blank" rel="noopener noreferrer" style={{ color: "#2563eb", textDecoration: "underline" }}>📍 View Check Location</a></div>
-                                    : <div style={{ fontSize: 11, color: "#9ca3af" }}>📍 Location not recorded</div>
-                                  }
-                                  <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
-                                    <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>
-                                    <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 7px", borderRadius: 20, background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>
-                                  </div>
-                                </div>
-                              );
-                            })
-                          }
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })()}
-            </div>{/* end two-column grid */}
+            </div>
 
             {/* ── 30-Day Material Usage Trends ── */}
             {(() => {
