@@ -1401,8 +1401,9 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
   const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "truck" ? "Choose the truck you’re using today" : "Enter your PIN";
   const recommendedTruckId = selectedMember?.truckId || "";
   const selectedTruck = visibleTrucks.find(tr => tr.id === selectedTruckId) || null;
-  const truckLabel = (tr) => tr?.vehicleName || tr?.name || tr?.members || "Truck";
-  const truckCrewLabel = (tr) => tr?.members && tr.members !== truckLabel(tr) ? tr.members : "Tap to use this truck today";
+  const normalizeTruckLabel = (label) => String(label || "").trim().toLowerCase() === "energy seal technician" ? "Energy Seal Van" : label;
+  const truckLabel = (tr) => normalizeTruckLabel(tr?.vehicleName || tr?.name || tr?.members) || "Truck";
+  const truckCrewLabel = (tr) => tr?.members && normalizeTruckLabel(tr.members) !== truckLabel(tr) ? normalizeTruckLabel(tr.members) : "Tap to use this truck today";
   const truckTypeKey = (tr) => {
     const haystack = [tr?.department, tr?.vehicleName, tr?.name, tr?.members, tr?.description, tr?.notes].filter(Boolean).join(" ").toLowerCase();
     if (haystack.includes("foam")) return "foam";
@@ -8158,7 +8159,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
         {view === "trucks" && (
           <>
-            <SectionHeader title="Trucks" right={<Button onClick={() => setShowAddTruck(true)}>+ Add {scheduleView === "energySeal" ? "Technician" : "Truck"}</Button>} />
+            <SectionHeader title="Trucks" right={<Button onClick={() => setShowAddTruck(true)}>+ Add {scheduleView === "energySeal" ? "Van" : "Truck"}</Button>} />
             {trucks.length === 0 ? <EmptyState text="No crews yet. Add one to get started." /> : sortedTrucks.map((tr, idx) => {
               const sectState = expandedTruckSections[tr.id] || {};
               const truckJobs = jobs.filter((j) => { if (j.truckId !== tr.id) return false; const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0]; return !lat || lat.status !== "completed"; });
@@ -9268,11 +9269,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       )}
 
       {showAddTruck && (
-        <Modal title={scheduleView === "energySeal" ? "Add Energy Seal Technician" : "Add Crew"} onClose={() => setShowAddTruck(false)}>
-          <Input label={scheduleView === "energySeal" ? "Technician Name" : "Crew Name"} placeholder={scheduleView === "energySeal" ? "e.g. Mike Rodriguez" : "e.g. Alex & Juan, Harold Sr. & Jr."} value={truckForm.name} onChange={(e) => setTruckForm({ ...truckForm, name: e.target.value })} />
+        <Modal title={scheduleView === "energySeal" ? "Add Energy Seal Van" : "Add Crew"} onClose={() => setShowAddTruck(false)}>
+          <Input label={scheduleView === "energySeal" ? "Van Name" : "Crew Name"} placeholder={scheduleView === "energySeal" ? "e.g. Energy Seal Van" : "e.g. Alex & Juan, Harold Sr. & Jr."} value={truckForm.name} onChange={(e) => setTruckForm({ ...truckForm, name: e.target.value })} />
           <Input label="Vehicle / Truck Name (optional)" placeholder="e.g. Truck 1, White Ram, Foam Rig" value={truckForm.vehicleName} onChange={(e) => setTruckForm({ ...truckForm, vehicleName: e.target.value })} />
-          <Input label="Notes (optional)" placeholder={scheduleView === "energySeal" ? "e.g. Lead tech, specializes in blower door" : "e.g. Fiberglass crew, Foam rig, etc."} value={truckForm.members} onChange={(e) => setTruckForm({ ...truckForm, members: e.target.value })} />
-          <Button onClick={() => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, order: maxOrder + 1, department: scheduleView === "energySeal" ? "energySeal" : "insulation" }); onLogAction("Added " + (scheduleView === "energySeal" ? "ES tech" : "crew") + ": " + truckForm.name); setTruckForm({ name: "", members: "", vehicleName: "" }); setShowAddTruck(false); }} disabled={!truckForm.name.trim()} style={{ width: "100%" }}>{scheduleView === "energySeal" ? "Add Technician" : "Add Crew"}</Button>
+          <Input label="Notes (optional)" placeholder={scheduleView === "energySeal" ? "e.g. Lead tech, blower door notes" : "e.g. Fiberglass crew, Foam rig, etc."} value={truckForm.members} onChange={(e) => setTruckForm({ ...truckForm, members: e.target.value })} />
+          <Button onClick={() => { const maxOrder = trucks.reduce((m, tr) => Math.max(m, tr.order ?? 0), 0); onAddTruck({ ...truckForm, name: scheduleView === "energySeal" && truckForm.name.trim().toLowerCase() === "energy seal technician" ? "Energy Seal Van" : truckForm.name, order: maxOrder + 1, department: scheduleView === "energySeal" ? "energySeal" : "insulation" }); onLogAction("Added " + (scheduleView === "energySeal" ? "ES van" : "crew") + ": " + truckForm.name); setTruckForm({ name: "", members: "", vehicleName: "" }); setShowAddTruck(false); }} disabled={!truckForm.name.trim()} style={{ width: "100%" }}>{scheduleView === "energySeal" ? "Add Van" : "Add Crew"}</Button>
         </Modal>
       )}
 
