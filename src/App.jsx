@@ -2313,7 +2313,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         const lowItems = shortageAlerts.filter((alert) => alert.severity === "low");
         const lines = [
           `Checklist supply alert from ${crewName} — ${truck.name}`,
-          noneItems.length ? `NONE ON TRUCK / WAREHOUSE: ${noneItems.map((alert) => `${alert.item} (${alert.group})`).join(", ")}` : null,
+          noneItems.length ? `NONE ON WAREHOUSE OR TRUCK: ${noneItems.map((alert) => `${alert.item} (${alert.group})`).join(", ")}` : null,
           lowItems.length ? `LOW: ${lowItems.map((alert) => `${alert.item} (${alert.group})`).join(", ")}` : null,
         ].filter(Boolean);
         await onSubmitTicket({
@@ -2401,7 +2401,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   </label>
                   <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 9px", borderRadius: 999, border: `1px solid ${checklistChecks[noneKey] ? "#dc2626" : t.borderLight}`, background: checklistChecks[noneKey] ? "#fef2f2" : "#f8fafc", color: checklistChecks[noneKey] ? "#991b1b" : t.textMuted, fontSize: 12, fontWeight: 850, cursor: "pointer" }}>
                     <input type="checkbox" checked={!!checklistChecks[noneKey]} onChange={(e) => setChecklistChecks((prev) => ({ ...prev, [noneKey]: e.target.checked, ...(e.target.checked ? { [lowKey]: false } : {}) }))} style={{ width: 16, height: 16, accentColor: "#dc2626" }} />
-                    None / WH
+                    None on warehouse or truck
                   </label>
                 </div>
               </div>
