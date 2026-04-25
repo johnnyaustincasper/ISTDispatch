@@ -724,6 +724,10 @@ const kbStyles = `
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.15); }
   }
+  @keyframes ticketRingPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(220,38,38,0.62), 0 0 0 4px rgba(220,38,38,0.18); }
+    50% { box-shadow: 0 0 0 7px rgba(220,38,38,0), 0 0 0 4px rgba(220,38,38,0.30); }
+  }
   @keyframes toastSlide {
     from { opacity: 0; transform: translateX(40px); }
     to { opacity: 1; transform: translateX(0); }
@@ -7214,6 +7218,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       <div style={{ position: "fixed", top: "calc(72px + env(safe-area-inset-top, 0px))", left: 14, bottom: 18, zIndex: 200, width: 66, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, padding: "10px 7px", background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", border: "1px solid rgba(148,163,184,0.24)", borderRadius: 24, boxShadow: "0 24px 60px rgba(15,23,42,0.16)" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
+          const hasTicketAlert = item.key === "tickets" && item.badge > 0;
           return (
             <button key={item.key}
               className="nav-tab-btn"
@@ -7229,14 +7234,15 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 justifyContent: "center",
                 padding: "8px 4px",
                 background: isActive ? "linear-gradient(135deg,#2563eb,#0f172a)" : "transparent",
-                border: isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent",
+                border: hasTicketAlert ? "1px solid rgba(220,38,38,0.82)" : isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent",
                 borderRadius: 18,
                 cursor: "pointer",
                 fontFamily: "inherit",
                 position: "relative",
                 gap: "3px",
                 transition: "all 0.15s ease",
-                boxShadow: isActive ? "0 14px 30px rgba(37,99,235,0.28)" : "none",
+                boxShadow: hasTicketAlert ? "0 0 0 4px rgba(220,38,38,0.20)" : isActive ? "0 14px 30px rgba(37,99,235,0.28)" : "none",
+                animation: hasTicketAlert ? "ticketRingPulse 1.55s ease-in-out infinite" : "none",
               }}>
               <span style={{ lineHeight: 1, color: isActive ? "#fff" : "#64748b", transform: isActive ? "scale(1.08)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
               <span style={{ fontSize: "9px", fontWeight: 900, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", maxWidth: 42, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
