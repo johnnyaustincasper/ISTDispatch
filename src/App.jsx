@@ -671,7 +671,7 @@ function AvatarButton({ name, onClick, disabled, badge }) {
       className="avatar-btn"
       style={{
         display: "flex", flexDirection: "column", alignItems: "center", gap: "8px",
-        background: "rgba(255,255,255,0.72)", border: "1px solid rgba(148,163,184,0.24)", cursor: disabled ? "wait" : "pointer",
+        background: "rgba(255,255,255,0.88)", border: "1px solid rgba(37,99,235,0.18)", cursor: disabled ? "wait" : "pointer",
         padding: "12px 8px", borderRadius: "18px", fontFamily: "inherit",
         opacity: disabled ? 0.5 : 1, transition: "opacity 0.15s, transform 0.15s, box-shadow 0.15s",
         boxShadow: "0 10px 24px rgba(15,23,42,0.06)",
@@ -737,7 +737,7 @@ const kbStyles = `
   .kb-back-btn { background:rgba(255,255,255,0.72)!important;border:1px solid rgba(148,163,184,0.28)!important;color:#475569!important;backdrop-filter:blur(14px);border-radius:999px!important;box-shadow:0 8px 22px rgba(15,23,42,0.06)!important; }
   .kb-panel { background:rgba(255,255,255,0.82)!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(148,163,184,0.24)!important;border-radius:24px!important;box-shadow:0 22px 60px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.85)!important; }
   .kb-muted { color:#64748b!important; }
-  .kb-card { background:rgba(255,255,255,0.82)!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(148,163,184,0.24)!important;border-radius:24px!important;box-shadow:0 18px 48px rgba(15,23,42,0.09), inset 0 1px 0 rgba(255,255,255,0.85)!important;transition:background 0.2s,transform 0.2s,box-shadow 0.2s!important; }
+  .kb-card { background:linear-gradient(180deg,rgba(255,255,255,0.94),rgba(239,246,255,0.88))!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(37,99,235,0.18)!important;border-radius:24px!important;box-shadow:0 18px 48px rgba(15,23,42,0.11), inset 0 1px 0 rgba(255,255,255,0.92)!important;transition:background 0.2s,transform 0.2s,box-shadow 0.2s!important; }
   .kb-card:hover { background:rgba(255,255,255,0.94)!important;transform:translateY(-2px);border-color:rgba(37,99,235,0.26)!important;box-shadow:0 24px 60px rgba(15,23,42,0.13)!important; }
   .kb-input { background:rgba(255,255,255,0.92)!important;border:1px solid rgba(148,163,184,0.34)!important;color:#0f172a!important;border-radius:14px!important;box-shadow:0 8px 22px rgba(15,23,42,0.04)!important; }
   .kb-input::placeholder { color:#94a3b8!important; }
@@ -766,9 +766,9 @@ const kbStyles = `
 
 function AuthShell({ children, centered = false, wide = false, kiosk = false }) {
   return (
-    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg }}>
+    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto", background: "radial-gradient(circle at 18% 0%, rgba(37,99,235,0.30), transparent 34%), radial-gradient(circle at 92% 10%, rgba(15,23,42,0.18), transparent 30%), linear-gradient(135deg,#dbeafe 0%,#eef3f9 42%,#cbd5e1 100%)" }}>
       <div className="auth-glow" />
-      <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: wide ? "680px" : "420px", width: "100%", boxSizing: "border-box" }}>
+      <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: wide ? "680px" : "420px", width: "100%", boxSizing: "border-box", background: wide ? "rgba(255,255,255,0.42)" : "rgba(255,255,255,0.54)", border: "1px solid rgba(255,255,255,0.62)", borderRadius: 30, padding: "22px", boxShadow: "0 28px 80px rgba(15,23,42,0.14)", WebkitBackdropFilter: "blur(18px)", backdropFilter: "blur(18px)" }}>
         {children}
       </div>
     </div>
@@ -1299,7 +1299,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
           </div>
         ) : (
           <>
-            <h1 style={{ fontSize: "24px", fontWeight: 900, color: t.text, margin: "0 0 6px" }}>{title}</h1>
+            <h1 style={{ fontSize: "24px", fontWeight: 950, color: t.text, margin: "0 0 6px" }}>{title}</h1>
             <p style={{ color: t.textSecondary, fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
           </>
         )}
@@ -2202,7 +2202,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   };
 
   return (
-    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 18% 0%, rgba(37,99,235,0.30), transparent 34%), radial-gradient(circle at 92% 10%, rgba(15,23,42,0.18), transparent 30%), linear-gradient(135deg,#dbeafe 0%,#eef3f9 42%,#cbd5e1 100%)", paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
       {wrapUpToast && (
         <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 80px)", left: "50%", transform: "translateX(-50%)", background: "#15803d", color: "#fff", padding: "12px 24px", borderRadius: "99px", fontSize: "15px", fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap" }}>
           ✅ Job wrapped up!
@@ -7186,7 +7186,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   ];
 
   return (
-    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 18% 0%, rgba(37,99,235,0.30), transparent 34%), radial-gradient(circle at 92% 10%, rgba(15,23,42,0.18), transparent 30%), linear-gradient(135deg,#dbeafe 0%,#eef3f9 42%,#cbd5e1 100%)", paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
       {/* Top header — premium wordmark + session */}
