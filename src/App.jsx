@@ -8255,18 +8255,39 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               if (hay.includes("r30") || hay.includes("r38")) return "R30+";
               return "Other";
             };
-            const shortName = (item) => (item.name || "")
-              .replace(/Fiberglass/gi, "FG")
-              .replace(/Certainteed/gi, "CT")
-              .replace(/Owens Corning/gi, "OC")
-              .replace(/Johns Manville/gi, "JM")
-              .replace(/Open Cell/gi, "OC")
-              .replace(/Closed Cell/gi, "CC")
-              .replace(/Ambit/gi, "Amb")
-              .replace(/Climate Pro/gi, "Clim")
-              .replace(/Master Pack/gi, "MP")
-              .replace(/\s+/g, " ")
-              .trim();
+            const shortName = (item) => {
+              const cat = item.category || "";
+              const raw = item.name || "";
+              const brand = cat.includes("Certainteed") ? "CT" : cat.includes("Owens Corning") ? "OC" : cat.includes("Johns Manville") ? "JM" : "";
+              if (item.unit === "bbl") {
+                return raw
+                  .replace(/Ambit Open Cell B/i, "Amb OC-B")
+                  .replace(/Ambit Closed Cell B/i, "Amb CC-B")
+                  .replace(/Enverge Open Cell B/i, "Env OC-B")
+                  .replace(/Enverge Closed Cell B/i, "Env CC-B")
+                  .replace(/Ambit A/i, "Amb A")
+                  .replace(/Enverge A/i, "Env A");
+              }
+              if (cat === "Blown") {
+                return raw
+                  .replace(/Certainteed Blown Fiberglass/i, "CT Blown FG")
+                  .replace(/JM Blown Fiberglass/i, "JM Blown FG")
+                  .replace(/Blown Cellulose/i, "Cellulose");
+              }
+              const r = raw.match(/R\d+/i)?.[0] || cat.match(/R\d+/i)?.[0] || "";
+              const dims = raw.match(/x\s*([\d.]+\")\s*x\s*([\d.]+\")/i);
+              const length = raw.match(/\((\d+)ft\)/i)?.[1];
+              if (r && dims) return `${brand ? brand + " " : ""}${r} ${dims[1]}×${length ? length + "'" : dims[2]}`;
+              return raw
+                .replace(/Fiberglass/gi, "FG")
+                .replace(/Certainteed/gi, "CT")
+                .replace(/Owens Corning/gi, "OC")
+                .replace(/Johns Manville/gi, "JM")
+                .replace(/Rockwool/gi, "RW")
+                .replace(/Lambswool/gi, "LW")
+                .replace(/\s+/g, " ")
+                .trim();
+            };
             const GROUPS = ["Foam", "Blown", "R11", "R13/R15", "R19+", "R30+", "Other"];
             const allVisible = sortAllItems(
               INVENTORY_ITEMS
@@ -8301,7 +8322,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                           return (
                             <div key={item.id} style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 4, padding: "2px 5px", borderBottom: idx < items.length - 1 ? "1px solid #edf2f7" : "none", background: status === "out" ? "#fff1f2" : status === "low" ? "#fffbeb" : "#fff" }}>
                               <div style={{ minWidth: 0 }}>
-                                <div title={item.name} style={{ fontSize: 10.5, fontWeight: 800, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{shortName(item)}</div>
+                                <div title={item.name} style={{ fontSize: 11, fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{shortName(item)}</div>
                                 <div style={{ display: "flex", gap: 3, alignItems: "center", minWidth: 0, marginTop: 1 }}>
                                   <span style={{ fontSize: 8.5, fontWeight: 900, color: sc.badgeColor, lineHeight: 1 }}>{sc.label || "OK"}</span>
                                   {pcsItem && pcsQty > 0 && <span style={{ fontSize: 8.5, color: "#4f46e5", fontWeight: 900, lineHeight: 1 }}>+{pcsQty}pc</span>}
@@ -8309,7 +8330,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               </div>
                               <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
                                 <div style={{ textAlign: "right", minWidth: 26 }}>
-                                  <div style={{ fontSize: 13, fontWeight: 950, color: sc.text, lineHeight: 1 }}>{formatQty(item, qty)}</div>
+                                  <div style={{ fontSize: 15, fontWeight: 950, color: sc.text, lineHeight: 1, letterSpacing: "-0.5px" }}>{formatQty(item, qty)}</div>
                                   <div style={{ fontSize: 8.5, color: "#64748b", fontWeight: 800, lineHeight: 1 }}>{isFoam(item.id) ? "gal" : item.unit}</div>
                                 </div>
                                 <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
@@ -8611,8 +8632,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       boxShadow: invStatusFilter === "all" ? "0 8px 18px rgba(37,99,235,0.18)" : "0 1px 2px rgba(15,23,42,0.04)",
                     }}>All ({totalSKUs})</button>
                     <StatFilterBtn id="ok" label="In Stock" count={inStockItems.length} color="#16a34a" activeBg="#f0fdf4" activeBorder="#bbf7d0" />
-                    <StatFilterBtn id="low" label="Low" count={lowItems.length} color="#d97706" activeBg="#fffbeb" activeBorder="#fde68a" />
-                    <StatFilterBtn id="out" label="Out" count={outItems.length} color="#dc2626" activeBg="#fef2f2" activeBorder="#fecaca" />
+                    <StatFilterBtn id="low" label="Critical Low" count={lowItems.length} color="#d97706" activeBg="#fffbeb" activeBorder="#fde68a" />
+                    <StatFilterBtn id="out" label="Empty" count={outItems.length} color="#dc2626" activeBg="#fef2f2" activeBorder="#fecaca" />
                     <div style={{ flex: 1 }} />
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
                       {(() => {
