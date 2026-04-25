@@ -591,9 +591,9 @@ function TextArea({ label, ...props }) {
   );
 }
 
-function Card({ children, style: s, onClick }) {
+function Card({ children, style: s, onClick, className = "" }) {
   return (
-    <div onClick={onClick} style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "20px", padding: "18px 20px", marginBottom: "14px", cursor: onClick ? "pointer" : "default", transition: "all 0.15s ease", boxShadow: t.shadow, ...s }}
+    <div className={className} onClick={onClick} style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "20px", padding: "18px 20px", marginBottom: "14px", cursor: onClick ? "pointer" : "default", transition: "all 0.15s ease", boxShadow: t.shadow, ...s }}
       onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.accent; e.currentTarget.style.boxShadow = t.shadowMd; e.currentTarget.style.transform = "translateY(-1px)"; } }}
       onMouseLeave={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.border; e.currentTarget.style.boxShadow = t.shadow; e.currentTarget.style.transform = "none"; } }}>
       {children}
@@ -762,6 +762,51 @@ const kbStyles = `
   .avatar-search { width:100%; padding:10px 14px; background:rgba(255,255,255,0.92); border:1px solid rgba(148,163,184,0.34); border-radius:12px; color:#0f172a; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; margin-bottom:16px; box-shadow:0 8px 22px rgba(15,23,42,0.04); }
   .avatar-search::placeholder { color:#94a3b8; }
   .avatar-search:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,0.12); }
+  .office-mobile-bottom-nav { display: none; }
+  @media (max-width: 640px) {
+    .office-app-shell { padding-left: 0 !important; padding-top: calc(58px + env(safe-area-inset-top, 0px)) !important; padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)) !important; overflow-x: hidden; }
+    .office-top-header { padding: 7px 12px !important; padding-top: calc(7px + env(safe-area-inset-top, 0px)) !important; }
+    .office-header-inner { gap: 8px !important; }
+    .office-logo-mark { width: 38px !important; height: 38px !important; border-radius: 14px !important; }
+    .office-logo-mark span { font-size: 16px !important; letter-spacing: -1px !important; }
+    .office-wordmark { font-size: 15px !important; }
+    .office-header-subtitle, .office-header-kicker { display: none !important; }
+    .office-session-actions { gap: 6px !important; }
+    .office-session-actions > span { max-width: 86px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 8px !important; }
+    .office-session-actions button { padding: 7px 9px !important; }
+    .office-left-dock { display: none !important; }
+    .office-content { width: 100% !important; max-width: none !important; padding: 14px 10px 0 !important; box-sizing: border-box !important; }
+    .office-mobile-bottom-nav { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 250; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 7px; border-radius: 22px; background: rgba(255,255,255,0.86); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); border: 1px solid rgba(148,163,184,0.28); box-shadow: 0 18px 48px rgba(15,23,42,0.20); }
+    .office-mobile-nav-btn { min-width: 0; height: 54px; padding: 6px 2px; border-radius: 16px; }
+    .office-mobile-nav-label { font-size: 9px !important; max-width: 100%; }
+    .office-schedule-hero { border-radius: 22px !important; padding: 18px 15px !important; margin-bottom: 12px !important; }
+    .office-schedule-hero h1 { font-size: 30px !important; letter-spacing: -1.1px !important; line-height: 1.02 !important; }
+    .office-schedule-hero > div:nth-child(2) { flex-direction: column !important; gap: 14px !important; }
+    .office-schedule-stats { width: 100% !important; min-width: 0 !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+    .office-schedule-stats > div { padding: 10px 11px !important; border-radius: 16px !important; }
+    .office-dept-toggle { width: 100% !important; display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin-bottom: 12px !important; }
+    .office-dept-toggle button { padding: 10px 8px !important; font-size: 12px !important; }
+    .office-schedule-toolbar { align-items: stretch !important; padding: 12px !important; border-radius: 20px !important; margin-bottom: 12px !important; }
+    .office-schedule-toolbar > div:first-child { width: 100% !important; }
+    .office-schedule-actions { width: 100% !important; display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+    .office-schedule-actions button { width: 100% !important; justify-content: center !important; padding: 10px 8px !important; min-height: 42px !important; }
+    .office-schedule-actions button:last-child { grid-column: 1 / -1 !important; }
+    .office-unassigned-alert { align-items: flex-start !important; padding: 12px !important; border-radius: 18px !important; }
+    .office-crew-group { padding: 10px !important; border-radius: 22px !important; margin-bottom: 12px !important; }
+    .office-crew-group-header { align-items: center !important; margin-bottom: 8px !important; padding: 2px 2px 9px !important; }
+    .office-crew-group-title { font-size: 16px !important; white-space: normal !important; line-height: 1.15 !important; }
+    .office-job-card { padding: 14px 12px 13px 15px !important; border-radius: 20px !important; margin-bottom: 10px !important; }
+    .office-job-summary { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+    .office-job-title { font-size: 17px !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.15 !important; }
+    .office-job-address { font-size: 13px !important; white-space: normal !important; overflow: visible !important; text-overflow: clip !important; line-height: 1.3 !important; }
+    .office-job-status-stack { width: 100% !important; justify-content: flex-start !important; gap: 6px !important; }
+    .office-job-status-stack > span:last-child { margin-left: auto !important; }
+    .office-job-pills { margin-top: 10px !important; gap: 6px !important; }
+    .office-job-expanded-columns { flex-direction: column !important; gap: 10px !important; }
+    .office-job-expanded-columns > div { flex: 1 1 auto !important; min-width: 0 !important; }
+    .office-job-action-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
+    .office-job-action-row button { width: 100% !important; min-height: 38px !important; }
+  }
 `;
 
 function AuthShell({ children, centered = false, wide = false, kiosk = false }) {
@@ -7158,26 +7203,26 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   ];
 
   return (
-    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div className="office-app-shell" style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
       {/* Top header — premium wordmark + session */}
-      <div style={{ padding: "9px 20px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", boxShadow: "0 18px 45px rgba(15,23,42,0.16)", borderBottom: "1px solid rgba(148,163,184,0.24)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1480, margin: "0 auto", gap: 14 }}>
+      <div className="office-top-header" style={{ padding: "9px 20px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", boxShadow: "0 18px 45px rgba(15,23,42,0.16)", borderBottom: "1px solid rgba(148,163,184,0.24)" }}>
+        <div className="office-header-inner" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1480, margin: "0 auto", gap: 14 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-            <div style={{ width: 46, height: 46, borderRadius: 16, display: "grid", placeItems: "center", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 12px 30px rgba(37,99,235,0.30), inset 0 1px 0 rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.16)", flexShrink: 0 }}>
+            <div className="office-logo-mark" style={{ width: 46, height: 46, borderRadius: 16, display: "grid", placeItems: "center", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 12px 30px rgba(37,99,235,0.30), inset 0 1px 0 rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.16)", flexShrink: 0 }}>
               <span style={{ color: "#fff", fontSize: 20, fontWeight: 950, letterSpacing: "-1.5px" }}>IST</span>
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-                <div style={{ color: "#0f172a", fontSize: 18, fontWeight: 950, letterSpacing: "-0.7px", lineHeight: 1 }}>IST Dispatch</div>
+                <div className="office-wordmark" style={{ color: "#0f172a", fontSize: 18, fontWeight: 950, letterSpacing: "-0.7px", lineHeight: 1 }}>IST Dispatch</div>
                 <span style={{ width: 5, height: 5, borderRadius: 99, background: "#60a5fa", boxShadow: "0 0 16px #60a5fa" }} />
-                <div style={{ color: "#93c5fd", fontSize: 10, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase" }}>Operations OS</div>
+                <div className="office-header-kicker" style={{ color: "#93c5fd", fontSize: 10, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase" }}>Operations OS</div>
               </div>
-              <div style={{ marginTop: 3, color: "rgba(15,23,42,0.64)", fontSize: 11, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Insulation Services of Tulsa · Field command center</div>
+              <div className="office-header-subtitle" style={{ marginTop: 3, color: "rgba(15,23,42,0.64)", fontSize: 11, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Insulation Services of Tulsa · Field command center</div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+          <div className="office-session-actions" style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
             <span style={{ fontSize: "12px", color: "#0f172a", padding: "7px 10px", borderRadius: 999, background: "rgba(255,255,255,0.52)", border: "1px solid rgba(15,23,42,0.10)" }}>{adminName}</span>
             <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999 }}>Log Out</Button>
           </div>
@@ -7185,7 +7230,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       </div>
 
       {/* Left dock nav */}
-      <div style={{ position: "fixed", top: "calc(72px + env(safe-area-inset-top, 0px))", left: 14, bottom: 18, zIndex: 200, width: 66, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, padding: "10px 7px", background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", border: "1px solid rgba(148,163,184,0.24)", borderRadius: 24, boxShadow: "0 24px 60px rgba(15,23,42,0.16)" }}>
+      <div className="office-left-dock" style={{ position: "fixed", top: "calc(72px + env(safe-area-inset-top, 0px))", left: 14, bottom: 18, zIndex: 200, width: 66, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, padding: "10px 7px", background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", border: "1px solid rgba(148,163,184,0.24)", borderRadius: 24, boxShadow: "0 24px 60px rgba(15,23,42,0.16)" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
           return (
@@ -7220,7 +7265,38 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         })}
       </div>
 
-      <div style={{ padding: "24px 20px", maxWidth: "1480px", margin: "0 auto" }}>
+      <div className="office-mobile-bottom-nav" aria-label="Office navigation">
+        {NAV_ITEMS.map(item => {
+          const isActive = view === item.key;
+          return (
+            <button key={item.key}
+              className="nav-tab-btn office-mobile-nav-btn"
+              title={item.label}
+              onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }}
+              style={{
+                width: "100%",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                background: isActive ? "linear-gradient(135deg,#2563eb,#0f172a)" : "transparent",
+                border: isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent",
+                cursor: "pointer",
+                fontFamily: "inherit",
+                position: "relative",
+                gap: "3px",
+                transition: "all 0.15s ease",
+                boxShadow: isActive ? "0 10px 22px rgba(37,99,235,0.24)" : "none",
+              }}>
+              <span style={{ lineHeight: 1, color: isActive ? "#fff" : "#64748b", transform: isActive ? "scale(1.06)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
+              <span className="office-mobile-nav-label" style={{ fontSize: "9px", fontWeight: 900, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
+              {item.badge > 0 && <span style={{ position: "absolute", top: "-3px", right: "-3px", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="office-content" style={{ padding: "24px 20px", maxWidth: "1480px", margin: "0 auto" }}>
 
         {view === "schedule" && (
           <>
