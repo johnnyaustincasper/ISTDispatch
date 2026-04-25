@@ -13323,28 +13323,44 @@ export default function App() {
   }
 
   if (role === "admin" && ["Johnny","Skip","Jordan"].includes(adminName) && !launcherDismissed) return (
-    <AuthShell centered>
-      <div style={{ textAlign: "center", marginBottom: 30 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, letterSpacing: "3px", textTransform: "uppercase", color: t.textMuted }}>IST Operations</div>
-        <div style={{ fontSize: 30, fontWeight: 950, color: t.text, marginTop: 8, letterSpacing: "-0.8px" }}>Where to, {adminName}?</div>
-        <div style={{ width: 46, height: 3, background: "linear-gradient(90deg,#2563eb,#0f172a)", margin: "13px auto 0", borderRadius: 99 }} />
+    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, padding: "calc(64px + env(safe-area-inset-top,0px)) 20px 24px", boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div style={{ width: "100%", maxWidth: 520 }}>
+        <div style={{ position: "relative", overflow: "hidden", borderRadius: 28, padding: "22px 24px", marginBottom: 18, background: "linear-gradient(135deg,#0f172a,#1e3a8a 58%,#2563eb)", color: "#fff", boxShadow: "0 24px 70px rgba(15,23,42,0.22)" }}>
+          <div style={{ position: "absolute", width: 220, height: 220, borderRadius: "50%", background: "rgba(255,255,255,0.10)", right: -80, top: -100 }} />
+          <div style={{ position: "relative" }}>
+            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: "#bfdbfe", marginBottom: 8 }}>IST Operations</div>
+            <h1 style={{ margin: 0, fontSize: "clamp(30px, 5vw, 44px)", letterSpacing: "-1.4px", lineHeight: 1 }}>Where to, {adminName}?</h1>
+            <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: 14 }}>Choose your command center</div>
+          </div>
+        </div>
+        <div style={{ display: "grid", gap: 12 }}>
+          {[
+            { label: "Dispatch", sub: "Manage crews, jobs & schedule", action: () => { setLauncherDismissed(true); setAdminView("dispatch"); } },
+            { label: "Quote Builder", sub: "Build and send customer quotes", action: () => { setLauncherDismissed(true); setAdminView("quotes"); } },
+          ].map((item) => (
+            <button key={item.label} onClick={item.action} style={{ width: "100%", textAlign: "left", padding: "18px 20px", borderRadius: 22, border: "1px solid rgba(148,163,184,0.24)", background: "linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,251,255,0.78))", boxShadow: "0 18px 48px rgba(15,23,42,0.08)", cursor: "pointer", fontFamily: "inherit" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <div style={{ fontSize: 18, fontWeight: 950, color: t.text, letterSpacing: "-0.3px" }}>{item.label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 650, color: t.textSecondary, marginTop: 4 }}>{item.sub}</div>
+                </div>
+                <div style={{ width: 36, height: 36, borderRadius: 14, background: "linear-gradient(135deg,#2563eb,#0f172a)", color: "#fff", display: "grid", placeItems: "center", fontSize: 18, fontWeight: 900, boxShadow: "0 12px 28px rgba(37,99,235,0.24)", flexShrink: 0 }}>›</div>
+              </div>
+            </button>
+          ))}
+          <a href="https://istintel.com" style={{ width: "100%", boxSizing: "border-box", textAlign: "left", padding: "18px 20px", borderRadius: 22, border: "1px solid rgba(148,163,184,0.24)", background: "linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,251,255,0.78))", boxShadow: "0 18px 48px rgba(15,23,42,0.08)", cursor: "pointer", fontFamily: "inherit", textDecoration: "none", display: "block" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 950, color: t.text, letterSpacing: "-0.3px" }}>IST Intel</div>
+                <div style={{ fontSize: 13, fontWeight: 650, color: t.textSecondary, marginTop: 4 }}>Permits and intelligence</div>
+              </div>
+              <div style={{ width: 36, height: 36, borderRadius: 14, background: "linear-gradient(135deg,#2563eb,#0f172a)", color: "#fff", display: "grid", placeItems: "center", fontSize: 18, fontWeight: 900, boxShadow: "0 12px 28px rgba(37,99,235,0.24)", flexShrink: 0 }}>›</div>
+            </div>
+          </a>
+        </div>
+        <button onClick={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} style={{ marginTop: 20, background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit", width: "100%", fontWeight: 700 }}>Sign Out</button>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <button onClick={() => { setLauncherDismissed(true); setAdminView("dispatch"); }} className="kb-card" style={{ padding: "20px 24px", borderRadius: 18, border: "1px solid rgba(37,99,235,0.18)", color: t.text, fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
-          Dispatch
-          <div style={{ fontSize: 13, fontWeight: 650, color: t.textSecondary, marginTop: 5 }}>Manage crews, jobs &amp; schedule</div>
-        </button>
-        <button onClick={() => { setLauncherDismissed(true); setAdminView("quotes"); }} className="kb-card" style={{ padding: "20px 24px", borderRadius: 18, border: "1px solid rgba(37,99,235,0.18)", color: t.text, fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", textAlign: "left", width: "100%" }}>
-          Quote Builder
-          <div style={{ fontSize: 13, fontWeight: 650, color: t.textSecondary, marginTop: 5 }}>Build and send customer quotes</div>
-        </button>
-        <a href="https://istintel.com" className="kb-card" style={{ padding: "20px 24px", borderRadius: 18, border: "1px solid rgba(37,99,235,0.18)", color: t.text, fontWeight: 900, fontSize: 18, cursor: "pointer", fontFamily: "inherit", textAlign: "left", textDecoration: "none", display: "block" }}>
-          IST Intel
-          <div style={{ fontSize: 13, fontWeight: 650, color: t.textSecondary, marginTop: 5 }}>Permits and intelligence</div>
-        </a>
-      </div>
-      <button onClick={() => { setAdminName(null); setRole(null); setLauncherDismissed(false); }} style={{ marginTop: 24, background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit", width: "100%", fontWeight: 700 }}>Sign Out</button>
-    </AuthShell>
+    </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} onSaveTruckToolInventory={handleSaveTruckToolInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
