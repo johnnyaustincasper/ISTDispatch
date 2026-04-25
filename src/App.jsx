@@ -790,7 +790,7 @@ const kbStyles = `
     .office-schedule-stats { width: 100% !important; min-width: 0 !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 8px !important; }
     .office-schedule-stats > div { min-width: 0 !important; padding: 10px 8px !important; border-radius: 16px !important; overflow: hidden !important; }
     .office-schedule-stats > div > div:first-child { font-size: 24px !important; }
-    .office-schedule-stats > div > div:last-child { font-size: 9px !important; letter-spacing: 0.08em !important; overflow-wrap: anywhere !important; }
+    .office-schedule-stats > div > div:last-child { font-size: 7.5px !important; letter-spacing: 0.04em !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: clip !important; overflow-wrap: normal !important; }
     .office-dept-toggle { width: 100% !important; display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin-bottom: 12px !important; }
     .office-dept-toggle button { padding: 10px 8px !important; font-size: 12px !important; }
     .office-schedule-toolbar { align-items: stretch !important; padding: 12px !important; border-radius: 20px !important; margin-bottom: 12px !important; }
