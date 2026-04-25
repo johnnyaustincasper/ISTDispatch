@@ -671,24 +671,23 @@ function AvatarButton({ name, onClick, disabled, badge }) {
       className="avatar-btn"
       style={{
         display: "flex", flexDirection: "column", alignItems: "center", gap: "8px",
-        background: "transparent", border: "none", cursor: disabled ? "wait" : "pointer",
-        padding: "8px 4px", borderRadius: "12px", fontFamily: "inherit",
-        opacity: disabled ? 0.5 : 1, transition: "opacity 0.15s",
+        background: "rgba(255,255,255,0.72)", border: "1px solid rgba(148,163,184,0.24)", cursor: disabled ? "wait" : "pointer",
+        padding: "12px 8px", borderRadius: "18px", fontFamily: "inherit",
+        opacity: disabled ? 0.5 : 1, transition: "opacity 0.15s, transform 0.15s, box-shadow 0.15s",
+        boxShadow: "0 10px 24px rgba(15,23,42,0.06)",
         WebkitTapHighlightColor: "transparent",
       }}
     >
       <div style={{
-        width: 68, height: 68, borderRadius: "50%",
-        background: "rgba(255,255,255,0.15)",
-        backdropFilter: "blur(12px)",
-        WebkitBackdropFilter: "blur(12px)",
-        border: "1px solid rgba(255,255,255,0.3)",
+        width: 64, height: 64, borderRadius: "20px",
+        background: `linear-gradient(135deg, ${color}, #0f172a)`,
+        border: "1px solid rgba(255,255,255,0.75)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        fontSize: 22, fontWeight: 800, color: "#fff",
-        boxShadow: `0 4px 16px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.3), 0 0 20px ${color}66`,
+        fontSize: 22, fontWeight: 950, color: "#fff",
+        boxShadow: `0 14px 28px ${color}33, inset 0 1px 0 rgba(255,255,255,0.22)`,
         position: "relative",
         transition: "box-shadow 0.2s, transform 0.2s",
-        textShadow: "0 1px 4px rgba(0,0,0,0.4)",
+        textShadow: "0 1px 4px rgba(0,0,0,0.25)",
       }}>
         {initials}
         {badge && (
@@ -701,7 +700,7 @@ function AvatarButton({ name, onClick, disabled, badge }) {
           }}>{badge}</span>
         )}
       </div>
-      <span style={{ fontSize: 12, color: "#ffffff", textAlign: "center", lineHeight: 1.3, maxWidth: 80, wordBreak: "break-word" }}>{name}</span>
+      <span style={{ fontSize: 12, color: t.text, fontWeight: 850, textAlign: "center", lineHeight: 1.3, maxWidth: 80, wordBreak: "break-word" }}>{name}</span>
     </button>
   );
 }
@@ -735,14 +734,14 @@ const kbStyles = `
   .kb-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center; }
   .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
   .kb-content { animation: authFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) both; }
-  .kb-back-btn { background:rgba(255,255,255,0.10)!important;border:1px solid rgba(255,255,255,0.20)!important;color:rgba(255,255,255,0.82)!important;backdrop-filter:blur(12px);border-radius:999px!important; }
-  .kb-panel { background:rgba(255,255,255,0.10)!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(255,255,255,0.22)!important;border-radius:22px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.16), 0 24px 70px rgba(0,0,0,0.34)!important; }
-  .kb-muted { color:rgba(255,255,255,0.66)!important; }
-  .kb-card { background:rgba(255,255,255,0.12)!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(255,255,255,0.24)!important;border-radius:22px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.16), 0 18px 48px rgba(0,0,0,0.32)!important;transition:background 0.2s,transform 0.2s!important; }
-  .kb-card:hover { background:rgba(255,255,255,0.19)!important;transform:translateY(-2px);border-color:rgba(255,255,255,0.36)!important; }
-  .kb-input { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.25)!important;color:#fff!important;border-radius:14px!important; }
-  .kb-input::placeholder { color:rgba(255,255,255,0.4)!important; }
-  .kb-input:focus { border-color:rgba(255,255,255,0.6)!important; }
+  .kb-back-btn { background:rgba(255,255,255,0.72)!important;border:1px solid rgba(148,163,184,0.28)!important;color:#475569!important;backdrop-filter:blur(14px);border-radius:999px!important;box-shadow:0 8px 22px rgba(15,23,42,0.06)!important; }
+  .kb-panel { background:rgba(255,255,255,0.82)!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(148,163,184,0.24)!important;border-radius:24px!important;box-shadow:0 22px 60px rgba(15,23,42,0.12), inset 0 1px 0 rgba(255,255,255,0.85)!important; }
+  .kb-muted { color:#64748b!important; }
+  .kb-card { background:rgba(255,255,255,0.82)!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(148,163,184,0.24)!important;border-radius:24px!important;box-shadow:0 18px 48px rgba(15,23,42,0.09), inset 0 1px 0 rgba(255,255,255,0.85)!important;transition:background 0.2s,transform 0.2s,box-shadow 0.2s!important; }
+  .kb-card:hover { background:rgba(255,255,255,0.94)!important;transform:translateY(-2px);border-color:rgba(37,99,235,0.26)!important;box-shadow:0 24px 60px rgba(15,23,42,0.13)!important; }
+  .kb-input { background:rgba(255,255,255,0.92)!important;border:1px solid rgba(148,163,184,0.34)!important;color:#0f172a!important;border-radius:14px!important;box-shadow:0 8px 22px rgba(15,23,42,0.04)!important; }
+  .kb-input::placeholder { color:#94a3b8!important; }
+  .kb-input:focus { border-color:#2563eb!important;box-shadow:0 0 0 3px rgba(37,99,235,0.12)!important; }
   .tab-view-enter { animation: tabFadeIn 0.18s cubic-bezier(0.16,1,0.3,1) both; }
   .nav-tab-btn:active { transform: scale(0.94); }
   .premium-surface { background:linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,251,255,0.78));border:1px solid rgba(148,163,184,0.24);border-radius:24px;box-shadow:0 18px 48px rgba(15,23,42,0.08);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px); }
@@ -756,18 +755,18 @@ const kbStyles = `
   .compact-form > div { margin-bottom: 10px !important; }
   .compact-form label { font-size: 11px !important; margin-bottom: 3px !important; }
   .compact-form input, .compact-form select, .compact-form textarea { padding: 6px 10px !important; font-size: 13px !important; }
-  .auth-glow { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 40%, rgba(37,99,235,0.18) 0%, transparent 70%); pointer-events: none; z-index: 0; }
-  .avatar-btn:hover > div { transform: scale(1.08); box-shadow: 0 6px 24px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.4), 0 0 32px rgba(255,255,255,0.25)!important; }
+  .auth-glow { position: absolute; inset: 0; background: radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%); pointer-events: none; z-index: 0; }
+  .avatar-btn:hover { transform: translateY(-2px); box-shadow:0 18px 42px rgba(15,23,42,0.12)!important; } .avatar-btn:hover > div { transform: scale(1.04); box-shadow: 0 18px 34px rgba(37,99,235,0.22), inset 0 1px 0 rgba(255,255,255,0.25)!important; }
   .avatar-btn:active > div { transform: scale(0.95); box-shadow: 0 2px 8px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.3)!important; }
   .avatar-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); gap:16px; width:100%; box-sizing:border-box; }
-  .avatar-search { width:100%; padding:10px 14px; background:rgba(255,255,255,0.12); border:1px solid rgba(255,255,255,0.25); border-radius:10px; color:#fff; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; margin-bottom:16px; }
-  .avatar-search::placeholder { color:rgba(255,255,255,0.4); }
-  .avatar-search:focus { border-color:rgba(255,255,255,0.6); }
+  .avatar-search { width:100%; padding:10px 14px; background:rgba(255,255,255,0.92); border:1px solid rgba(148,163,184,0.34); border-radius:12px; color:#0f172a; font-size:14px; font-family:inherit; outline:none; box-sizing:border-box; margin-bottom:16px; box-shadow:0 8px 22px rgba(15,23,42,0.04); }
+  .avatar-search::placeholder { color:#94a3b8; }
+  .avatar-search:focus { border-color:#2563eb; box-shadow:0 0 0 3px rgba(37,99,235,0.12); }
 `;
 
 function AuthShell({ children, centered = false, wide = false, kiosk = false }) {
   return (
-    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto" }}>
+    <div style={{ minHeight: "100dvh", width: "100%", maxWidth: "100vw", boxSizing: "border-box", position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: centered ? "center" : "flex-start", padding: centered ? "20px" : kiosk ? "calc(env(safe-area-inset-top,0px) + 16px) 16px calc(env(safe-area-inset-bottom,0px) + 40px)" : "calc(env(safe-area-inset-top,0px) + 10vh) 16px calc(env(safe-area-inset-bottom,0px) + 40px)", overflowX: "hidden", overflowY: "auto", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg }}>
       <div className="auth-glow" />
       <div className="kb-content" style={{ position: "relative", zIndex: 1, maxWidth: wide ? "680px" : "420px", width: "100%", boxSizing: "border-box" }}>
         {children}
@@ -780,31 +779,31 @@ function RoleSelect({ onSelect }) {
   return (
     <AuthShell centered>
       <div style={{ textAlign: "center", marginBottom: "40px" }}>
-        <div style={{ fontSize: "12px", fontWeight: 600, letterSpacing: "3px", textTransform: "uppercase", color: "rgba(255,255,255,0.7)" }}>Insulation Services of Tulsa</div>
-        <div style={{ fontSize: "36px", fontWeight: 700, color: "#fff", marginTop: "8px", letterSpacing: "-0.5px" }}>IST Dispatch</div>
-        <div style={{ width: "40px", height: "2px", background: t.accent, margin: "14px auto 0", borderRadius: "1px" }} />
+        <div style={{ fontSize: "12px", fontWeight: 600, letterSpacing: "3px", textTransform: "uppercase", color: t.textMuted }}>Insulation Services of Tulsa</div>
+        <div style={{ fontSize: "36px", fontWeight: 700, color: t.text, marginTop: "8px", letterSpacing: "-0.5px" }}>IST Dispatch</div>
+        <div style={{ width: "40px", height: "2px", background: "linear-gradient(90deg,#2563eb,#0f172a)", margin: "14px auto 0", borderRadius: "1px" }} />
       </div>
       <div style={{ display: "flex", gap: "14px", flexWrap: "wrap", justifyContent: "center" }}>
         <div className="kb-card" onClick={() => onSelect("admin")} style={{ flex: "1 1 160px", textAlign: "center", padding: "32px 20px", cursor: "pointer", borderRadius: "12px" }}>
-          <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+          <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.22)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <svg width="20" height="20" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/></svg>
           </div>
-          <div style={{ fontSize: "16px", fontWeight: 600, color: "#fff" }}>Office</div>
-          <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)", marginTop: "4px" }}>Schedule jobs & manage crews</div>
+          <div style={{ fontSize: "16px", fontWeight: 800, color: t.text }}>Office</div>
+          <div style={{ fontSize: "13px", color: t.textSecondary, marginTop: "4px" }}>Schedule jobs & manage crews</div>
         </div>
         <div className="kb-card" onClick={() => onSelect("crew")} style={{ flex: "1 1 160px", textAlign: "center", padding: "32px 20px", cursor: "pointer", borderRadius: "12px" }}>
-          <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+          <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.22)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <svg width="20" height="20" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8zM5.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5zM18.5 21a2.5 2.5 0 100-5 2.5 2.5 0 000 5z"/></svg>
           </div>
-          <div style={{ fontSize: "16px", fontWeight: 600, color: "#fff" }}>Field Crew</div>
-          <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)", marginTop: "4px" }}>View jobs & send updates</div>
+          <div style={{ fontSize: "16px", fontWeight: 800, color: t.text }}>Field Crew</div>
+          <div style={{ fontSize: "13px", color: t.textSecondary, marginTop: "4px" }}>View jobs & send updates</div>
         </div>
         <div className="kb-card" onClick={() => onSelect("mechanic")} style={{ flex: "1 1 160px", textAlign: "center", padding: "32px 20px", cursor: "pointer", borderRadius: "12px" }}>
-          <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+          <div style={{ width: "44px", height: "44px", borderRadius: "10px", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.22)", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
             <svg width="20" height="20" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
           </div>
-          <div style={{ fontSize: "16px", fontWeight: 600, color: "#fff" }}>Mechanic</div>
-          <div style={{ fontSize: "13px", color: "rgba(255,255,255,0.65)", marginTop: "4px" }}>Truck hub & service records</div>
+          <div style={{ fontSize: "16px", fontWeight: 800, color: t.text }}>Mechanic</div>
+          <div style={{ fontSize: "13px", color: t.textSecondary, marginTop: "4px" }}>Truck hub & service records</div>
         </div>
       </div>
     </AuthShell>
@@ -860,7 +859,7 @@ function MechanicLogin({ onLogin, onBack }) {
     <AuthShell>
       <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.text, fontSize: 13, cursor: "pointer", marginBottom: 24, padding: 0, fontFamily: "inherit" }}>← Back</button>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 8, background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700 }}>{selected[0]}</div>
+        <div style={{ width: 40, height: 40, borderRadius: 8, background: "linear-gradient(135deg,#2563eb,#0f172a)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700 }}>{selected[0]}</div>
         <div><div style={{ fontSize: 18, fontWeight: 600, color: t.text }}>{selected}</div><div style={{ fontSize: 13, color: t.textMuted }}>Enter your 4-digit PIN</div></div>
       </div>
       {pinInput(pin, setPin, handleEnterPin, "Enter PIN")}
@@ -873,7 +872,7 @@ function MechanicLogin({ onLogin, onBack }) {
     <AuthShell>
       <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.text, fontSize: 13, cursor: "pointer", marginBottom: 24, padding: 0, fontFamily: "inherit" }}>← Back</button>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-        <div style={{ width: 40, height: 40, borderRadius: 8, background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700 }}>{selected[0]}</div>
+        <div style={{ width: 40, height: 40, borderRadius: 8, background: "linear-gradient(135deg,#2563eb,#0f172a)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700 }}>{selected[0]}</div>
         <div style={{ fontSize: 18, fontWeight: 600, color: t.text }}>{selected}</div>
       </div>
       <p style={{ color: "rgba(0,0,0,0.5)", fontSize: 13.5, margin: "0 0 20px" }}>First time? Set up a 4-digit PIN.</p>
@@ -888,13 +887,13 @@ function MechanicLogin({ onLogin, onBack }) {
     <AuthShell wide kiosk>
       <button onClick={onBack} style={{ background: "none", border: "none", color: t.text, fontSize: 13, cursor: "pointer", marginBottom: 24, padding: 0, fontFamily: "inherit" }}>← Back</button>
       <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <div style={{ fontSize: 24, fontWeight: 800, color: "#fff" }}>🔧 Mechanic Login</div>
+        <div style={{ fontSize: 28, fontWeight: 950, color: t.text }}>🔧 Mechanic Login</div>
         <div style={{ color: "rgba(0,0,0,0.5)", fontSize: 13.5, marginTop: 6 }}>Select your name to log in</div>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {MECHANIC_PROFILES.map(name => (
           <button key={name} onClick={() => handleSelect(name)}
-            style={{ padding: "18px 20px", borderRadius: 10, border: "1px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 17, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", textAlign: "center" }}>
+            style={{ padding: "18px 20px", borderRadius: 16, border: "1px solid " + t.border, background: "rgba(255,255,255,0.82)", color: t.text, fontSize: 17, fontWeight: 850, cursor: "pointer", fontFamily: "inherit", textAlign: "center", boxShadow: "0 10px 24px rgba(15,23,42,0.06)" }}>
             {name}
           </button>
         ))}
@@ -1118,9 +1117,9 @@ function AdminLogin({ onLogin, onBack }) {
   if (selected && mode === "enter") {
     return (
       <AuthShell>
-          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: "#0f172a", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.textSecondary, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px" }}>
-            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
+            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "linear-gradient(135deg,#2563eb,#0f172a)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
             <div>
               <div style={{ fontSize: "18px", fontWeight: 600, color: t.text }}>{selected}</div>
               <div style={{ fontSize: "13px", color: t.textMuted }}>Enter your 4-digit PIN</div>
@@ -1135,7 +1134,7 @@ function AdminLogin({ onLogin, onBack }) {
             onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 4)); setError(""); }}
             onKeyDown={(e) => e.key === "Enter" && pin.length === 4 && handleEnterPin()}
             autoFocus
-            style={{ width: "100%", padding: "14px", background: "#fff", border: "1px solid " + t.border, borderRadius: "8px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box" }}
+            style={{ width: "100%", padding: "14px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "14px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box" }}
           />
           {error && <div style={{ color: t.danger, fontSize: "13px", marginTop: "8px", textAlign: "center" }}>{error}</div>}
           <Button onClick={handleEnterPin} disabled={pin.length !== 4} style={{ width: "100%", marginTop: "14px" }}>Log In</Button>
@@ -1146,12 +1145,12 @@ function AdminLogin({ onLogin, onBack }) {
   if (selected && mode === "create") {
     return (
       <AuthShell>
-          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: "#0f172a", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+          <button onClick={() => { setSelected(null); setMode(null); }} style={{ background: "none", border: "none", color: t.textSecondary, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
           <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "8px" }}>
-            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "rgba(255,255,255,0.2)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
+            <div style={{ width: "40px", height: "40px", borderRadius: "8px", background: "linear-gradient(135deg,#2563eb,#0f172a)", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", fontWeight: 700 }}>{selected[0]}</div>
             <div style={{ fontSize: "18px", fontWeight: 600, color: t.text }}>{selected}</div>
           </div>
-          <p style={{ color: "rgba(0,0,0,0.5)", fontSize: "13.5px", margin: "0 0 20px" }}>First time? Set up a 4-digit PIN.</p>
+          <p style={{ color: t.textSecondary, fontSize: "13.5px", margin: "0 0 20px" }}>First time? Set up a 4-digit PIN.</p>
           <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Create PIN</label>
           <input
             type="password"
@@ -1161,7 +1160,7 @@ function AdminLogin({ onLogin, onBack }) {
             value={pin}
             onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 4)); setError(""); }}
             autoFocus
-            style={{ width: "100%", padding: "14px", background: "#fff", border: "1px solid " + t.border, borderRadius: "8px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box", marginBottom: "14px" }}
+            style={{ width: "100%", padding: "14px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "14px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box", marginBottom: "14px" }}
           />
           <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Confirm PIN</label>
           <input
@@ -1172,7 +1171,7 @@ function AdminLogin({ onLogin, onBack }) {
             value={confirmPin}
             onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 4)); setError(""); }}
             onKeyDown={(e) => e.key === "Enter" && pin.length === 4 && confirmPin.length === 4 && handleCreatePin()}
-            style={{ width: "100%", padding: "14px", background: "#fff", border: "1px solid " + t.border, borderRadius: "8px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box" }}
+            style={{ width: "100%", padding: "14px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "14px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box" }}
           />
           {error && <div style={{ color: t.danger, fontSize: "13px", marginTop: "8px", textAlign: "center" }}>{error}</div>}
           <Button onClick={handleCreatePin} disabled={pin.length !== 4 || confirmPin.length !== 4} style={{ width: "100%", marginTop: "14px" }}>Set PIN & Log In</Button>
@@ -1182,10 +1181,10 @@ function AdminLogin({ onLogin, onBack }) {
 
   return (
     <AuthShell wide kiosk>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: "#0f172a", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: t.textSecondary, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         <div style={{ textAlign: "center", marginBottom: "28px" }}>
-          <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
-          <div style={{ color: "rgba(0,0,0,0.5)", fontSize: "13.5px", marginTop: "6px" }}>Select your name to log in</div>
+          <div style={{ fontSize: "28px", fontWeight: 950, color: t.text, letterSpacing: "-0.8px" }}>Who are you?</div>
+          <div style={{ color: t.textSecondary, fontSize: "13.5px", marginTop: "6px" }}>Select your name to log in</div>
         </div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: "16px", justifyContent: "center", width: "100%" }}>
           {[...OFFICE_PROFILES].map((name) => (
@@ -1292,16 +1291,16 @@ function CrewLogin({ trucks, onLogin, onBack }) {
 
   return (
     <AuthShell wide kiosk>
-        <button onClick={onBack} style={{ background: "none", border: "none", color: "#0f172a", fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+        <button onClick={onBack} style={{ background: "none", border: "none", color: t.textSecondary, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         {step === "pick" ? (
           <div style={{ textAlign: "center", marginBottom: "24px" }}>
-            <div style={{ fontSize: "24px", fontWeight: 800, color: "#fff", letterSpacing: "-0.3px" }}>Who are you?</div>
-            <div style={{ color: "rgba(0,0,0,0.5)", fontSize: "13.5px", marginTop: "6px" }}>Tap your name to get started</div>
+            <div style={{ fontSize: "28px", fontWeight: 950, color: t.text, letterSpacing: "-0.8px" }}>Who are you?</div>
+            <div style={{ color: t.textSecondary, fontSize: "13.5px", marginTop: "6px" }}>Tap your name to get started</div>
           </div>
         ) : (
           <>
-            <h1 style={{ fontSize: "22px", fontWeight: 600, color: "#fff", margin: "0 0 6px" }}>{title}</h1>
-            <p style={{ color: "rgba(0,0,0,0.5)", fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
+            <h1 style={{ fontSize: "24px", fontWeight: 900, color: t.text, margin: "0 0 6px" }}>{title}</h1>
+            <p style={{ color: t.textSecondary, fontSize: "13.5px", margin: "0 0 24px" }}>{subtitle}</p>
           </>
         )}
 
@@ -1328,7 +1327,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
                   // Within each group, sort alphabetically
                   return a.name.localeCompare(b.name);
                 });
-              if (filtered.length === 0) return <div style={{ textAlign: "center", color: "rgba(255,255,255,0.55)", fontSize: 13, padding: "24px 0" }}>No match for "{crewSearch}"</div>;
+              if (filtered.length === 0) return <div style={{ textAlign: "center", color: t.textMuted, fontSize: 13, padding: "24px 0" }}>No match for "{crewSearch}"</div>;
               return (
                 <div className="avatar-grid">
                   {filtered.map(m => (
@@ -1349,11 +1348,11 @@ function CrewLogin({ trucks, onLogin, onBack }) {
           <>
             {step === "truck" && (
               <div style={{ marginBottom: 20 }}>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.78)", textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 8 }}>Select your truck</label>
+                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: t.textSecondary, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 8 }}>Select your truck</label>
                 <select
                   value={selectedTruckId}
                   onChange={e => setSelectedTruckId(e.target.value)}
-                  style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid rgba(255,255,255,0.22)", background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 16, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 10 }}
+                  style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid " + t.border, background: "rgba(255,255,255,0.92)", color: t.text, fontSize: 16, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 10 }}
                 >
                   <option value="" style={{ color: "#0f172a" }}>Select truck...</option>
                   {visibleTrucks.map(tr => (
@@ -1368,7 +1367,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
                         key={tr.id}
                         onClick={() => setSelectedTruckId(tr.id)}
                         type="button"
-                        style={{ padding: "9px 13px", borderRadius: 999, border: "2px solid " + (active ? "#60a5fa" : "rgba(255,255,255,0.22)"), background: active ? "#2563eb" : "rgba(255,255,255,0.10)", color: "#fff", fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}
+                        style={{ padding: "9px 13px", borderRadius: 999, border: "2px solid " + (active ? "#2563eb" : t.border), background: active ? "#2563eb" : "rgba(255,255,255,0.82)", color: active ? "#fff" : t.text, fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}
                       >
                         {tr.members || tr.vehicleName || tr.name}
                       </button>
@@ -1413,7 +1412,7 @@ function CrewLogin({ trucks, onLogin, onBack }) {
                     finishLogin(selectedMember);
                   }}
                   disabled={!selectedTruckId}
-                  style={{ width: "100%", padding: "14px", borderRadius: 12, background: !selectedTruckId ? "rgba(255,255,255,0.2)" : "#2563eb", border: "none", color: "#fff", fontSize: 16, fontWeight: 800, cursor: !selectedTruckId ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: 8 }}
+                  style={{ width: "100%", padding: "14px", borderRadius: 12, background: !selectedTruckId ? "#cbd5e1" : "#2563eb", border: "none", color: "#fff", fontSize: 16, fontWeight: 800, cursor: !selectedTruckId ? "not-allowed" : "pointer", fontFamily: "inherit", marginBottom: 8 }}
                 >
                   Continue
                 </button>
