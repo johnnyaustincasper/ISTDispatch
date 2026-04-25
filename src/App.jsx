@@ -7176,7 +7176,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   ];
 
   return (
-    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
       {/* Top header — premium wordmark + session */}
@@ -7202,42 +7202,39 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         </div>
       </div>
 
-      {/* Bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, display: "flex", flexDirection: "column", background: "rgba(255,255,255,0.88)", WebkitBackdropFilter: "blur(18px)", backdropFilter: "blur(18px)", borderTop: "1px solid rgba(148,163,184,0.22)", boxShadow: "0 -18px 48px rgba(15,23,42,0.12)" }}>
-        <div style={{ display: "flex", padding: "4px 4px 0" }}>
+      {/* Left dock nav */}
+      <div style={{ position: "fixed", top: "calc(72px + env(safe-area-inset-top, 0px))", left: 14, bottom: 18, zIndex: 200, width: 58, display: "flex", flexDirection: "column", alignItems: "center", gap: 7, padding: "10px 6px", background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", border: "1px solid rgba(148,163,184,0.24)", borderRadius: 24, boxShadow: "0 24px 60px rgba(15,23,42,0.16)" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
           return (
             <button key={item.key}
               className="nav-tab-btn"
+              title={item.label}
               onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }}
               style={{
-                flex: 1,
+                width: 46,
+                minHeight: 48,
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                padding: isActive ? "7px 2px 8px" : "8px 2px 8px",
-                background: isActive ? "rgba(37,99,235,0.25)" : "none",
-                border: "none",
-                borderRadius: "10px",
+                padding: "6px 4px",
+                background: isActive ? "linear-gradient(135deg,#2563eb,#0f172a)" : "transparent",
+                border: isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent",
+                borderRadius: 17,
                 cursor: "pointer",
                 fontFamily: "inherit",
                 position: "relative",
                 gap: "3px",
                 transition: "all 0.15s ease",
-                margin: "0 1px",
-                minHeight: "56px",
+                boxShadow: isActive ? "0 14px 30px rgba(37,99,235,0.28)" : "none",
               }}>
-              <span style={{ lineHeight: 1, color: isActive ? t.accent : "#94a3b8", transform: isActive ? "scale(1.15)" : "scale(1)", display: "block", transition: "all 0.15s ease", filter: isActive ? "drop-shadow(0 0 4px #2563eb)" : "none" }}>{NAV_ICONS[item.key]}</span>
-              <span style={{ fontSize: "10px", fontWeight: isActive ? 700 : 500, color: isActive ? t.accent : "#94a3b8", transition: "all 0.15s", letterSpacing: isActive ? "-0.2px" : "0" }}>{item.label}</span>
-              <span style={{ display: "block", width: "4px", height: "4px", borderRadius: "50%", background: isActive ? t.accent : "transparent", marginTop: "1px", transition: "background 0.15s", boxShadow: isActive ? "0 0 4px #2563eb" : "none" }} />
-              {item.badge > 0 && <span style={{ position: "absolute", top: "5px", right: "calc(50% - 18px)", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 700, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
+              <span style={{ lineHeight: 1, color: isActive ? "#fff" : "#64748b", transform: isActive ? "scale(1.08)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
+              <span style={{ fontSize: "8.5px", fontWeight: 850, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", maxWidth: 42, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
+              {item.badge > 0 && <span style={{ position: "absolute", top: "-3px", right: "-3px", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
             </button>
           );
         })}
-        </div>
-        <div style={{ height: "env(safe-area-inset-bottom, 0px)", background: "transparent" }} />
       </div>
 
       <div style={{ padding: "24px 20px", maxWidth: "1480px", margin: "0 auto" }}>
@@ -7264,9 +7261,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
 
             {/* Department toggle */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 18, borderRadius: 18, padding: 6, overflow: "hidden", border: "1px solid " + t.border, width: "fit-content", background: "rgba(255,255,255,0.76)", boxShadow: "0 10px 28px rgba(15,23,42,0.07)" }}>
+            <div style={{ display: "flex", gap: 7, marginBottom: 18, borderRadius: 20, padding: 6, overflow: "hidden", border: "1px solid rgba(148,163,184,0.24)", width: "fit-content", background: "rgba(255,255,255,0.78)", boxShadow: "0 14px 36px rgba(15,23,42,0.08)", WebkitBackdropFilter: "blur(14px)", backdropFilter: "blur(14px)" }}>
               {[{key:"insulation",label:"🏠 Insulation"},{key:"energySeal",label:"⚡ Energy Seal"}].map(({key,label}) => (
-                <button key={key} onClick={() => { setScheduleView(key); setTruckFilter(null); }} style={{ padding: "10px 20px", border: "none", borderRadius: 13, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: scheduleView === key ? 850 : 650, background: scheduleView === key ? t.accent : "transparent", color: scheduleView === key ? "#fff" : t.textSecondary, transition: "all 0.15s" }}>{label}</button>
+                <button key={key} onClick={() => { setScheduleView(key); setTruckFilter(null); }} style={{ padding: "10px 20px", border: scheduleView === key ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent", borderRadius: 15, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: scheduleView === key ? 900 : 700, background: scheduleView === key ? "linear-gradient(135deg,#2563eb,#0f172a)" : "transparent", color: scheduleView === key ? "#fff" : t.textSecondary, boxShadow: scheduleView === key ? "0 12px 26px rgba(37,99,235,0.24)" : "none", transition: "all 0.15s" }}>{label}</button>
               ))}
             </div>
 
@@ -7323,7 +7320,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
-                <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }}>+ Add Job</Button>
+                <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }} style={{ background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.28)" }}>+ Add Job</Button>
               </div>
             </div>
             {truckFilterName && (
