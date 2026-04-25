@@ -2399,29 +2399,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         {crewView === "jobs" && (
           <div className="tab-view-enter">
             <SectionHeader title="Your Jobs" />
-            {/* Truck Inventory Summary Strip */}
-            {(() => {
-              const truckItems = getTruckInventoryDisplayRows(truckInventory);
-              const secondaryTruckItems = getTruckInventoryDisplayRows(truckSecondaryInventory);
-              if (truckItems.length === 0) return (
-                <div style={{ background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "13px", color: "#92400e" }}>
-                  🚛 Truck is empty — load up before heading out.
-                </div>
-              );
-              const sorted = [...truckItems].sort((a, b) => (truckInventory[b.id] || 0) - (truckInventory[a.id] || 0));
-              const shown = sorted.slice(0, 5);
-              const extra = sorted.length - 5;
-              return (
-                <div style={{ background: "rgba(255,255,255,0.72)", border: "1px solid " + t.border, borderRadius: "8px", padding: "10px 14px", marginBottom: "12px", fontSize: "12px", color: t.text }}>
-                  <span style={{ fontWeight: 700 }}>🚛 On Your Truck: </span>
-                  {shown.map((item, i) => (
-                    <span key={item.id}>{item.name}: <strong>{item.qty} {item.unit}</strong>{i < shown.length - 1 || extra > 0 ? " | " : ""}</span>
-                  ))}
-                  {extra > 0 && <span style={{ color: t.textMuted }}>+{extra} more</span>}
-                  {secondaryTruckItems.length > 0 && <div style={{ marginTop: 8, color: t.textMuted }}><strong style={{ color: t.text }}>Reserve stock:</strong> {secondaryTruckItems.slice(0, 3).map((item) => `${item.name}: ${item.qty} ${item.unit}`).join(" | ")}{secondaryTruckItems.length > 3 ? ` | +${secondaryTruckItems.length - 3} more` : ""}</div>}
-                </div>
-              );
-            })()}
             {/* Consolidated materials warning */}
             {(() => {
               const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
@@ -3075,9 +3052,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 }
                 <div style={{ fontSize: 11, color: t.textMuted, marginTop: 10 }}>Visible only in v1. Daily material logs still deduct from primary truck inventory only.</div>
               </Card>
-              {/* Procedures */}
-              <DailyProcedureCard />
-
               {!loadTruckMode ? (
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                   <button onClick={() => {
