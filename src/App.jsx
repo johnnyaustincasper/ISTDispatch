@@ -6825,10 +6825,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [editMatLogIdx, setEditMatLogIdx] = useState(null); // index into dailyMaterialLogs
   const [editMatLogQtys, setEditMatLogQtys] = useState({});
   const [invSearch, setInvSearch] = useState("");
-  const [invCatFilter, setInvCatFilter] = useState(null);
   const [invSort, setInvSort] = useState("category");
   const [invStatusFilter, setInvStatusFilter] = useState("all");
-  const [inventoryUiMock, setInventoryUiMock] = useState("current");
   const [invTab, setInvTab] = useState("materials");
   const [jobSearch, setJobSearch] = useState("");
   const [jobStatusFilter, setJobStatusFilter] = useState("active");
@@ -8159,7 +8157,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         )}
 
         {view === "inventory" && (() => {
-          const categories = [...new Set(INVENTORY_ITEMS.map(i => i.category))];
           const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
@@ -8227,30 +8224,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             return [...arr].sort((a, b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
           };
 
-          // Compute which categories match search / status filter
-          const visibleCats2 = categories.filter(cat => {
-            if (invCatFilter && invCatFilter !== cat) return false;
-            const items = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(statusFilterFn);
-            return items.length > 0 && (!searchLower || items.some(i => i.name.toLowerCase().includes(searchLower)));
-          });
-
-          const inventoryMockModes = ["current", "ledger", "shelf", "table"];
-          const activeInventoryMock = inventoryMockModes.includes(inventoryUiMock) ? inventoryUiMock : "current";
-          const mockPreviewItems = sortAllItems(
-            allMainItems
-              .filter(item => statusFilterFn(item))
-              .filter(item => !searchLower || item.name.toLowerCase().includes(searchLower))
-          );
-          const mockLedgerItems = mockPreviewItems.slice(0, 14);
-          const mockTableItems = mockPreviewItems.slice(0, 16);
-          const mockShelfCategories = (visibleCats2.length ? visibleCats2 : categories.filter(cat => !invCatFilter || invCatFilter === cat))
-            .map(cat => ({
-              cat,
-              items: sortAllItems(allMainItems.filter(i => i.category === cat).filter(item => !searchLower || item.name.toLowerCase().includes(searchLower))).slice(0, 4),
-            }))
-            .filter(section => section.items.length > 0)
-            .slice(0, 4);
-
           const StatFilterBtn = ({ id, label, count, color, activeBg, activeBorder }) => {
             const isActive = invStatusFilter === id;
             return (
@@ -8269,81 +8242,78 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             );
           };
 
-          // Materials grid — proper component so hooks are legal
-          const MaterialsGrid = ({ inventory, onUpdateInventory, invStatusFilter, invSearch, stockStatus, stockColors, isFoam, bblToGals, galsToBbl, sortAllItems, statusFilterFn, searchLower }) => {
-            const [activeMfg, setActiveMfg] = React.useState('all');
+          // Calm warehouse ledger — daily inventory view optimized for fast mobile scanning
+          const MaterialsGrid = ({ inventory, onUpdateInventory, invStatusFilter, stockStatus, stockColors, isFoam, bblToGals, galsToBbl, sortAllItems, statusFilterFn, searchLower }) => {
             const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
-
-            const getManufacturer = (item) => {
-              const cat = item.category || "";
-              if (item.unit === "bbl") return "Foam";
-              if (cat.includes("Certainteed")) return "Certainteed";
-              if (cat.includes("Owens Corning")) return "Owens Corning";
-              if (cat.includes("Johns Manville") || cat.includes("JM")) return "Johns Manville";
-              if (cat.toLowerCase().includes("blown") || cat.toLowerCase().includes("cellulose")) return "Blown";
-              return "Other";
+            const classifyItem = (item) => {
+              const name = (item.name || "").toLowerCase();
+              const cat = (item.category || "").toLowerCase();
+              if (item.unit === "bbl" || name.includes("cell") || name.includes("foam")) return "Foam";
+              if (name.includes("blown") || cat.includes("blown") || name.includes("cellulose") || name.includes("rockwool")) return "Blown";
+              if (/r\d+/.test(name) || /r\d+/.test(cat) || name.includes("batt")) return "Batts";
+              if (item.unit === "tubes" || item.unit === "pcs" || name.includes("caulk") || name.includes("sealant")) return "Caulk & Tubes";
+              return "Supplies";
             };
-            const MFG_ORDER = ["Certainteed", "Owens Corning", "Johns Manville", "Foam", "Blown", "Other"];
-            const getRVal = (cat) => { const m = (cat||"").match(/R(\d+)/i); return m ? parseInt(m[1]) : 999; };
+            const GROUPS = ["Foam", "Blown", "Batts", "Caulk & Tubes", "Supplies"];
+            const allVisible = sortAllItems(
+              INVENTORY_ITEMS
+                .filter(i => !i.isPieces)
+                .filter(statusFilterFn)
+                .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || (i.category || "").toLowerCase().includes(searchLower))
+            );
+            const groups = GROUPS.map(group => ({ group, items: allVisible.filter(item => classifyItem(item) === group) })).filter(section => section.items.length);
+            const formatQty = (item, qty) => isFoam(item.id) ? qty.toFixed(2) : qty;
+            const formatSubQty = (item, qty) => isFoam(item.id) ? `${bblToGals(qty, item.id)} gal · ${qty.toFixed(2)} bbl` : `${qty} ${item.unit}`;
 
-            const mfgGroups = MFG_ORDER.map(mfg => {
-              const items = sortAllItems(
-                INVENTORY_ITEMS
-                  .filter(i => !i.isPieces && getManufacturer(i) === mfg)
-                  .filter(statusFilterFn)
-                  .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || (i.category||"").toLowerCase().includes(searchLower))
-              ).sort((a, b) => getRVal(a.category) - getRVal(b.category));
-              return { mfg, items };
-            }).filter(g => g.items.length > 0);
-
-            const allMfgItems = mfgGroups.map(g => g.items).flat();
-            const visibleMfgItems = activeMfg === 'all' ? allMfgItems : (mfgGroups.find(g => g.mfg === activeMfg)?.items || []);
-
-            const renderMatCard = (item) => {
-              const qty = getQty(item.id);
-              const status = stockStatus(qty);
-              const sc = stockColors[status];
-              const borderColor = sc.bar;
-              const displayQty = isFoam(item.id) ? qty.toFixed(2) : qty;
-              const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
-              const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
-              return (
-                <div key={item.id} style={{
-                  background: '#fff', borderRadius: 6, padding: '6px 8px',
-                  border: '1px solid #e2e8f0', borderLeftColor: borderColor, borderLeftWidth: 3,
-                  display: 'flex', flexDirection: 'column', justifyContent: 'space-between',
-                  minHeight: 64, boxShadow: '0 1px 2px rgba(0,0,0,0.04)',
-                }}>
-                  <span style={{ fontSize: 9, color: '#94a3b8', fontWeight: 600, letterSpacing: '0.04em', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.category}</span>
-                  <span style={{ fontSize: 11, color: '#1e293b', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', lineHeight: 1.2 }}>{item.name}</span>
-                  <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginTop: 2 }}>
-                    <div>
-                      <span style={{ fontSize: 16, fontWeight: 800, color: sc.text, lineHeight: 1 }}>{displayQty} <span style={{ fontSize: 9, fontWeight: 500, color: '#94a3b8' }}>{item.unit}</span></span>
-                      {item.cost > 0 && qty > 0 && <div style={{ fontSize: 9, fontWeight: 600, color: '#15803d', marginTop: 1 }}>${(item.cost * qty).toFixed(2)} val</div>}
-                    </div>
-                    {pcsItem && pcsQty > 0 ? <span style={{ fontSize: 9, fontWeight: 700, color: '#6366f1', background: '#ede9fe', borderRadius: 4, padding: '1px 4px' }}>{pcsQty}pc</span> : null}
-                    <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
-                  </div>
-                </div>
-              );
-            };
+            if (!allVisible.length) {
+              return <div style={{ flex: 1, display: "grid", placeItems: "center", color: "#94a3b8", fontSize: 14, background: "#f8fafc" }}>No materials match those filters.</div>;
+            }
 
             return (
-              <>
-                <div style={{ flexShrink: 0, display: 'flex', gap: 6, padding: '6px 10px', overflowX: 'auto', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                  <button onClick={() => setActiveMfg('all')} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeMfg === 'all' ? '#2563eb' : '#fff', color: activeMfg === 'all' ? '#fff' : '#64748b', border: '1px solid ' + (activeMfg === 'all' ? '#2563eb' : '#e2e8f0') }}>All ({allMfgItems.length})</button>
-                  {mfgGroups.map(({ mfg, items: gItems }) => (
-                    <button key={mfg} onClick={() => setActiveMfg(mfg)} style={{ padding: '3px 10px', borderRadius: 99, fontSize: 10, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'inherit', background: activeMfg === mfg ? '#2563eb' : '#fff', color: activeMfg === mfg ? '#fff' : '#64748b', border: '1px solid ' + (activeMfg === mfg ? '#2563eb' : '#e2e8f0') }}>
-                      {mfg} ({gItems.length})
-                    </button>
-                  ))}
-                </div>
-                <div style={{ flex: 1, display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gridAutoRows: 'minmax(64px, auto)', gap: 4, padding: '6px 8px', overflowY: 'auto', alignContent: 'start' }}>
-                  {visibleMfgItems.length === 0
-                    ? <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '48px 16px', color: '#94a3b8', fontSize: 13 }}>No items match your filters</div>
-                    : visibleMfgItems.map(item => renderMatCard(item))}
-                </div>
-              </>
+              <div style={{ flex: 1, overflowY: "auto", background: "#f8fafc", padding: "12px", display: "flex", flexDirection: "column", gap: 14 }}>
+                {groups.map(({ group, items }) => (
+                  <section key={group} style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, overflow: "hidden", boxShadow: "0 10px 30px rgba(15,23,42,0.05)" }}>
+                    <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", background: "linear-gradient(180deg,#ffffff,#f8fafc)", borderBottom: "1px solid #edf2f7" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 99, background: group === "Foam" ? "#2563eb" : group === "Blown" ? "#16a34a" : group === "Batts" ? "#7c3aed" : group === "Caulk & Tubes" ? "#f59e0b" : "#64748b", boxShadow: "0 0 0 4px rgba(37,99,235,0.08)" }} />
+                        <span style={{ fontSize: 13, fontWeight: 900, color: "#0f172a", letterSpacing: "-0.2px" }}>{group}</span>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 800, color: "#64748b", background: "#f1f5f9", borderRadius: 999, padding: "3px 8px" }}>{items.length} SKU{items.length !== 1 ? "s" : ""}</span>
+                    </div>
+                    <div>
+                      {items.map((item, idx) => {
+                        const qty = getQty(item.id);
+                        const status = stockStatus(qty);
+                        const sc = stockColors[status];
+                        const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
+                        const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
+                        return (
+                          <div key={item.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 12, alignItems: "center", padding: "13px 14px", borderBottom: idx < items.length - 1 ? "1px solid #f1f5f9" : "none", background: status === "out" ? "#fffafa" : "#fff" }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+                                <div style={{ fontSize: 15, fontWeight: 850, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.25px" }}>{item.name}</div>
+                                <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 900, color: sc.badgeColor, background: sc.badgeBg, borderRadius: 999, padding: "3px 7px", letterSpacing: "0.04em" }}>{sc.label || "OK"}</span>
+                              </div>
+                              <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 650 }}>{item.category}</span>
+                                {item.cost > 0 && qty > 0 && <span style={{ fontSize: 11, color: "#15803d", fontWeight: 800 }}>${(item.cost * qty).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>}
+                                {pcsItem && pcsQty > 0 && <span style={{ fontSize: 11, color: "#4f46e5", fontWeight: 800, background: "#eef2ff", borderRadius: 999, padding: "2px 7px" }}>{pcsQty} loose pcs</span>}
+                              </div>
+                            </div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                              <div style={{ textAlign: "right", minWidth: 74 }}>
+                                <div style={{ fontSize: 26, fontWeight: 950, color: sc.text, lineHeight: 0.95, letterSpacing: "-1px" }}>{formatQty(item, qty)}</div>
+                                <div style={{ marginTop: 4, fontSize: 11, color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" }}>{formatSubQty(item, qty)}</div>
+                              </div>
+                              <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
             );
           };
 
@@ -8622,204 +8592,61 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
               {/* ── Materials tab content ── */}
               {invTab === "materials" && (
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
-                  <div style={{ flexShrink: 0, padding: "8px 10px", borderBottom: "1px solid " + lk.headerBorder, background: "#f8fafc", display: "flex", gap: 6, overflowX: "auto" }}>
-                    {[
-                      { id: "current", label: "Current" },
-                      { id: "ledger", label: "Ledger Mock" },
-                      { id: "shelf", label: "Shelf Mock" },
-                      { id: "table", label: "Table Mock" },
-                    ].map(opt => (
-                      <button
-                        key={opt.id}
-                        onClick={() => setInventoryUiMock(opt.id)}
-                        style={{
-                          padding: "5px 10px",
-                          borderRadius: 999,
-                          border: "1px solid " + (activeInventoryMock === opt.id ? "#2563eb" : "#e2e8f0"),
-                          background: activeInventoryMock === opt.id ? "#2563eb" : "#ffffff",
-                          color: activeInventoryMock === opt.id ? "#ffffff" : "#64748b",
-                          cursor: "pointer",
-                          fontFamily: "inherit",
-                          fontSize: 11,
-                          fontWeight: 700,
-                          whiteSpace: "nowrap",
-                        }}
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "#f8fafc" }}>
+                  <div style={{ flexShrink: 0, padding: "10px 12px", display: "flex", alignItems: "center", gap: 8, borderBottom: "1px solid #e2e8f0", background: "rgba(255,255,255,0.92)", overflowX: "auto" }}>
+                    <button onClick={() => setInvStatusFilter("all")} style={{
+                      padding: "7px 12px", borderRadius: 999, fontSize: 12, fontWeight: invStatusFilter === "all" ? 900 : 750,
+                      border: "1px solid " + (invStatusFilter === "all" ? "#2563eb" : "#e2e8f0"),
+                      background: invStatusFilter === "all" ? "#2563eb" : "#ffffff",
+                      color: invStatusFilter === "all" ? "#ffffff" : "#475569",
+                      cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                      boxShadow: invStatusFilter === "all" ? "0 8px 18px rgba(37,99,235,0.18)" : "0 1px 2px rgba(15,23,42,0.04)",
+                    }}>All ({totalSKUs})</button>
+                    <StatFilterBtn id="ok" label="In Stock" count={inStockItems.length} color="#16a34a" activeBg="#f0fdf4" activeBorder="#bbf7d0" />
+                    <StatFilterBtn id="low" label="Low" count={lowItems.length} color="#d97706" activeBg="#fffbeb" activeBorder="#fde68a" />
+                    <StatFilterBtn id="out" label="Out" count={outItems.length} color="#dc2626" activeBg="#fef2f2" activeBorder="#fecaca" />
+                    <div style={{ flex: 1 }} />
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      {(() => {
+                        const totalVal = INVENTORY_ITEMS.reduce((sum, item) => {
+                          if (!item.cost || item.isPieces) return sum;
+                          return sum + (item.cost || 0) * ((inventory || []).find(r => r.itemId === item.id)?.qty || 0);
+                        }, 0);
+                        return <span style={{ fontSize: 11, fontWeight: 850, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 999, padding: "4px 9px", whiteSpace: "nowrap" }}>${totalVal.toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>;
+                      })()}
+                      <span style={{ fontSize: 10, color: "#22c55e", fontWeight: 900, letterSpacing: 0.5 }}>● LIVE</span>
+                    </div>
                   </div>
 
-                  {activeInventoryMock !== "current" ? (
-                    <div style={{ flex: 1, overflowY: "auto", padding: 12, background: "#f8fafc" }}>
-                      <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, marginBottom: 12 }}>
-                        <div style={{ fontSize: 12, fontWeight: 800, color: "#2563eb", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
-                          {activeInventoryMock === "ledger" ? "Ledger mock" : activeInventoryMock === "shelf" ? "Shelf mock" : "Table mock"}
-                        </div>
-                        <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
-                          Visual direction only. Live inventory editing stays untouched until we pick a winner.
-                        </div>
+                  <div style={{ flexShrink: 0, padding: "10px 12px", background: "#ffffff", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8 }}>
+                    <input
+                      type="text"
+                      placeholder="Search materials…"
+                      value={invSearch}
+                      onChange={e => setInvSearch(e.target.value)}
+                      style={{ flex: 1, padding: "10px 12px", border: "1px solid #dbe3ef", borderRadius: 12, fontSize: 14, fontFamily: "inherit", background: "#f8fafc", color: "#0f172a", outline: "none", fontWeight: 650 }}
+                    />
+                    {invSearch && (
+                      <button onClick={() => setInvSearch("")} style={{ background: "#f1f5f9", border: "1px solid #e2e8f0", cursor: "pointer", color: "#64748b", fontSize: 18, lineHeight: 1, width: 36, height: 36, borderRadius: 10, fontFamily: "inherit" }}>×</button>
+                    )}
+                  </div>
+
+                  <MaterialsGrid inventory={inventory} onUpdateInventory={onUpdateInventory} invStatusFilter={invStatusFilter} stockStatus={stockStatus} stockColors={stockColors} isFoam={isFoam} bblToGals={bblToGals} galsToBbl={galsToBbl} sortAllItems={sortAllItems} statusFilterFn={statusFilterFn} searchLower={searchLower} />
+
+                  <div style={{ flexShrink: 0, borderTop: "1px solid #e2e8f0", background: "#fff" }}>
+                    <button
+                      onClick={() => setShowReconcile(r => !r)}
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "12px 16px", borderBottom: showReconcile ? "1px solid #e2e8f0" : "none" }}
+                    >
+                      <span style={{ fontSize: 13, fontWeight: 800, color: "#1e293b" }}>🚛 Today's Truck Reconciliation</span>
+                      <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: "auto" }}>{showReconcile ? "▲ Hide" : "▼ Show"}</span>
+                    </button>
+                    {showReconcile && (
+                      <div style={{ padding: "12px 16px", maxHeight: 320, overflowY: "auto" }}>
+                        <TruckReconcileView trucks={trucks} loadLog={loadLog} returnLog={returnLog} jobs={jobs} updates={updates} truckInventory={truckInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} />
                       </div>
-
-                      {activeInventoryMock === "ledger" && (
-                        mockLedgerItems.length ? (
-                        <div style={{ display: "grid", gap: 8 }}>
-                          {mockLedgerItems.map(item => {
-                            const qty = getQty(item.id);
-                            const sc = stockColors[stockStatus(qty)];
-                            return (
-                              <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto", alignItems: "center", gap: 10, background: "#fff", border: "1px solid #e2e8f0", borderLeft: `4px solid ${sc.bar}`, borderRadius: 12, padding: "10px 12px" }}>
-                                <div>
-                                  <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{item.name}</div>
-                                  <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>{item.category} • {item.unit}</div>
-                                </div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                                  <button style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #dbeafe", background: "#eff6ff", color: "#2563eb", fontWeight: 800 }}>−</button>
-                                  <div style={{ minWidth: 68, textAlign: "center" }}>
-                                    <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a", lineHeight: 1 }}>{isFoam(item.id) ? qty.toFixed(2) : qty}</div>
-                                    <div style={{ fontSize: 10, color: sc.badgeColor, fontWeight: 700 }}>{sc.label || "IN STOCK"}</div>
-                                  </div>
-                                  <button style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #dbeafe", background: "#eff6ff", color: "#2563eb", fontWeight: 800 }}>+</button>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        ) : (
-                          <div style={{ background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 14, padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>
-                            No materials match the current filters for this mock.
-                          </div>
-                        )
-                      )}
-
-                      {activeInventoryMock === "shelf" && (
-                        mockShelfCategories.length ? (
-                        <div style={{ display: "grid", gap: 14 }}>
-                          {mockShelfCategories.map(({ cat, items }) => {
-                            return (
-                              <div key={cat} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 12 }}>
-                                <div style={{ fontSize: 12, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{cat}</div>
-                                <div style={{ display: "grid", gap: 8 }}>
-                                  {items.map(item => {
-                                    const qty = getQty(item.id);
-                                    return (
-                                      <div key={item.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, alignItems: "center", padding: "8px 10px", background: "#f8fafc", borderRadius: 10 }}>
-                                        <div style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{item.name}</div>
-                                        <div style={{ fontSize: 18, fontWeight: 800, color: "#0f172a", minWidth: 54, textAlign: "right" }}>{isFoam(item.id) ? qty.toFixed(2) : qty}</div>
-                                        <div style={{ fontSize: 11, color: "#64748b" }}>{item.unit}</div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                        ) : (
-                          <div style={{ background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 14, padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>
-                            No materials match the current filters for this mock.
-                          </div>
-                        )
-                      )}
-
-                      {activeInventoryMock === "table" && (
-                        mockTableItems.length ? (
-                        <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, overflow: "auto" }}>
-                          <div style={{ minWidth: 640 }}>
-                            <div style={{ display: "grid", gridTemplateColumns: "2.4fr .8fr .7fr 1fr", padding: "10px 12px", background: "#eff6ff", borderBottom: "1px solid #dbeafe", fontSize: 11, fontWeight: 800, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: 0.4 }}>
-                              <div>Item</div><div>Qty</div><div>Unit</div><div>Adjust</div>
-                            </div>
-                            {mockTableItems.map((item, idx) => {
-                              const qty = getQty(item.id);
-                              return (
-                                <div key={item.id} style={{ display: "grid", gridTemplateColumns: "2.4fr .8fr .7fr 1fr", padding: "10px 12px", borderBottom: "1px solid #eef2f7", background: idx % 2 ? "#fcfdff" : "#fff", alignItems: "center" }}>
-                                  <div>
-                                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{item.name}</div>
-                                    <div style={{ fontSize: 11, color: "#64748b" }}>{item.category}</div>
-                                  </div>
-                                  <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>{isFoam(item.id) ? qty.toFixed(2) : qty}</div>
-                                  <div style={{ fontSize: 12, color: "#64748b" }}>{item.unit}</div>
-                                  <div style={{ display: "flex", gap: 6 }}>
-                                    <button style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #dbeafe", background: "#eff6ff", color: "#2563eb", fontWeight: 800 }}>−</button>
-                                    <button style={{ padding: "4px 8px", borderRadius: 8, border: "1px solid #dbeafe", background: "#eff6ff", color: "#2563eb", fontWeight: 800 }}>+</button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                        ) : (
-                          <div style={{ background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 14, padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>
-                            No materials match the current filters for this mock.
-                          </div>
-                        )
-                      )}
-                    </div>
-                  ) : (
-                    <>
-                      <div style={{ flexShrink: 0, padding: "8px 12px", display: "flex", alignItems: "center", gap: 6, borderBottom: "1px solid " + lk.headerBorder, background: lk.headerBg, overflowX: "auto" }}>
-                        <button onClick={() => setInvStatusFilter("all")} style={{
-                          padding: "4px 10px", borderRadius: 99, fontSize: 11, fontWeight: invStatusFilter === "all" ? 800 : 600,
-                          border: "1px solid " + (invStatusFilter === "all" ? "#2563eb" : "#e2e8f0"),
-                          background: invStatusFilter === "all" ? "#2563eb" : "#ffffff",
-                          color: invStatusFilter === "all" ? "#ffffff" : "#64748b",
-                          cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                          boxShadow: invStatusFilter === "all" ? "0 1px 3px rgba(37,99,235,0.2)" : "none",
-                          transition: "all 0.15s",
-                        }}>All SKUs ({totalSKUs})</button>
-                        <StatFilterBtn id="ok" label="In Stock" count={inStockItems.length} color="#16a34a" activeBg="#f0fdf4" activeBorder="#bbf7d0" />
-                        <StatFilterBtn id="low" label="Low Stock" count={lowItems.length} color="#d97706" activeBg="#fffbeb" activeBorder="#fde68a" />
-                        <StatFilterBtn id="out" label="Out of Stock" count={outItems.length} color="#dc2626" activeBg="#fef2f2" activeBorder="#fecaca" />
-                        <div style={{ flex: 1 }} />
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                          {(() => {
-                            const totalVal = INVENTORY_ITEMS.reduce((sum, item) => {
-                              if (!item.cost || item.isPieces) return sum;
-                              return sum + (item.cost || 0) * ((inventory || []).find(r => r.itemId === item.id)?.qty || 0);
-                            }, 0);
-                            return (
-                              <span style={{ fontSize: 10, fontWeight: 700, color: "#15803d", background: "#dcfce7", border: "1px solid #86efac", borderRadius: 99, padding: "2px 8px" }}>
-                                ${totalVal.toLocaleString("en-US", { maximumFractionDigits: 0 })} inv. value
-                              </span>
-                            );
-                          })()}
-                          <span style={{ fontSize: 9, color: "#22c55e", fontWeight: 700, letterSpacing: 0.5 }}>● LIVE</span>
-                          <span style={{ fontSize: 10, color: lk.textMuted, fontWeight: 500 }}>Updated {lastUpdatedStr}</span>
-                        </div>
-                      </div>
-
-                      <div style={{ flexShrink: 0, padding: "6px 12px", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", alignItems: "center", gap: 8 }}>
-                        <input
-                          type="text"
-                          placeholder="Search inventory…"
-                          value={invSearch}
-                          onChange={e => setInvSearch(e.target.value)}
-                          style={{ flex: 1, padding: "5px 10px", border: "1px solid " + lk.inputBorder, borderRadius: 8, fontSize: 12, fontFamily: "inherit", background: lk.inputBg, color: lk.text, outline: "none" }}
-                        />
-                        {invSearch && (
-                          <button onClick={() => setInvSearch("")} style={{ background: "none", border: "none", cursor: "pointer", color: lk.textMuted, fontSize: 16, lineHeight: 1, padding: "2px 4px", fontFamily: "inherit" }}>×</button>
-                        )}
-                      </div>
-
-                      <MaterialsGrid inventory={inventory} onUpdateInventory={onUpdateInventory} invStatusFilter={invStatusFilter} invSearch={invSearch} stockStatus={stockStatus} stockColors={stockColors} isFoam={isFoam} bblToGals={bblToGals} galsToBbl={galsToBbl} sortAllItems={sortAllItems} statusFilterFn={statusFilterFn} searchLower={searchLower} />
-
-                      <div style={{ flexShrink: 0, borderTop: "1px solid #e2e8f0", background: "#fff" }}>
-                        <button
-                          onClick={() => setShowReconcile(r => !r)}
-                          style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", background: "none", border: "none", cursor: "pointer", fontFamily: "inherit", padding: "12px 16px", borderBottom: showReconcile ? "1px solid #e2e8f0" : "none" }}
-                        >
-                          <span style={{ fontSize: 13, fontWeight: 700, color: "#1e293b" }}>🚛 Today's Truck Reconciliation</span>
-                          <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: "auto" }}>{showReconcile ? "▲ Hide" : "▼ Show"}</span>
-                        </button>
-                        {showReconcile && (
-                          <div style={{ padding: "12px 16px", maxHeight: 320, overflowY: "auto" }}>
-                            <TruckReconcileView trucks={trucks} loadLog={loadLog} returnLog={returnLog} jobs={jobs} updates={updates} truckInventory={truckInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} />
-                          </div>
-                        )}
-                      </div>
-                    </>
-                  )}
+                    )}
+                  </div>
                 </div>
               )}
             </div>
