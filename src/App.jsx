@@ -1305,15 +1305,6 @@ function AdminLogin({ onLogin, onBack }) {
 }
 
 function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
-  const visibleTrucks = (trucks || [])
-    .filter(tr => tr.department !== "energySeal" || truckDisplayName(tr).toLowerCase() === "energy seal van")
-    .sort((a, b) => {
-      const aIsVan = truckDisplayName(a).toLowerCase() === "energy seal van";
-      const bIsVan = truckDisplayName(b).toLowerCase() === "energy seal van";
-      if (aIsVan !== bIsVan) return aIsVan ? 1 : -1;
-      return (a.order ?? 0) - (b.order ?? 0);
-    })
-    .filter((tr, idx, arr) => arr.findIndex(other => truckDisplayName(other).toLowerCase() === truckDisplayName(tr).toLowerCase()) === idx);
   const [members, setMembers] = useState(rosterMembers || []);
   const [loadingMembers, setLoadingMembers] = useState(!(rosterMembers || []).length);
   const [step, setStep] = useState("pick"); // pick | pin | setup | confirm | email
@@ -1324,6 +1315,19 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
   const [checking, setChecking] = useState(false);
   const [crewSearch, setCrewSearch] = useState("");
   const [selectedTruckId, setSelectedTruckId] = useState("");
+  const recommendedTruckId = selectedMember?.truckId || "";
+  const visibleTrucks = (trucks || [])
+    .filter(tr => tr.department !== "energySeal" || truckDisplayName(tr).toLowerCase() === "energy seal van")
+    .sort((a, b) => {
+      const aIsRecommended = recommendedTruckId && a.id === recommendedTruckId;
+      const bIsRecommended = recommendedTruckId && b.id === recommendedTruckId;
+      if (aIsRecommended !== bIsRecommended) return aIsRecommended ? -1 : 1;
+      const aIsVan = truckDisplayName(a).toLowerCase() === "energy seal van";
+      const bIsVan = truckDisplayName(b).toLowerCase() === "energy seal van";
+      if (aIsVan !== bIsVan) return aIsVan ? 1 : -1;
+      return (a.order ?? 0) - (b.order ?? 0);
+    })
+    .filter((tr, idx, arr) => arr.findIndex(other => truckDisplayName(other).toLowerCase() === truckDisplayName(tr).toLowerCase()) === idx);
 
   useEffect(() => {
     if ((rosterMembers || []).length) {
@@ -1409,7 +1413,6 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
   const displayPin = step === "setup" ? setupPin : pin;
   const title = step === "pick" ? null : step === "setup" ? "Create your PIN" : step === "confirm" ? "Confirm your PIN" : step === "truck" ? "Select your truck" : `Hi, ${selectedMember?.name?.split(" ")[0]} 👋`;
   const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "truck" ? "Choose the truck you’re using today" : "Enter your PIN";
-  const recommendedTruckId = selectedMember?.truckId || "";
   const selectedTruck = visibleTrucks.find(tr => tr.id === selectedTruckId) || null;
   const truckLabel = (tr) => truckDisplayName(tr);
   const truckCrewLabel = (tr) => tr?.members && normalizeEnergySealLabel(tr.members) !== truckLabel(tr) ? normalizeEnergySealLabel(tr.members) : "Tap to use this truck today";
