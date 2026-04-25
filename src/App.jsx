@@ -459,7 +459,7 @@ const TICKET_STATUSES = [
   { value: "in_repair", label: "In Repair", color: "#6d28d9", bg: "#ede9fe" },
   { value: "resolved", label: "Resolved", color: "#15803d", bg: "#dcfce7" },
 ];
-const OFFICE_PROFILES = ["Skip", "Jordan", "Johnny", "Duck", "Carolyn"];
+const OFFICE_PROFILES = ["Skip", "Jordan", "Johnny", "Carolyn"];
 const MECHANIC_PROFILES = ["Turrell", "Nick"];
 
 const todayCST = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
