@@ -2062,6 +2062,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const [eta, setEta] = useState("");
   const [notes, setNotes] = useState("");
   const [showTicketForm, setShowTicketForm] = useState(false);
+  const [showResolvedCrewTickets, setShowResolvedCrewTickets] = useState(false);
   const [showChecklistModal, setShowChecklistModal] = useState(false);
   const [selectedChecklistType, setSelectedChecklistType] = useState(null);
   const [checklistChecks, setChecklistChecks] = useState({});
@@ -2220,6 +2221,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     boxShadow: active ? "0 2px 8px rgba(26,86,219,0.25)" : "none",
   });
   const openTicketCount = myTickets.filter((tk) => tk.status !== "resolved").length;
+  const activeCrewTickets = myTickets.filter((tk) => tk.status !== "resolved");
+  const resolvedCrewTickets = myTickets.filter((tk) => tk.status === "resolved");
   const currentTruckParity = truckInventoryParity;
   const checklistStatusMeta = checklistStatusToday?.status === "complete"
     ? { sub: "Complete today", badge: "✓" }
@@ -3172,26 +3175,55 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         {crewView === "tickets" && (
           <>
             <SectionHeader title="My Tickets" right={<Button onClick={() => setShowTicketForm(true)}>+ Submit Ticket</Button>} />
-            {myTickets.length === 0 ? <EmptyState text="No tickets submitted yet." sub="Tap '+ Submit Ticket' to report an issue, request supplies, or request time off." /> : myTickets.map((ticket) => {
-              const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
-              const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
-              const typeLabel = ticket.ticketType === "inventory" ? "Inventory" : ticket.ticketType === "timeoff" ? "Time Off" : "Equipment";
-              return (
-                <Card key={ticket.id} style={{ border: ticket.status === "open" && !ticket.adminNote ? "3px solid #ef4444" : "1px solid #e5e7eb" }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
-                    <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
-                      <span style={{ fontSize: "11px", fontWeight: 600, color: t.textSecondary }}>{typeLabel}</span>
-                      <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
-                      <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
+            {(() => {
+              const renderCrewTicket = (ticket, resolved = false) => {
+                const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
+                const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
+                const typeLabel = ticket.ticketType === "inventory" ? "Inventory" : ticket.ticketType === "timeoff" ? "Time Off" : "Equipment";
+                return (
+                  <Card key={ticket.id} style={{ border: ticket.status === "open" && !ticket.adminNote ? "3px solid #ef4444" : "1px solid #e5e7eb", opacity: resolved ? 0.68 : 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px" }}>
+                      <div style={{ display: "flex", gap: "5px", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 600, color: t.textSecondary }}>{typeLabel}</span>
+                        <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
+                        <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
+                      </div>
+                      <span style={{ fontSize: "11.5px", color: t.textMuted, flexShrink: 0 }}>{dateStr(ticket.timestamp)}</span>
                     </div>
-                    <span style={{ fontSize: "11.5px", color: t.textMuted, flexShrink: 0 }}>{dateStr(ticket.timestamp)}</span>
-                  </div>
-                  <div style={{ fontSize: "14px", color: t.text, lineHeight: 1.5 }}>{ticket.description}</div>
-                  <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "6px" }}>Submitted by {ticket.submittedBy}</div>
-                  {ticket.adminNote && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginTop: "10px", borderLeft: "3px solid " + t.accent }}>Office: {ticket.adminNote}</div>}
-                </Card>
+                    <div style={{ fontSize: "14px", color: t.text, lineHeight: 1.5 }}>{ticket.description}</div>
+                    <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "6px" }}>Submitted by {ticket.submittedBy}</div>
+                    {ticket.adminNote && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginTop: "10px", borderLeft: "3px solid " + t.accent }}>Office: {ticket.adminNote}</div>}
+                  </Card>
+                );
+              };
+
+              if (myTickets.length === 0) return <EmptyState text="No tickets submitted yet." sub="Tap '+ Submit Ticket' to report an issue, request supplies, or request time off." />;
+
+              return (
+                <>
+                  {activeCrewTickets.length === 0
+                    ? <EmptyState text="No active tickets." sub={resolvedCrewTickets.length ? "Resolved tickets are tucked below." : "Submit a ticket if you need help."} />
+                    : activeCrewTickets.map((ticket) => renderCrewTicket(ticket))}
+
+                  {resolvedCrewTickets.length > 0 && (
+                    <div style={{ marginTop: "16px", border: "1px solid " + t.border, borderRadius: "14px", overflow: "hidden", background: "rgba(255,255,255,0.76)", boxShadow: "0 10px 28px rgba(15,23,42,0.06)" }}>
+                      <button onClick={() => setShowResolvedCrewTickets((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "13px 14px", background: t.bg, border: "none", cursor: "pointer", fontFamily: "inherit", color: t.text }}>
+                        <span style={{ fontSize: "13px", fontWeight: 900 }}>Resolved tickets</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8, color: t.textMuted, fontSize: "12px", fontWeight: 800 }}>
+                          {resolvedCrewTickets.length} closed
+                          <span>{showResolvedCrewTickets ? "▲" : "▼"}</span>
+                        </span>
+                      </button>
+                      {showResolvedCrewTickets && (
+                        <div style={{ padding: "10px 10px 2px" }}>
+                          {resolvedCrewTickets.map((ticket) => renderCrewTicket(ticket, true))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
               );
-            })}
+            })()}
           </>
         )}
       </div>
