@@ -7142,11 +7142,18 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     return new Date(b.timestamp) - new Date(a.timestamp);
   });
   const orderSort = (a, b) => (a.order ?? 999) - (b.order ?? 999) || naturalSort(a, b);
-  const sortedTrucks = [...trucks]
-    .filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : tr.department !== "energySeal")
-    .sort(orderSort)
-    .filter((tr, idx, arr) => scheduleView !== "energySeal" || arr.findIndex(other => truckDisplayName(other).toLowerCase() === truckDisplayName(tr).toLowerCase()) === idx)
-    .map(tr => scheduleView === "energySeal" ? { ...tr, name: normalizeEnergySealLabel(tr.name), vehicleName: normalizeEnergySealLabel(tr.vehicleName), members: normalizeEnergySealLabel(tr.members) } : tr);
+  const sortedTrucks = scheduleView === "energySeal"
+    ? [...trucks]
+      .filter(tr => tr.department === "energySeal")
+      .sort((a, b) => {
+        const aIsVan = truckDisplayName(a).toLowerCase() === "energy seal van";
+        const bIsVan = truckDisplayName(b).toLowerCase() === "energy seal van";
+        if (aIsVan !== bIsVan) return aIsVan ? -1 : 1;
+        return orderSort(a, b);
+      })
+      .slice(0, 1)
+      .map(tr => ({ ...tr, name: "Energy Seal Van", vehicleName: "Energy Seal Van", members: normalizeEnergySealLabel(tr.members) }))
+    : [...trucks].filter(tr => tr.department !== "energySeal").sort(orderSort);
   const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
