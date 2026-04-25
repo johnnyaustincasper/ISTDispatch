@@ -793,11 +793,12 @@ const kbStyles = `
     .office-schedule-stats > div > div:last-child { font-size: 7.5px !important; letter-spacing: 0.04em !important; white-space: nowrap !important; overflow: hidden !important; text-overflow: clip !important; overflow-wrap: normal !important; }
     .office-dept-toggle { width: 100% !important; display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; margin-bottom: 12px !important; }
     .office-dept-toggle button { padding: 10px 8px !important; font-size: 12px !important; }
-    .office-schedule-toolbar { align-items: stretch !important; padding: 12px !important; border-radius: 20px !important; margin-bottom: 12px !important; }
+    .office-schedule-toolbar { align-items: stretch !important; padding: 16px !important; border-radius: 24px !important; margin: 0 0 14px !important; gap: 14px !important; }
     .office-schedule-toolbar > div:first-child { width: 100% !important; }
-    .office-schedule-actions { width: 100% !important; display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
-    .office-schedule-actions button { width: 100% !important; justify-content: center !important; padding: 10px 8px !important; min-height: 42px !important; }
-    .office-schedule-actions button:last-child { grid-column: 1 / -1 !important; }
+    .office-schedule-toolbar-title { display: flex !important; align-items: flex-end !important; justify-content: space-between !important; gap: 10px !important; }
+    .office-schedule-actions { width: 100% !important; display: grid !important; grid-template-columns: 1fr 1fr !important; gap: 10px !important; align-items: stretch !important; }
+    .office-schedule-actions button { width: 100% !important; justify-content: center !important; padding: 11px 8px !important; min-height: 44px !important; border-radius: 16px !important; }
+    .office-schedule-actions button:last-child { grid-column: 1 / -1 !important; min-height: 48px !important; }
     .office-unassigned-alert { align-items: flex-start !important; padding: 12px !important; border-radius: 18px !important; }
     .office-crew-group { padding: 10px !important; border-radius: 22px !important; margin-bottom: 12px !important; }
     .office-crew-group-header { align-items: center !important; margin-bottom: 8px !important; padding: 2px 2px 9px !important; }
@@ -7400,12 +7401,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
 
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 18, padding: "14px 16px", borderRadius: 22, background: "rgba(255,255,255,0.74)", border: "1px solid rgba(148,163,184,0.24)", boxShadow: "0 14px 40px rgba(15,23,42,0.08)", WebkitBackdropFilter: "blur(16px)", backdropFilter: "blur(16px)" }}>
-              <div>
-                <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: t.textMuted }}>Dispatch board</div>
-                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: "-0.7px", color: t.text }}>{scheduleView === "energySeal" ? "Energy Seal Schedule" : "Insulation Schedule"}</div>
+            <div className="office-schedule-toolbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 18, padding: "14px 16px", borderRadius: 22, background: "rgba(255,255,255,0.74)", border: "1px solid rgba(148,163,184,0.24)", boxShadow: "0 14px 40px rgba(15,23,42,0.08)", WebkitBackdropFilter: "blur(16px)", backdropFilter: "blur(16px)" }}>
+              <div className="office-schedule-toolbar-title">
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: t.textMuted }}>Dispatch board</div>
+                  <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: "-0.7px", color: t.text }}>{scheduleView === "energySeal" ? "Energy Seal Schedule" : "Insulation Schedule"}</div>
+                </div>
               </div>
-              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+              <div className="office-schedule-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
                 <Button variant="secondary" onClick={() => setShowOnHold((p) => !p)} style={{ fontSize: 12, background: showOnHold ? "linear-gradient(135deg,#f59e0b,#92400e)" : "rgba(255,255,255,0.9)", color: showOnHold ? "#fff" : t.textSecondary, boxShadow: showOnHold ? "0 14px 30px rgba(245,158,11,0.24)" : "0 8px 20px rgba(15,23,42,0.05)" }}>⏸ On Hold {onHoldJobs.length > 0 ? `(${onHoldJobs.length})` : ""}</Button>
                 <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }} style={{ background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.28)" }}>+ Add Job</Button>
