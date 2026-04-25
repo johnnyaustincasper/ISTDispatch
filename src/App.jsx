@@ -7229,6 +7229,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
   return (
     <div className="office-app-shell" style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+      <style>{kbStyles}</style>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
       {/* Top header — premium wordmark + session */}
