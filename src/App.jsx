@@ -1387,10 +1387,28 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
   const displayPin = step === "setup" ? setupPin : pin;
   const title = step === "pick" ? null : step === "setup" ? "Create your PIN" : step === "confirm" ? "Confirm your PIN" : step === "truck" ? "Select your truck" : `Hi, ${selectedMember?.name?.split(" ")[0]} 👋`;
   const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "truck" ? "Choose the truck you’re using today" : "Enter your PIN";
+  const recommendedTruckId = selectedMember?.truckId || "";
+  const selectedTruck = visibleTrucks.find(tr => tr.id === selectedTruckId) || null;
+  const truckLabel = (tr) => tr?.vehicleName || tr?.name || tr?.members || "Truck";
+  const truckCrewLabel = (tr) => tr?.members && tr.members !== truckLabel(tr) ? tr.members : "Tap to use this truck today";
+  const truckTypeKey = (tr) => {
+    const haystack = [tr?.department, tr?.vehicleName, tr?.name, tr?.members, tr?.description, tr?.notes].filter(Boolean).join(" ").toLowerCase();
+    if (haystack.includes("foam")) return "foam";
+    if (haystack.includes("blow") || haystack.includes("blown") || haystack.includes("fiberglass") || haystack.includes("cellulose")) return "blow";
+    return "other";
+  };
+  const truckGroups = [
+    { key: "foam", title: "Foam Trucks", accent: "#2563eb" },
+    { key: "blow", title: "Blow Trucks", accent: "#0f766e" },
+    { key: "other", title: "Energy Seal / Other", accent: "#7c3aed" },
+  ].map(group => ({ ...group, trucks: visibleTrucks.filter(tr => truckTypeKey(tr) === group.key) })).filter(group => group.trucks.length);
 
   return (
     <AuthShell wide kiosk>
-        <button className="crew-login-back" onClick={onBack} style={{ background: "none", border: "none", color: t.textSecondary, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
+        <button className="crew-login-back" onClick={() => {
+          if (step === "truck") { setStep("pin"); setPin(""); setError(""); return; }
+          onBack();
+        }} style={{ background: "none", border: "none", color: t.textSecondary, fontSize: "13px", cursor: "pointer", marginBottom: "24px", padding: 0, fontFamily: "inherit" }}>← Back</button>
         {step === "pick" ? (
           <div className="crew-login-title" style={{ textAlign: "center", marginBottom: "24px" }}>
             <div style={{ fontSize: "28px", fontWeight: 950, color: t.text, letterSpacing: "-0.8px" }}>Who are you?</div>
@@ -1446,32 +1464,55 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
         {(step === "pin" || step === "setup" || step === "confirm" || step === "truck") && (
           <>
             {step === "truck" && (
-              <div style={{ marginBottom: 20 }}>
-                <label style={{ display: "block", fontSize: 12, fontWeight: 700, color: t.textSecondary, textTransform: "uppercase", letterSpacing: "0.7px", marginBottom: 8 }}>Select your truck</label>
-                <select
-                  value={selectedTruckId}
-                  onChange={e => setSelectedTruckId(e.target.value)}
-                  style={{ width: "100%", padding: "14px 16px", borderRadius: 12, border: "1px solid " + t.border, background: "rgba(255,255,255,0.92)", color: t.text, fontSize: 16, fontFamily: "inherit", boxSizing: "border-box", marginBottom: 10 }}
-                >
-                  <option value="" style={{ color: "#0f172a" }}>Select truck...</option>
-                  {visibleTrucks.map(tr => (
-                    <option key={tr.id} value={tr.id} style={{ color: "#0f172a" }}>{tr.members || tr.vehicleName || tr.name}</option>
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, fontWeight: 900, color: t.textSecondary, textTransform: "uppercase", letterSpacing: "0.8px" }}>Today's truck</div>
+                  {recommendedTruckId && <div style={{ fontSize: 11, fontWeight: 900, color: "#1d4ed8", background: "#dbeafe", border: "1px solid #bfdbfe", borderRadius: 999, padding: "5px 9px", whiteSpace: "nowrap" }}>Assigned truck highlighted</div>}
+                </div>
+
+                <div style={{ display: "grid", gap: 14 }}>
+                  {truckGroups.length === 0 ? (
+                    <div style={{ border: "1px dashed " + t.border, borderRadius: 18, padding: 18, textAlign: "center", color: t.textMuted, background: "rgba(255,255,255,0.72)", fontSize: 13, fontWeight: 700 }}>No trucks available. Ask the office to add one first.</div>
+                  ) : truckGroups.map(group => (
+                    <div key={group.key} style={{ background: "rgba(255,255,255,0.72)", border: "1px solid rgba(148,163,184,0.28)", borderRadius: 20, padding: 12, boxShadow: "0 12px 28px rgba(15,23,42,0.06)" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "0 2px 10px" }}>
+                        <span style={{ width: 8, height: 8, borderRadius: 99, background: group.accent, boxShadow: `0 0 0 4px ${group.accent}18` }} />
+                        <div style={{ color: t.text, fontSize: 14, fontWeight: 950, letterSpacing: "-0.2px" }}>{group.title}</div>
+                      </div>
+                      <div style={{ display: "grid", gap: 9 }}>
+                        {group.trucks.map(tr => {
+                          const active = selectedTruckId === tr.id;
+                          const recommended = recommendedTruckId === tr.id;
+                          return (
+                            <button
+                              key={tr.id}
+                              onClick={() => { setSelectedTruckId(tr.id); setError(""); }}
+                              type="button"
+                              aria-pressed={active}
+                              style={{ width: "100%", minHeight: 68, padding: "13px 14px", borderRadius: 16, border: "2px solid " + (active ? group.accent : recommended ? "#93c5fd" : "rgba(148,163,184,0.34)"), background: active ? `linear-gradient(135deg, ${group.accent}, #0f172a)` : recommended ? "linear-gradient(135deg,#eff6ff,#ffffff)" : "rgba(255,255,255,0.9)", color: active ? "#fff" : t.text, fontFamily: "inherit", cursor: "pointer", textAlign: "left", boxShadow: active ? `0 16px 30px ${group.accent}33` : "0 8px 20px rgba(15,23,42,0.05)", WebkitTapHighlightColor: "transparent" }}
+                            >
+                              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontSize: 16, fontWeight: 950, letterSpacing: "-0.35px", overflowWrap: "anywhere" }}>{truckLabel(tr)}</div>
+                                  <div style={{ marginTop: 3, fontSize: 12, fontWeight: 700, color: active ? "rgba(255,255,255,0.78)" : t.textMuted, overflowWrap: "anywhere" }}>{truckCrewLabel(tr)}</div>
+                                </div>
+                                <div style={{ flex: "0 0 auto", display: "flex", alignItems: "center", gap: 6 }}>
+                                  {recommended && <span style={{ fontSize: 10.5, fontWeight: 950, borderRadius: 999, padding: "5px 8px", background: active ? "rgba(255,255,255,0.18)" : "#dbeafe", color: active ? "#fff" : "#1d4ed8" }}>Assigned</span>}
+                                  <span style={{ width: 24, height: 24, borderRadius: 999, display: "inline-flex", alignItems: "center", justifyContent: "center", border: "2px solid " + (active ? "rgba(255,255,255,0.72)" : "rgba(148,163,184,0.45)"), background: active ? "rgba(255,255,255,0.16)" : "#fff", color: active ? "#fff" : "transparent", fontSize: 13, fontWeight: 950 }}>✓</span>
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   ))}
-                </select>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                  {visibleTrucks.map(tr => {
-                    const active = selectedTruckId === tr.id;
-                    return (
-                      <button
-                        key={tr.id}
-                        onClick={() => setSelectedTruckId(tr.id)}
-                        type="button"
-                        style={{ padding: "9px 13px", borderRadius: 999, border: "2px solid " + (active ? "#2563eb" : t.border), background: active ? "#2563eb" : "rgba(255,255,255,0.82)", color: active ? "#fff" : t.text, fontSize: 13, fontWeight: 700, fontFamily: "inherit", cursor: "pointer" }}
-                      >
-                        {tr.members || tr.vehicleName || tr.name}
-                      </button>
-                    );
-                  })}
+                </div>
+
+                <div style={{ marginTop: 14, borderRadius: 18, padding: 14, background: selectedTruck ? "linear-gradient(135deg,#ecfdf5,#eff6ff)" : "rgba(248,250,252,0.9)", border: "1px solid " + (selectedTruck ? "#bfdbfe" : t.border), boxShadow: "0 12px 24px rgba(15,23,42,0.05)" }}>
+                  <div style={{ fontSize: 11, fontWeight: 950, textTransform: "uppercase", letterSpacing: "0.8px", color: selectedTruck ? "#1d4ed8" : t.textMuted }}>Selected</div>
+                  <div style={{ marginTop: 5, fontSize: 18, fontWeight: 950, color: t.text, letterSpacing: "-0.4px" }}>{selectedTruck ? truckLabel(selectedTruck) : "Pick a truck to continue"}</div>
+                  <div style={{ marginTop: 3, fontSize: 12.5, fontWeight: 700, color: t.textMuted }}>{selectedTruck ? truckCrewLabel(selectedTruck) : "Your daily loadout and jobs will open under this truck."}</div>
                 </div>
               </div>
             )}
@@ -1515,7 +1556,6 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
                 >
                   Continue
                 </button>
-                <button onClick={() => { setStep("pin"); setPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
               </>
             ) : (
               <button onClick={() => { setStep("pick"); setPin(""); setSetupPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
