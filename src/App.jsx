@@ -662,7 +662,7 @@ const getInitials = (name) => {
 };
 
 function AvatarButton({ name, onClick, disabled, badge }) {
-  const color = nameToColor(name);
+  const color = "#2563eb";
   const initials = getInitials(name);
   return (
     <button
@@ -680,11 +680,11 @@ function AvatarButton({ name, onClick, disabled, badge }) {
     >
       <div style={{
         width: 64, height: 64, borderRadius: "20px",
-        background: `linear-gradient(135deg, ${color}, #0f172a)`,
+        background: "linear-gradient(135deg,#2563eb,#0f172a)",
         border: "1px solid rgba(255,255,255,0.75)",
         display: "flex", alignItems: "center", justifyContent: "center",
         fontSize: 22, fontWeight: 950, color: "#fff",
-        boxShadow: `0 14px 28px ${color}33, inset 0 1px 0 rgba(255,255,255,0.22)`,
+        boxShadow: "0 14px 28px rgba(37,99,235,0.28), inset 0 1px 0 rgba(255,255,255,0.22)",
         position: "relative",
         transition: "box-shadow 0.2s, transform 0.2s",
         textShadow: "0 1px 4px rgba(0,0,0,0.25)",
