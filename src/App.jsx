@@ -735,15 +735,18 @@ const kbStyles = `
   .kb-img { position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center; }
   .kb-overlay { position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%); }
   .kb-content { animation: authFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) both; }
-  .kb-back-btn { background:rgba(255,255,255,0.35)!important;border:1px solid rgba(255,255,255,0.4)!important;color:#0f172a!important;backdrop-filter:blur(8px); }
-  .kb-card { background:rgba(255,255,255,0.1)!important;-webkit-backdrop-filter:blur(16px)!important;backdrop-filter:blur(16px)!important;border:1px solid rgba(255,255,255,0.22)!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.15), 0 4px 24px rgba(0,0,0,0.35)!important;transition:background 0.2s,transform 0.2s!important; }
-  .kb-card:hover { background:rgba(255,255,255,0.18)!important;transform:translateY(-2px);border-color:rgba(255,255,255,0.35)!important; }
-  .kb-input { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.25)!important;color:#fff!important; }
+  .kb-back-btn { background:rgba(255,255,255,0.10)!important;border:1px solid rgba(255,255,255,0.20)!important;color:rgba(255,255,255,0.82)!important;backdrop-filter:blur(12px);border-radius:999px!important; }
+  .kb-panel { background:rgba(255,255,255,0.10)!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(255,255,255,0.22)!important;border-radius:22px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.16), 0 24px 70px rgba(0,0,0,0.34)!important; }
+  .kb-muted { color:rgba(255,255,255,0.66)!important; }
+  .kb-card { background:rgba(255,255,255,0.12)!important;-webkit-backdrop-filter:blur(18px)!important;backdrop-filter:blur(18px)!important;border:1px solid rgba(255,255,255,0.24)!important;border-radius:22px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,0.16), 0 18px 48px rgba(0,0,0,0.32)!important;transition:background 0.2s,transform 0.2s!important; }
+  .kb-card:hover { background:rgba(255,255,255,0.19)!important;transform:translateY(-2px);border-color:rgba(255,255,255,0.36)!important; }
+  .kb-input { background:rgba(255,255,255,0.12)!important;border:1px solid rgba(255,255,255,0.25)!important;color:#fff!important;border-radius:14px!important; }
   .kb-input::placeholder { color:rgba(255,255,255,0.4)!important; }
   .kb-input:focus { border-color:rgba(255,255,255,0.6)!important; }
   .tab-view-enter { animation: tabFadeIn 0.18s cubic-bezier(0.16,1,0.3,1) both; }
   .nav-tab-btn:active { transform: scale(0.94); }
-
+  .premium-surface { background:linear-gradient(180deg,rgba(255,255,255,0.92),rgba(248,251,255,0.78));border:1px solid rgba(148,163,184,0.24);border-radius:24px;box-shadow:0 18px 48px rgba(15,23,42,0.08);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px); }
+  .premium-pill { border-radius:999px;border:1px solid rgba(148,163,184,0.24);background:rgba(255,255,255,0.78);box-shadow:0 8px 22px rgba(15,23,42,0.06); }
   .crew-tab-btn:active { opacity: 0.75; transform: scale(0.96); }
   * { -webkit-tap-highlight-color: transparent; }
   .glass-card { background: rgba(255,255,255,0.07) !important; -webkit-backdrop-filter: blur(12px) !important; backdrop-filter: blur(12px) !important; border: 1px solid rgba(255,255,255,0.12) !important; }
@@ -2200,7 +2203,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   };
 
   return (
-    <div style={{ minHeight: "100dvh", background: t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
       {wrapUpToast && (
         <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 80px)", left: "50%", transform: "translateX(-50%)", background: "#15803d", color: "#fff", padding: "12px 24px", borderRadius: "99px", fontSize: "15px", fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap" }}>
           ✅ Job wrapped up!
@@ -6639,12 +6642,13 @@ function WeatherTab({ jobs, trucks, updates }) {
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16 }}>
+      <div className="premium-surface" style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 16, padding: "18px 20px" }}>
         <div>
-          <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: "#0f172a" }}>☁️ Weather — Job Sites</h2>
-          <div style={{ fontSize: 13, color: "#64748b", marginTop: 4 }}>{todayLabel}</div>
+          <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: t.textMuted }}>Jobsite forecast</div>
+          <h2 style={{ margin: "4px 0 0", fontSize: 26, fontWeight: 950, color: t.text, letterSpacing: "-0.8px" }}>☁️ Weather — Job Sites</h2>
+          <div style={{ fontSize: 13, color: t.textSecondary, marginTop: 4 }}>{todayLabel}</div>
         </div>
-        <button onClick={refreshAll} style={{ padding: "8px 14px", borderRadius: 8, background: "#f1f5f9", border: "1px solid #e2e8f0", color: "#475569", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>🔄 Refresh</button>
+        <Button variant="secondary" onClick={refreshAll} style={{ fontSize: 13 }}>🔄 Refresh</Button>
       </div>
 
       {/* Status bar */}
@@ -6671,7 +6675,7 @@ function WeatherTab({ jobs, trucks, updates }) {
           const hasCold = hours.some(h => h.temp < 40);
           const hasWind = hours.some(h => h.wind > 25);
           return (
-            <div key={job.id} style={{ background: "#fff", borderRadius: 14, border: "1px solid #e2e8f0", overflow: "hidden", boxShadow: "0 2px 8px rgba(0,0,0,0.06)" }}>
+            <div key={job.id} className="premium-surface" style={{ overflow: "hidden" }}>
               <div style={{ padding: "14px 16px 12px", borderBottom: "1px solid #f1f5f9" }}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 8 }}>
                   <div style={{ minWidth: 0 }}>
@@ -6760,7 +6764,7 @@ function WeatherTab({ jobs, trucks, updates }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onCloseOutJob, onUpdateTruck, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onCloseOutJob, onUpdateTruck, onSaveTruckToolInventory, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts, onSuppliesCheckout }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   // Builders DB state
@@ -7168,12 +7172,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     trucks: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
     roster: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg>,
     inventory: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"/></svg>,
+    tools: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.8-3.8a6 6 0 0 1-7.9 7.9l-6.9 6.9a2.1 2.1 0 0 1-3-3l6.9-6.9a6 6 0 0 1 7.9-7.9l-3.8 3.8z"/></svg>,
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
     weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
   };
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
     { key: "calendar", label: "Calendar" },
+    { key: "tools", label: "Tools" },
     { key: "inventory", label: "Inventory" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
@@ -8148,6 +8154,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
         {view === "roster" && (
           <RosterView trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} />
+        )}
+
+        {view === "weather" && (
+          <WeatherTab jobs={jobs} trucks={trucks} updates={updates} />
+        )}
+
+        {view === "tools" && (
+          <ToolsView isOffice={true} tools={tools} toolCheckouts={toolCheckouts} onAddTool={onAddTool} onEditTool={onEditTool} onDeleteTool={onDeleteTool} onCheckout={onCheckout} onReturn={onReturn} adminName={adminName} crewMembers={members} employeeFlags={employeeFlags} onSetFlag={onSetFlag} allTruckInventory={truckInventory} trucks={trucks} truckToolInventory={truckToolInventory} onSaveTruckToolInventory={onSaveTruckToolInventory} onDeltaAdjustTruck={onDeltaAdjustTruck} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={onUpdateFoamParts} onUpdateProjectTools={onUpdateProjectTools} suppliesCheckouts={suppliesCheckouts} />
         )}
 
         {view === "inventory" && (() => {
@@ -13463,6 +13477,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} onSaveTruckToolInventory={handleSaveTruckToolInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   return null;
 }
