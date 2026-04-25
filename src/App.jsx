@@ -7179,21 +7179,25 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
-      {/* Top header — title + logout only */}
-      <div className="glass-header" style={{ padding: "10px 20px", paddingTop: "calc(10px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 18px 45px rgba(15,23,42,0.22)", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1480, margin: "0 auto" }}>
-          <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-            <rect width="360" height="100" fill="#0f172a" rx="8"/>
-            <rect x="18" y="14" width="4" height="72" fill="#2563eb" rx="2"/>
-            <text x="32" y="80" fontFamily="Arial Black,sans-serif" fontSize="72" fontWeight="900" fill="white" letterSpacing="-3">IST</text>
-            <line x1="168" y1="16" x2="168" y2="84" stroke="#1e3a5f" strokeWidth="1.5"/>
-            <text x="180" y="38" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">INSULATION</text>
-            <text x="180" y="56" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">SERVICES</text>
-            <text x="180" y="74" fontFamily="Arial,sans-serif" fontSize="12" fontWeight="700" fill="#3b82f6" letterSpacing="3">OF TULSA</text>
-          </svg>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "12.5px", color: "rgba(255,255,255,0.6)" }}>{adminName}</span>
-            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a" }}>Log Out</Button>
+      {/* Top header — premium wordmark + session */}
+      <div className="glass-header" style={{ padding: "9px 20px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 18px 45px rgba(15,23,42,0.22)", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1480, margin: "0 auto", gap: 14 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+            <div style={{ width: 46, height: 46, borderRadius: 16, display: "grid", placeItems: "center", background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 12px 30px rgba(37,99,235,0.30), inset 0 1px 0 rgba(255,255,255,0.18)", border: "1px solid rgba(255,255,255,0.16)", flexShrink: 0 }}>
+              <span style={{ color: "#fff", fontSize: 20, fontWeight: 950, letterSpacing: "-1.5px" }}>IST</span>
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
+                <div style={{ color: "#fff", fontSize: 18, fontWeight: 950, letterSpacing: "-0.7px", lineHeight: 1 }}>IST Dispatch</div>
+                <span style={{ width: 5, height: 5, borderRadius: 99, background: "#60a5fa", boxShadow: "0 0 16px #60a5fa" }} />
+                <div style={{ color: "#93c5fd", fontSize: 10, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase" }}>Operations OS</div>
+              </div>
+              <div style={{ marginTop: 3, color: "rgba(255,255,255,0.56)", fontSize: 11, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Insulation Services of Tulsa · Field command center</div>
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
+            <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.72)", padding: "7px 10px", borderRadius: 999, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}>{adminName}</span>
+            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#fff", background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999 }}>Log Out</Button>
           </div>
         </div>
       </div>
