@@ -724,11 +724,6 @@ const kbStyles = `
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.15); }
   }
-  @keyframes ticketRingPulse {
-    0% { transform: scale(1); opacity: 0.95; }
-    70% { transform: scale(1.18); opacity: 0; }
-    100% { transform: scale(1.18); opacity: 0; }
-  }
   @keyframes toastSlide {
     from { opacity: 0; transform: translateX(40px); }
     to { opacity: 1; transform: translateX(0); }
@@ -6804,6 +6799,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [ticketNote, setTicketNote] = useState("");
   const [ticketFilter, setTicketFilter] = useState("active");
   const [ticketTypeTab, setTicketTypeTab] = useState("equipment");
+  const [showResolvedTickets, setShowResolvedTickets] = useState(false);
   const [editingJob, setEditingJob] = useState(null);
   const [editForm, setEditForm] = useState({ address: "", builder: "", type: "", truckId: "", crewMemberIds: [], date: "", notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" });
   const [editCrewSearch, setEditCrewSearch] = useState("");
@@ -6948,6 +6944,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     .filter((tk) => !truckFilter || tk.truckId === truckFilter)
     .filter((tk) => (tk.ticketType || "equipment") === ticketTypeTab)
     .sort((a, b) => (STATUS_SORT_ORDER[a.status] ?? 0) - (STATUS_SORT_ORDER[b.status] ?? 0) || new Date(b.timestamp) - new Date(a.timestamp));
+  const activeFilteredTickets = filteredTickets.filter((tk) => tk.status !== "resolved");
+  const resolvedFilteredTickets = filteredTickets.filter((tk) => tk.status === "resolved");
   const truckFilterName = truckFilter ? trucks.find((tr) => tr.id === truckFilter)?.name : null;
   const sortedTickets = [...filteredTickets].sort((a, b) => {
     const prioOrder = { critical: 0, high: 1, medium: 2, low: 3 };
@@ -7219,7 +7217,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       <div style={{ position: "fixed", top: "calc(72px + env(safe-area-inset-top, 0px))", left: 14, bottom: 18, zIndex: 200, width: 66, display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, padding: "10px 7px", background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", border: "1px solid rgba(148,163,184,0.24)", borderRadius: 24, boxShadow: "0 24px 60px rgba(15,23,42,0.16)" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
-          const hasTicketAlert = item.key === "tickets" && item.badge > 0;
           return (
             <button key={item.key}
               className="nav-tab-btn"
@@ -7235,7 +7232,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 justifyContent: "center",
                 padding: "8px 4px",
                 background: isActive ? "linear-gradient(135deg,#2563eb,#0f172a)" : "transparent",
-                border: hasTicketAlert ? "1px solid rgba(220,38,38,0.82)" : isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent",
+                border: isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent",
                 borderRadius: 18,
                 cursor: "pointer",
                 fontFamily: "inherit",
@@ -7244,7 +7241,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 transition: "all 0.15s ease",
                 boxShadow: isActive ? "0 14px 30px rgba(37,99,235,0.28)" : "none",
               }}>
-              {hasTicketAlert && <span aria-hidden="true" style={{ position: "absolute", inset: -5, border: "2px solid rgba(220,38,38,0.9)", borderRadius: 22, pointerEvents: "none", animation: "ticketRingPulse 1.4s ease-out infinite" }} />}
               <span style={{ lineHeight: 1, color: isActive ? "#fff" : "#64748b", transform: isActive ? "scale(1.08)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
               <span style={{ fontSize: "9px", fontWeight: 900, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", maxWidth: 42, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
               {item.badge > 0 && <span style={{ position: "absolute", top: "-3px", right: "-3px", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
@@ -7890,29 +7886,52 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
 
-            {filteredTickets.length === 0
-              ? <EmptyState text="No tickets here." sub="Nothing submitted in this category yet." />
-              : filteredTickets.map((ticket) => {
-                  const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
-                  const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
-                  const isOpen = ticket.status === "open" && !ticket.adminNote;
-                  return (
-                    <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginBottom: "8px", border: isOpen ? "2px solid #ef4444" : "1px solid #e5e7eb", opacity: ticket.status === "resolved" ? 0.6 : 1 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
-                        <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
-                          {ticketTypeTab !== "timeoff" && <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>}
-                          <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
-                          <span style={{ fontSize: "11px", color: t.textMuted }}>{ticket.truckName || "Unknown Truck"}</span>
-                        </div>
-                        <span style={{ fontSize: "11.5px", color: t.textMuted, flexShrink: 0 }}>{dateStr(ticket.timestamp)}</span>
+            {(() => {
+              const renderTicketCard = (ticket, resolved = false) => {
+                const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
+                const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
+                const isOpen = ticket.status === "open" && !ticket.adminNote;
+                return (
+                  <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginBottom: "8px", border: isOpen ? "2px solid #ef4444" : "1px solid #e5e7eb", opacity: resolved ? 0.62 : 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", marginBottom: "8px", flexWrap: "wrap" }}>
+                      <div style={{ display: "flex", gap: "5px", alignItems: "center", flexWrap: "wrap" }}>
+                        {ticketTypeTab !== "timeoff" && <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>}
+                        <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
+                        <span style={{ fontSize: "11px", color: t.textMuted }}>{ticket.truckName || "Unknown Truck"}</span>
                       </div>
-                      <div style={{ fontSize: "14px", color: t.text, lineHeight: 1.5 }}>{ticket.description}</div>
-                      <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "6px" }}>Submitted by {ticket.submittedBy}</div>
-                      {ticket.adminNote && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginTop: "8px", borderLeft: "3px solid #15803d" }}>Response: {ticket.adminNote}</div>}
-                    </Card>
-                  );
-                })
-            }
+                      <span style={{ fontSize: "11.5px", color: t.textMuted, flexShrink: 0 }}>{dateStr(ticket.timestamp)}</span>
+                    </div>
+                    <div style={{ fontSize: "14px", color: t.text, lineHeight: 1.5 }}>{ticket.description}</div>
+                    <div style={{ fontSize: "12px", color: t.textMuted, marginTop: "6px" }}>Submitted by {ticket.submittedBy}</div>
+                    {ticket.adminNote && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginTop: "8px", borderLeft: "3px solid #15803d" }}>Response: {ticket.adminNote}</div>}
+                  </Card>
+                );
+              };
+              return (
+                <>
+                  {activeFilteredTickets.length === 0
+                    ? <EmptyState text="No active tickets here." sub={resolvedFilteredTickets.length ? "Resolved tickets are tucked below." : "Nothing submitted in this category yet."} />
+                    : activeFilteredTickets.map((ticket) => renderTicketCard(ticket))}
+
+                  {resolvedFilteredTickets.length > 0 && (
+                    <div style={{ marginTop: "18px", border: "1px solid " + t.border, borderRadius: "12px", overflow: "hidden", background: t.surface }}>
+                      <button onClick={() => setShowResolvedTickets((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: "10px", padding: "12px 14px", background: t.bg, border: "none", cursor: "pointer", fontFamily: "inherit", color: t.text }}>
+                        <span style={{ fontSize: "13px", fontWeight: 800 }}>Resolved tickets</span>
+                        <span style={{ display: "flex", alignItems: "center", gap: 8, color: t.textMuted, fontSize: "12px", fontWeight: 700 }}>
+                          {resolvedFilteredTickets.length} closed
+                          <span>{showResolvedTickets ? "▲" : "▼"}</span>
+                        </span>
+                      </button>
+                      {showResolvedTickets && (
+                        <div style={{ padding: "10px 10px 4px" }}>
+                          {resolvedFilteredTickets.map((ticket) => renderTicketCard(ticket, true))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </>
         )}
 
