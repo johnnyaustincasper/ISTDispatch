@@ -7023,6 +7023,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const calViewJob = calViewJobId ? (jobs.find(j => j.id === calViewJobId) || null) : null;
   const setCalViewJob = (job) => setCalViewJobId(job ? job.id : null);
   const [calDayView, setCalDayView] = useState(null); // { dateStr, jobs }
+  const [jobSummaryReport, setJobSummaryReport] = useState(null); // { mode, start, end }
   const [editMatLogIdx, setEditMatLogIdx] = useState(null); // index into dailyMaterialLogs
   const [editMatLogQtys, setEditMatLogQtys] = useState({});
   const [invSearch, setInvSearch] = useState("");
@@ -7363,6 +7364,81 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       return ds <= todayStr;
     });
   };
+
+  const openJobSummaryReport = (dateStr, mode = "day") => {
+    if (!dateStr) return;
+    const base = new Date(dateStr + "T12:00:00");
+    if (Number.isNaN(base.getTime())) return;
+    const start = new Date(base);
+    const end = new Date(base);
+    if (mode === "week") {
+      const mondayOffset = (base.getDay() + 6) % 7;
+      start.setDate(base.getDate() - mondayOffset);
+      end.setDate(start.getDate() + 6);
+    }
+    setCalDayView(null);
+    setJobSummaryReport({ mode, start: start.toLocaleDateString("en-CA"), end: end.toLocaleDateString("en-CA") });
+  };
+
+  const buildJobSummaryReport = (report) => {
+    if (!report) return null;
+    const inRange = (date) => date && date >= report.start && date <= report.end;
+    const getJobUpdates = (jobId) => updates.filter(u => u.jobId === jobId).sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+    const getLatestStatus = (jobId) => [...getJobUpdates(jobId)].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0] || null;
+    const scheduledJobs = jobs.filter(j => !j.onHold && inRange(j.date));
+    const completedJobs = jobs.filter(j => getJobUpdates(j.id).some(u => u.status === "completed" && inRange(tsToCST(u.timestamp))));
+    const workedJobs = jobs.filter(j => getJobUpdates(j.id).some(u => ["in_progress", "completed", "issue"].includes(u.status) && inRange(tsToCST(u.timestamp))));
+    const allJobMap = new Map([...scheduledJobs, ...completedJobs, ...workedJobs].map(j => [j.id, j]));
+    const reportJobs = [...allJobMap.values()].sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.builder || a.address || "").localeCompare(b.builder || b.address || ""));
+    const materialTotals = {};
+    const jobRows = reportJobs.map(job => {
+      const truck = trucks.find(tr => tr.id === job.truckId);
+      const jobUpd = getJobUpdates(job.id);
+      const updatesInRange = jobUpd.filter(u => inRange(tsToCST(u.timestamp)));
+      const completedUpdate = jobUpd.filter(u => u.status === "completed" && inRange(tsToCST(u.timestamp))).slice(-1)[0] || null;
+      const assignedCrew = (job.crewMemberIds || []).filter(Boolean).map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+      const updaterCrew = [...new Set(updatesInRange.map(u => u.crewName || u.submittedBy).filter(Boolean))];
+      const materials = {};
+      (job.dailyMaterialLogs || []).filter(log => inRange(log.date)).forEach(log => {
+        Object.entries(log.materials || {}).forEach(([id, qty]) => {
+          const val = parseFloat(qty) || 0;
+          if (val <= 0) return;
+          materials[id] = (materials[id] || 0) + val;
+          materialTotals[id] = (materialTotals[id] || 0) + val;
+        });
+      });
+      if (Object.keys(materials).length === 0 && job.materialsUsed && completedUpdate) {
+        Object.entries(job.materialsUsed || {}).forEach(([id, qty]) => {
+          const val = parseFloat(qty) || 0;
+          if (val <= 0) return;
+          materials[id] = (materials[id] || 0) + val;
+          materialTotals[id] = (materialTotals[id] || 0) + val;
+        });
+      }
+      const jobTickets = tickets.filter(tk => (tk.jobId && tk.jobId === job.id) || (job.truckId && tk.truckId === job.truckId && tk.timestamp && inRange(tsToCST(tk.timestamp))));
+      const firstUpdate = updatesInRange[0] || null;
+      const lastUpdate = updatesInRange[updatesInRange.length - 1] || null;
+      const laborMinutes = firstUpdate && lastUpdate ? Math.max(0, Math.round((new Date(lastUpdate.timestamp) - new Date(firstUpdate.timestamp)) / 60000)) : null;
+      return { job, truck, latest: getLatestStatus(job.id), completedUpdate, updatesInRange, assignedCrew, updaterCrew, materials, materialValue: calcMaterialCost(materials), tickets: jobTickets, laborMinutes };
+    });
+    const materialRows = Object.entries(materialTotals).map(([id, qty]) => {
+      const item = INVENTORY_ITEMS.find(i => i.id === id);
+      return { id, qty, item, value: calcMaterialCost({ [id]: qty }) };
+    }).sort((a, b) => b.value - a.value || (b.qty - a.qty));
+    const ticketRows = tickets.filter(tk => tk.timestamp && inRange(tsToCST(tk.timestamp))).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+    const materialValue = materialRows.reduce((sum, row) => sum + row.value, 0);
+    const laborMinutes = jobRows.reduce((sum, row) => sum + (row.laborMinutes || 0), 0);
+    return { ...report, scheduledJobs, completedJobs, workedJobs, jobRows, materialRows, ticketRows, materialValue, laborMinutes };
+  };
+
+  const formatReportQty = (itemId, qty) => {
+    const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+    const parsed = parseFloat(qty) || 0;
+    if (FOAM_MATERIAL_IDS.has(itemId)) return `${Math.round(foamQtyToGallons(itemId, parsed))} gal`;
+    return `${parsed % 1 === 0 ? parsed : parsed.toFixed(2)} ${item?.unit || "units"}`;
+  };
+
+  const formatReportMoney = (value) => `$${(value || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
   const todayDay = new Date().getDate();
   const todayMonth = new Date().getMonth();
   const todayYear = new Date().getFullYear();
@@ -9477,6 +9553,103 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         </Modal>
       )}
 
+      {jobSummaryReport && (() => {
+        const report = buildJobSummaryReport(jobSummaryReport);
+        if (!report) return null;
+        const title = report.mode === "week"
+          ? `Weekly Job Report · ${report.start} to ${report.end}`
+          : `Daily Job Report · ${report.start}`;
+        const statCards = [
+          { label: "Scheduled", value: report.scheduledJobs.length, color: t.accent },
+          { label: "Completed", value: report.completedJobs.length, color: "#15803d" },
+          { label: "Material Value", value: formatReportMoney(report.materialValue), color: "#b45309" },
+          { label: "Issues/Tickets", value: report.ticketRows.length, color: report.ticketRows.length ? "#dc2626" : t.textMuted },
+        ];
+        return (
+          <Modal title={title} onClose={() => setJobSummaryReport(null)}>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+              <Button onClick={() => window.print()} style={{ fontSize: 12 }}>🖨️ Print / Save PDF</Button>
+              <Button variant="secondary" onClick={() => setJobSummaryReport(null)} style={{ fontSize: 12 }}>Close</Button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 16 }}>
+              {statCards.map(card => (
+                <div key={card.label} style={{ background: "#fff", border: "1px solid " + t.border, borderRadius: 12, padding: "10px 12px" }}>
+                  <div style={{ fontSize: 10, color: t.textMuted, fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em" }}>{card.label}</div>
+                  <div style={{ marginTop: 4, fontSize: 20, fontWeight: 900, color: card.color }}>{card.value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: t.text, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Jobs</div>
+              {report.jobRows.length === 0 ? <div style={{ fontSize: 13, color: t.textMuted, padding: 14, background: t.bg, borderRadius: 10 }}>No scheduled, worked, or completed jobs in this range.</div> : report.jobRows.map(({ job, truck, latest, completedUpdate, assignedCrew, updaterCrew, materials, materialValue, tickets: jobTickets, laborMinutes }) => {
+                const statusObj = STATUS_OPTIONS.find(s => s.value === latest?.status) || STATUS_OPTIONS[0];
+                const materialEntries = Object.entries(materials || {}).filter(([, qty]) => (parseFloat(qty) || 0) > 0);
+                return (
+                  <div key={job.id} style={{ background: "#fff", border: "1px solid " + t.border, borderRadius: 12, padding: "12px 13px", marginBottom: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div style={{ fontSize: 14, fontWeight: 850, color: t.text }}>{job.builder || "No Customer"}</div>
+                        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>{job.address || "No address"}</div>
+                        <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 7, fontSize: 11, color: t.textSecondary }}>
+                          <span>{job.type || "Job"}</span>
+                          <span>Scheduled {job.date || "—"}</span>
+                          <span>{truck ? truckDisplayName(truck) : "No truck"}</span>
+                        </div>
+                      </div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
+                        {completedUpdate && <div style={{ marginTop: 4, fontSize: 10, color: "#15803d", fontWeight: 800 }}>Completed {dateStr(completedUpdate.timestamp)}</div>}
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 9, display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8, fontSize: 12 }}>
+                      <div><strong style={{ color: t.text }}>Crew:</strong> <span style={{ color: t.textMuted }}>{(updaterCrew.length ? updaterCrew : assignedCrew).join(", ") || "—"}</span></div>
+                      <div><strong style={{ color: t.text }}>Labor window:</strong> <span style={{ color: t.textMuted }}>{laborMinutes ? `${Math.floor(laborMinutes / 60)}h ${laborMinutes % 60}m` : "—"}</span></div>
+                      <div><strong style={{ color: t.text }}>Material value:</strong> <span style={{ color: "#15803d", fontWeight: 800 }}>{formatReportMoney(materialValue)}</span></div>
+                      <div><strong style={{ color: t.text }}>Tickets:</strong> <span style={{ color: jobTickets.length ? "#dc2626" : t.textMuted }}>{jobTickets.length || "—"}</span></div>
+                    </div>
+                    {materialEntries.length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 9 }}>
+                        {materialEntries.map(([id, qty]) => {
+                          const item = INVENTORY_ITEMS.find(i => i.id === id);
+                          return <span key={id} style={{ fontSize: 11, background: t.accentBg, color: t.accent, borderRadius: 999, padding: "3px 8px", fontWeight: 750 }}>{item?.name || id}: {formatReportQty(id, qty)}</span>;
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 12, fontWeight: 900, color: t.text, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Material totals</div>
+              {report.materialRows.length === 0 ? <div style={{ fontSize: 13, color: t.textMuted, padding: 12, background: t.bg, borderRadius: 10 }}>No material usage logged.</div> : (
+                <div style={{ border: "1px solid " + t.border, borderRadius: 10, overflow: "hidden" }}>
+                  {report.materialRows.map((row, idx) => (
+                    <div key={row.id} style={{ display: "grid", gridTemplateColumns: "1fr auto auto", gap: 8, padding: "8px 10px", background: idx % 2 ? "#fff" : t.bg, fontSize: 12, alignItems: "center" }}>
+                      <span style={{ fontWeight: 700, color: t.text }}>{row.item?.name || row.id}</span>
+                      <span style={{ color: t.textMuted }}>{formatReportQty(row.id, row.qty)}</span>
+                      <span style={{ fontWeight: 850, color: "#15803d" }}>{formatReportMoney(row.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, fontWeight: 900, color: t.text, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>Tickets / issues in range</div>
+              {report.ticketRows.length === 0 ? <div style={{ fontSize: 13, color: t.textMuted, padding: 12, background: t.bg, borderRadius: 10 }}>No tickets or issues logged in this range.</div> : report.ticketRows.map(tk => (
+                <div key={tk.id} style={{ padding: "9px 10px", borderRadius: 10, border: "1px solid " + t.border, background: "#fff", marginBottom: 7, fontSize: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
+                    <strong style={{ color: t.text }}>{tk.truckName || "Office"} · {tk.ticketType || "equipment"}</strong>
+                    <span style={{ color: t.textMuted }}>{dateStr(tk.timestamp)}</span>
+                  </div>
+                  <div style={{ color: t.textSecondary, marginTop: 4 }}>{tk.description}</div>
+                  <div style={{ color: t.textMuted, marginTop: 3 }}>Submitted by {tk.submittedBy || "—"} · {tk.status || "open"}</div>
+                </div>
+              ))}
+            </div>
+          </Modal>
+        );
+      })()}
+
       {calDayView && (() => {
         const typeConfig = {
           "Foam":       { color: "#f97316", bg: "#fff7ed", border: "#fed7aa", emoji: "" },
@@ -9494,6 +9667,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         const dayLabel = new Date(calDayView.dateStr + "T12:00:00").toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
         return (
           <Modal title={dayLabel} onClose={() => setCalDayView(null)}>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 14 }}>
+              <Button onClick={() => openJobSummaryReport(calDayView.dateStr, "day")} style={{ fontSize: 12 }}>📊 Daily Report</Button>
+              <Button variant="secondary" onClick={() => openJobSummaryReport(calDayView.dateStr, "week")} style={{ fontSize: 12 }}>📅 Weekly Report</Button>
+            </div>
             {sortedTypes.map(type => {
               const cfg = typeConfig[type] || { color: t.accent, bg: t.bg, border: t.border, emoji: "" };
               return (
