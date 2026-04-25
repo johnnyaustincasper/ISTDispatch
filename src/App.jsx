@@ -7188,16 +7188,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
             <div style={{ minWidth: 0 }}>
               <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
-                <div style={{ color: "#fff", fontSize: 18, fontWeight: 950, letterSpacing: "-0.7px", lineHeight: 1 }}>IST Dispatch</div>
+                <div style={{ color: "#0f172a", fontSize: 18, fontWeight: 950, letterSpacing: "-0.7px", lineHeight: 1 }}>IST Dispatch</div>
                 <span style={{ width: 5, height: 5, borderRadius: 99, background: "#60a5fa", boxShadow: "0 0 16px #60a5fa" }} />
                 <div style={{ color: "#93c5fd", fontSize: 10, fontWeight: 900, letterSpacing: "0.16em", textTransform: "uppercase" }}>Operations OS</div>
               </div>
-              <div style={{ marginTop: 3, color: "rgba(255,255,255,0.56)", fontSize: 11, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Insulation Services of Tulsa · Field command center</div>
+              <div style={{ marginTop: 3, color: "rgba(15,23,42,0.64)", fontSize: 11, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>Insulation Services of Tulsa · Field command center</div>
             </div>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
-            <span style={{ fontSize: "12px", color: "rgba(255,255,255,0.72)", padding: "7px 10px", borderRadius: 999, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.10)" }}>{adminName}</span>
-            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#fff", background: "rgba(255,255,255,0.10)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 999 }}>Log Out</Button>
+            <span style={{ fontSize: "12px", color: "#0f172a", padding: "7px 10px", borderRadius: 999, background: "rgba(255,255,255,0.52)", border: "1px solid rgba(15,23,42,0.10)" }}>{adminName}</span>
+            <Button variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999 }}>Log Out</Button>
           </div>
         </div>
       </div>
