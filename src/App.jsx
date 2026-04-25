@@ -8248,7 +8248,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             const getGroup = (item) => {
               const hay = `${item.name || ""} ${item.category || ""}`.toLowerCase();
               if (item.unit === "bbl" || hay.includes("foam")) return "Foam";
-              if (hay.includes("blown") || hay.includes("cellulose") || hay.includes("rockwool") || hay.includes("lambswool")) return "Blown";
+              if (hay.includes("blown") || hay.includes("cellulose") || hay.includes("rockwool") || hay.includes("lambswool")) return "Blown/Other";
               if (hay.includes("r11")) return "R11";
               if (hay.includes("r13") || hay.includes("r15")) return "R13/R15";
               if (hay.includes("r19") || hay.includes("r22") || hay.includes("r26")) return "R19+";
@@ -8259,15 +8259,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               const cat = item.category || "";
               const raw = item.name || "";
               const brand = cat.includes("Certainteed") ? "CT" : cat.includes("Owens Corning") ? "OC" : cat.includes("Johns Manville") ? "JM" : "";
-              if (item.unit === "bbl") {
-                return raw
-                  .replace(/Ambit Open Cell B/i, "Amb OC-B")
-                  .replace(/Ambit Closed Cell B/i, "Amb CC-B")
-                  .replace(/Enverge Open Cell B/i, "Env OC-B")
-                  .replace(/Enverge Closed Cell B/i, "Env CC-B")
-                  .replace(/Ambit A/i, "Amb A")
-                  .replace(/Enverge A/i, "Env A");
-              }
+              if (item.unit === "bbl") return raw;
+              if (cat === "Rockwool" || cat === "Lambswool") return raw;
               if (cat === "Blown") {
                 return raw
                   .replace(/Certainteed Blown Fiberglass/i, "CT Blown FG")
@@ -8288,15 +8281,18 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 .replace(/\s+/g, " ")
                 .trim();
             };
-            const GROUPS = ["Foam", "Blown", "R11", "R13/R15", "R19+", "R30+", "Other"];
+            const GROUPS = ["Foam", "Blown/Other", "R11", "R13/R15", "R19+", "R30+", "Other"];
             const allVisible = sortAllItems(
               INVENTORY_ITEMS
                 .filter(i => !i.isPieces)
                 .filter(statusFilterFn)
                 .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || (i.category || "").toLowerCase().includes(searchLower))
             );
-            const groups = GROUPS.map(group => ({ group, items: allVisible.filter(item => getGroup(item) === group) })).filter(section => section.items.length);
-            const boardColors = { Foam: "#2563eb", Blown: "#16a34a", R11: "#7c3aed", "R13/R15": "#0f766e", "R19+": "#ea580c", "R30+": "#be123c", Other: "#64748b" };
+            const groups = GROUPS.map(group => {
+              const items = allVisible.filter(item => getGroup(item) === group);
+              return { group, items: group === "Blown/Other" ? items : [...items].sort((a, b) => getQty(b.id) - getQty(a.id)) };
+            }).filter(section => section.items.length);
+            const boardColors = { Foam: "#2563eb", "Blown/Other": "#16a34a", R11: "#7c3aed", "R13/R15": "#0f766e", "R19+": "#ea580c", "R30+": "#be123c", Other: "#64748b" };
             const formatQty = (item, qty) => isFoam(item.id) ? `${bblToGals(qty, item.id)}g` : String(qty);
 
             if (!allVisible.length) {
