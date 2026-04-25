@@ -566,7 +566,7 @@ function Input({ label, ...props }) {
   return (
     <div style={{ marginBottom: "16px" }}>
       {label && <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>{label}</label>}
-      <input {...props} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box", ...(props.style || {}) }} onFocus={(e) => { e.target.style.borderColor = t.accent; setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "nearest" }), 320); }} onBlur={(e) => e.target.style.borderColor = t.border} />
+      <input {...props} style={{ width: "100%", padding: "11px 13px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "12px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)", ...(props.style || {}) }} onFocus={(e) => { e.target.style.borderColor = t.accent; e.target.style.boxShadow = "0 0 0 4px rgba(37,99,235,0.12)"; setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "nearest" }), 320); }} onBlur={(e) => { e.target.style.borderColor = t.border; e.target.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.8)"; }} />
     </div>
   );
 }
@@ -575,7 +575,7 @@ function Select({ label, options, ...props }) {
   return (
     <div style={{ marginBottom: "16px" }}>
       {label && <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>{label}</label>}
-      <select {...props} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box", ...(props.style || {}) }}>
+      <select {...props} style={{ width: "100%", padding: "11px 13px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "12px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", boxSizing: "border-box", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)", ...(props.style || {}) }}>
         {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
       </select>
     </div>
@@ -586,7 +586,7 @@ function TextArea({ label, ...props }) {
   return (
     <div style={{ marginBottom: "16px" }}>
       {label && <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>{label}</label>}
-      <textarea {...props} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", resize: "vertical", minHeight: "80px", boxSizing: "border-box", ...(props.style || {}) }} onFocus={(e) => { e.target.style.borderColor = t.accent; setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "nearest" }), 320); }} onBlur={(e) => e.target.style.borderColor = t.border} />
+      <textarea {...props} style={{ width: "100%", padding: "11px 13px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "12px", color: t.text, fontSize: "14px", fontFamily: "inherit", outline: "none", resize: "vertical", minHeight: "80px", boxSizing: "border-box", boxShadow: "inset 0 1px 0 rgba(255,255,255,0.8)", ...(props.style || {}) }} onFocus={(e) => { e.target.style.borderColor = t.accent; e.target.style.boxShadow = "0 0 0 4px rgba(37,99,235,0.12)"; setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "nearest" }), 320); }} onBlur={(e) => { e.target.style.borderColor = t.border; e.target.style.boxShadow = "inset 0 1px 0 rgba(255,255,255,0.8)"; }} />
     </div>
   );
 }
@@ -604,10 +604,10 @@ function Card({ children, style: s, onClick }) {
 function Modal({ title, onClose, children, footer }) {
   return (
     <div className="modal-backdrop" style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", backdropFilter: "blur(6px)", WebkitBackdropFilter: "blur(6px)", display: "flex", justifyContent: "center", zIndex: 1000 }} onClick={onClose}>
-      <div className="modal-container" style={{ background: t.card, border: "1px solid " + t.border, padding: "16px", maxWidth: "480px", width: "100%", maxHeight: "85dvh", display: "flex", flexDirection: "column", boxShadow: t.shadowMd }} onClick={(e) => e.stopPropagation()}>
+      <div className="modal-container" style={{ background: "linear-gradient(180deg,#ffffff,#f8fbff)", border: "1px solid " + t.border, borderRadius: "24px", padding: "18px", maxWidth: "480px", width: "100%", maxHeight: "85dvh", display: "flex", flexDirection: "column", boxShadow: "0 30px 90px rgba(15,23,42,0.28)" }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", paddingBottom: "14px", borderBottom: "1px solid " + t.border, flexShrink: 0 }}>
           <h2 style={{ fontSize: "17px", fontWeight: 600, color: t.text, margin: 0 }}>{title}</h2>
-          <button onClick={onClose} style={{ background: t.surface, border: "1px solid " + t.border, color: t.textMuted, minWidth: "44px", minHeight: "44px", width: "44px", height: "44px", borderRadius: "8px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", flexShrink: 0 }}>✕</button>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.9)", border: "1px solid " + t.border, color: t.textMuted, minWidth: "44px", minHeight: "44px", width: "44px", height: "44px", borderRadius: "14px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "16px", flexShrink: 0, boxShadow: "0 8px 22px rgba(15,23,42,0.08)" }}>✕</button>
         </div>
         <div style={{ overflowY: "auto", flex: 1, paddingBottom: footer ? "0" : "env(safe-area-inset-bottom, 8px)" }}>
           {children}
@@ -633,7 +633,7 @@ function SectionHeader({ title, right }) {
 
 function EmptyState({ text, sub }) {
   return (
-    <div style={{ textAlign: "center", padding: "48px 24px", borderRadius: "12px", border: "2px dashed " + t.border, background: t.surface, marginBottom: "12px" }}>
+    <div style={{ textAlign: "center", padding: "52px 24px", borderRadius: "24px", border: "1.5px dashed " + t.border, background: "rgba(255,255,255,0.72)", marginBottom: "14px", boxShadow: "0 14px 36px rgba(15,23,42,0.06)" }}>
       <div style={{ fontSize: "32px", marginBottom: "12px", opacity: 0.4 }}>📋</div>
       <div style={{ color: t.textSecondary, fontSize: "15px", fontWeight: 600 }}>{text}</div>
       {sub && <div style={{ color: t.textMuted, fontSize: "13px", marginTop: "6px", lineHeight: 1.5 }}>{sub}</div>}
@@ -7153,7 +7153,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const unassignedActiveJobs = activeJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
   const completedTodayCount = updates.filter((u) => u.status === "completed" && tsToCST(u.timestamp) === todayCST()).length;
 
-  const tabStyle = (active) => ({ padding: "8px 16px", background: active ? t.accent : "transparent", color: active ? "#fff" : t.textMuted, border: active ? "none" : "1px solid " + t.border, borderRadius: "6px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", position: "relative" });
+  const tabStyle = (active) => ({ padding: "9px 16px", background: active ? "linear-gradient(135deg,#2563eb,#1d4ed8)" : "rgba(255,255,255,0.74)", color: active ? "#fff" : t.textSecondary, border: active ? "1px solid rgba(37,99,235,0.45)" : "1px solid " + t.border, borderRadius: "14px", fontSize: "12.5px", fontWeight: active ? 800 : 650, cursor: "pointer", fontFamily: "inherit", position: "relative", boxShadow: active ? "0 10px 24px rgba(37,99,235,0.20)" : "0 6px 16px rgba(15,23,42,0.04)" });
 
   const NAV_ICONS = {
     schedule: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>,
@@ -8135,23 +8135,23 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           };
 
 
-          // Light theme color constants for inventory view
+          // Shared light system for inventory view
           const lk = {
-            bg: "#f8fafc",
-            cardBg: "#ffffff",
-            cardBorder: "1px solid #e2e8f0",
-            cardShadow: "0 1px 4px rgba(0,0,0,0.06)",
-            text: "#1e293b",
-            textMuted: "#64748b",
-            textDim: "#94a3b8",
-            accent: "#2563eb",
-            accentBg: "rgba(37,99,235,0.08)",
-            separator: "#f1f5f9",
-            inputBg: "#ffffff",
-            inputBorder: "#e2e8f0",
-            headerBg: "#ffffff",
-            headerBorder: "#e2e8f0",
-            rowHover: "#f1f5f9",
+            bg: t.bg,
+            cardBg: t.card,
+            cardBorder: "1px solid " + t.border,
+            cardShadow: t.shadow,
+            text: t.text,
+            textMuted: t.textSecondary,
+            textDim: t.textMuted,
+            accent: t.accent,
+            accentBg: t.accentBg,
+            separator: t.borderLight,
+            inputBg: "rgba(255,255,255,0.92)",
+            inputBorder: t.border,
+            headerBg: "rgba(255,255,255,0.82)",
+            headerBorder: t.border,
+            rowHover: "#f8fbff",
           };
 
           // Apply status filter
