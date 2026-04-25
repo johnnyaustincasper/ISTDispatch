@@ -5651,7 +5651,7 @@ function InventoryEditCell({ itemId, qty, isFoam, bblToGals, galsToBbl, pcsItem,
 
   if (!editing) {
     return (
-      <button onClick={open} style={{ fontSize: 10, fontWeight: 700, color: "#2563eb", background: "rgba(37,99,235,0.12)", border: "none", borderRadius: 6, padding: "3px 8px", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", letterSpacing: "0.3px" }}>
+      <button onClick={open} title="Edit" style={{ fontSize: 9, fontWeight: 900, color: "#2563eb", background: "rgba(37,99,235,0.10)", border: "1px solid rgba(37,99,235,0.12)", borderRadius: 5, padding: "1px 4px", cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap", letterSpacing: "0.2px", lineHeight: 1.2 }}>
         Edit
       </button>
     );
@@ -8242,77 +8242,85 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             );
           };
 
-          // Calm warehouse ledger — daily inventory view optimized for fast mobile scanning
+          // One-screen warehouse board — dense by design so inventory is visible without scrolling
           const MaterialsGrid = ({ inventory, onUpdateInventory, invStatusFilter, stockStatus, stockColors, isFoam, bblToGals, galsToBbl, sortAllItems, statusFilterFn, searchLower }) => {
             const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
-            const classifyItem = (item) => {
-              const name = (item.name || "").toLowerCase();
-              const cat = (item.category || "").toLowerCase();
-              if (item.unit === "bbl" || name.includes("cell") || name.includes("foam")) return "Foam";
-              if (name.includes("blown") || cat.includes("blown") || name.includes("cellulose") || name.includes("rockwool")) return "Blown";
-              if (/r\d+/.test(name) || /r\d+/.test(cat) || name.includes("batt")) return "Batts";
-              if (item.unit === "tubes" || item.unit === "pcs" || name.includes("caulk") || name.includes("sealant")) return "Caulk & Tubes";
-              return "Supplies";
+            const getGroup = (item) => {
+              const hay = `${item.name || ""} ${item.category || ""}`.toLowerCase();
+              if (item.unit === "bbl" || hay.includes("foam")) return "Foam";
+              if (hay.includes("blown") || hay.includes("cellulose") || hay.includes("rockwool") || hay.includes("lambswool")) return "Blown";
+              if (hay.includes("r11")) return "R11";
+              if (hay.includes("r13") || hay.includes("r15")) return "R13/R15";
+              if (hay.includes("r19") || hay.includes("r22") || hay.includes("r26")) return "R19+";
+              if (hay.includes("r30") || hay.includes("r38")) return "R30+";
+              return "Other";
             };
-            const GROUPS = ["Foam", "Blown", "Batts", "Caulk & Tubes", "Supplies"];
+            const shortName = (item) => (item.name || "")
+              .replace(/Fiberglass/gi, "FG")
+              .replace(/Certainteed/gi, "CT")
+              .replace(/Owens Corning/gi, "OC")
+              .replace(/Johns Manville/gi, "JM")
+              .replace(/Open Cell/gi, "OC")
+              .replace(/Closed Cell/gi, "CC")
+              .replace(/Ambit/gi, "Amb")
+              .replace(/Climate Pro/gi, "Clim")
+              .replace(/Master Pack/gi, "MP")
+              .replace(/\s+/g, " ")
+              .trim();
+            const GROUPS = ["Foam", "Blown", "R11", "R13/R15", "R19+", "R30+", "Other"];
             const allVisible = sortAllItems(
               INVENTORY_ITEMS
                 .filter(i => !i.isPieces)
                 .filter(statusFilterFn)
                 .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || (i.category || "").toLowerCase().includes(searchLower))
             );
-            const groups = GROUPS.map(group => ({ group, items: allVisible.filter(item => classifyItem(item) === group) })).filter(section => section.items.length);
-            const formatQty = (item, qty) => isFoam(item.id) ? qty.toFixed(2) : qty;
-            const formatSubQty = (item, qty) => isFoam(item.id) ? `${bblToGals(qty, item.id)} gal · ${qty.toFixed(2)} bbl` : `${qty} ${item.unit}`;
+            const groups = GROUPS.map(group => ({ group, items: allVisible.filter(item => getGroup(item) === group) })).filter(section => section.items.length);
+            const boardColors = { Foam: "#2563eb", Blown: "#16a34a", R11: "#7c3aed", "R13/R15": "#0f766e", "R19+": "#ea580c", "R30+": "#be123c", Other: "#64748b" };
+            const formatQty = (item, qty) => isFoam(item.id) ? `${bblToGals(qty, item.id)}g` : String(qty);
 
             if (!allVisible.length) {
               return <div style={{ flex: 1, display: "grid", placeItems: "center", color: "#94a3b8", fontSize: 14, background: "#f8fafc" }}>No materials match those filters.</div>;
             }
 
             return (
-              <div style={{ flex: 1, overflowY: "auto", background: "#f8fafc", padding: "12px", display: "flex", flexDirection: "column", gap: 14 }}>
-                {groups.map(({ group, items }) => (
-                  <section key={group} style={{ background: "#ffffff", border: "1px solid #e2e8f0", borderRadius: 18, overflow: "hidden", boxShadow: "0 10px 30px rgba(15,23,42,0.05)" }}>
-                    <div style={{ position: "sticky", top: 0, zIndex: 2, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "11px 14px", background: "linear-gradient(180deg,#ffffff,#f8fafc)", borderBottom: "1px solid #edf2f7" }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ width: 8, height: 8, borderRadius: 99, background: group === "Foam" ? "#2563eb" : group === "Blown" ? "#16a34a" : group === "Batts" ? "#7c3aed" : group === "Caulk & Tubes" ? "#f59e0b" : "#64748b", boxShadow: "0 0 0 4px rgba(37,99,235,0.08)" }} />
-                        <span style={{ fontSize: 13, fontWeight: 900, color: "#0f172a", letterSpacing: "-0.2px" }}>{group}</span>
+              <div style={{ flex: 1, overflow: "hidden", background: "#f8fafc", padding: 8 }}>
+                <div style={{ height: "100%", display: "grid", gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))`, gap: 6 }}>
+                  {groups.map(({ group, items }) => (
+                    <section key={group} style={{ minWidth: 0, background: "#ffffff", border: "1px solid #dbe3ef", borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                      <div style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 7px", background: boardColors[group], color: "#fff" }}>
+                        <span style={{ fontSize: 11, fontWeight: 950, letterSpacing: "0.02em" }}>{group}</span>
+                        <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.9 }}>{items.length}</span>
                       </div>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: "#64748b", background: "#f1f5f9", borderRadius: 999, padding: "3px 8px" }}>{items.length} SKU{items.length !== 1 ? "s" : ""}</span>
-                    </div>
-                    <div>
-                      {items.map((item, idx) => {
-                        const qty = getQty(item.id);
-                        const status = stockStatus(qty);
-                        const sc = stockColors[status];
-                        const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
-                        const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
-                        return (
-                          <div key={item.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 12, alignItems: "center", padding: "13px 14px", borderBottom: idx < items.length - 1 ? "1px solid #f1f5f9" : "none", background: status === "out" ? "#fffafa" : "#fff" }}>
-                            <div style={{ minWidth: 0 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
-                                <div style={{ fontSize: 15, fontWeight: 850, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", letterSpacing: "-0.25px" }}>{item.name}</div>
-                                <span style={{ flexShrink: 0, fontSize: 10, fontWeight: 900, color: sc.badgeColor, background: sc.badgeBg, borderRadius: 999, padding: "3px 7px", letterSpacing: "0.04em" }}>{sc.label || "OK"}</span>
+                      <div style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` }}>
+                        {items.map((item, idx) => {
+                          const qty = getQty(item.id);
+                          const status = stockStatus(qty);
+                          const sc = stockColors[status];
+                          const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
+                          const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
+                          return (
+                            <div key={item.id} style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 4, padding: "2px 5px", borderBottom: idx < items.length - 1 ? "1px solid #edf2f7" : "none", background: status === "out" ? "#fff1f2" : status === "low" ? "#fffbeb" : "#fff" }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div title={item.name} style={{ fontSize: 10.5, fontWeight: 800, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{shortName(item)}</div>
+                                <div style={{ display: "flex", gap: 3, alignItems: "center", minWidth: 0, marginTop: 1 }}>
+                                  <span style={{ fontSize: 8.5, fontWeight: 900, color: sc.badgeColor, lineHeight: 1 }}>{sc.label || "OK"}</span>
+                                  {pcsItem && pcsQty > 0 && <span style={{ fontSize: 8.5, color: "#4f46e5", fontWeight: 900, lineHeight: 1 }}>+{pcsQty}pc</span>}
+                                </div>
                               </div>
-                              <div style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span style={{ fontSize: 11, color: "#64748b", fontWeight: 650 }}>{item.category}</span>
-                                {item.cost > 0 && qty > 0 && <span style={{ fontSize: 11, color: "#15803d", fontWeight: 800 }}>${(item.cost * qty).toLocaleString("en-US", { maximumFractionDigits: 0 })}</span>}
-                                {pcsItem && pcsQty > 0 && <span style={{ fontSize: 11, color: "#4f46e5", fontWeight: 800, background: "#eef2ff", borderRadius: 999, padding: "2px 7px" }}>{pcsQty} loose pcs</span>}
+                              <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
+                                <div style={{ textAlign: "right", minWidth: 26 }}>
+                                  <div style={{ fontSize: 13, fontWeight: 950, color: sc.text, lineHeight: 1 }}>{formatQty(item, qty)}</div>
+                                  <div style={{ fontSize: 8.5, color: "#64748b", fontWeight: 800, lineHeight: 1 }}>{isFoam(item.id) ? "gal" : item.unit}</div>
+                                </div>
+                                <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
                               </div>
                             </div>
-                            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                              <div style={{ textAlign: "right", minWidth: 74 }}>
-                                <div style={{ fontSize: 26, fontWeight: 950, color: sc.text, lineHeight: 0.95, letterSpacing: "-1px" }}>{formatQty(item, qty)}</div>
-                                <div style={{ marginTop: 4, fontSize: 11, color: "#64748b", fontWeight: 700, whiteSpace: "nowrap" }}>{formatSubQty(item, qty)}</div>
-                              </div>
-                              <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
               </div>
             );
           };
