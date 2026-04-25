@@ -1261,10 +1261,10 @@ function AdminLogin({ onLogin, onBack }) {
   );
 }
 
-function CrewLogin({ trucks, onLogin, onBack }) {
+function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
   const visibleTrucks = (trucks || []).filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
-  const [members, setMembers] = useState([]);
-  const [loadingMembers, setLoadingMembers] = useState(true);
+  const [members, setMembers] = useState(rosterMembers || []);
+  const [loadingMembers, setLoadingMembers] = useState(!(rosterMembers || []).length);
   const [step, setStep] = useState("pick"); // pick | pin | setup | confirm | email
   const [selectedMember, setSelectedMember] = useState(null);
   const [pin, setPin] = useState("");
@@ -1275,8 +1275,18 @@ function CrewLogin({ trucks, onLogin, onBack }) {
   const [selectedTruckId, setSelectedTruckId] = useState("");
 
   useEffect(() => {
+    if ((rosterMembers || []).length) {
+      setMembers(rosterMembers);
+      setLoadingMembers(false);
+    }
+  }, [rosterMembers]);
+
+  useEffect(() => {
     const unsub = onSnapshot(collection(db, "crewMembers"), snap => {
       setMembers(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setLoadingMembers(false);
+    }, (err) => {
+      console.error("Failed to load crew members", err);
       setLoadingMembers(false);
     });
     return unsub;
@@ -13353,7 +13363,7 @@ export default function App() {
     let screen;
     if (!role) screen = <RoleSelect key="role-select" onSelect={setRole} />;
     else if (role === "admin" && !adminName) screen = <AdminLogin key="admin-login" onLogin={handleAdminLogin} onBack={() => setRole(null)} />;
-    else if (role === "crew" && !crewSession) screen = <CrewLogin key="crew-login" trucks={trucks} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
+    else if (role === "crew" && !crewSession) screen = <CrewLogin key="crew-login" trucks={trucks} members={members} onLogin={handleCrewLogin} onBack={() => setRole(null)} />;
     else if (role === "mechanic" && !mechanicName) screen = <MechanicLogin key="mechanic-login" onLogin={name => setMechanicName(name)} onBack={() => setRole(null)} />;
     else screen = null; // launcher handled below inside this block
     if (screen) return (
