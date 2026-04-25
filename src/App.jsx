@@ -7312,10 +7312,16 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
 
-            <SectionHeader title={scheduleView === "energySeal" ? "Energy Seal Schedule" : "Schedule"} right={<>
-              <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
-              <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }}>+ Add Job</Button>
-            </>} />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 14, flexWrap: "wrap", marginBottom: 18, padding: "14px 16px", borderRadius: 22, background: "rgba(255,255,255,0.74)", border: "1px solid rgba(148,163,184,0.24)", boxShadow: "0 14px 40px rgba(15,23,42,0.08)", WebkitBackdropFilter: "blur(16px)", backdropFilter: "blur(16px)" }}>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.14em", textTransform: "uppercase", color: t.textMuted }}>Dispatch board</div>
+                <div style={{ fontSize: 20, fontWeight: 950, letterSpacing: "-0.7px", color: t.text }}>{scheduleView === "energySeal" ? "Energy Seal Schedule" : "Insulation Schedule"}</div>
+              </div>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
+                <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }}>+ Add Job</Button>
+              </div>
+            </div>
             {truckFilterName && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", padding: "8px 12px", background: t.accentBg, borderRadius: "6px", fontSize: "13px", color: t.accent, fontWeight: 500 }}>
                 Showing jobs for {truckFilterName}
@@ -7344,7 +7350,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               }).filter((g) => !truckFilter || g.jobs.some(j => j.truckId === truckFilter));
               return <>
                 {unassignedCrew.length > 0 && (
-                  <div style={{ background: "#fef3c7", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px", display: "flex", alignItems: "center", gap: "10px" }}>
+                  <div style={{ background: "linear-gradient(135deg,#fff7ed,#fef3c7)", border: "1px solid #fed7aa", borderRadius: "18px", padding: "13px 16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px", boxShadow: "0 12px 30px rgba(245,158,11,0.12)" }}>
                     <span style={{ fontSize: "18px" }}>⚠️</span>
                     <div>
                       <div style={{ fontSize: "13px", fontWeight: 700, color: "#92400e" }}>{unassignedCrew.length} job{unassignedCrew.length !== 1 ? "s" : ""} with no employees assigned</div>
@@ -7353,14 +7359,19 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   </div>
                 )}
                 {crewGroups.map((group) => (
-                <div key={group.key} style={{ marginBottom: "20px" }}>
+                <div key={group.key} style={{ marginBottom: "18px", padding: "14px", borderRadius: 26, background: "linear-gradient(180deg,rgba(255,255,255,0.86),rgba(248,251,255,0.72))", border: "1px solid rgba(148,163,184,0.22)", boxShadow: "0 18px 48px rgba(15,23,42,0.08)", WebkitBackdropFilter: "blur(14px)", backdropFilter: "blur(14px)" }}>
                   {(() => {
                     const headerName = group.names.length > 0 ? group.names.join(" and ") : "Unassigned";
                     return (
-                      <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px", paddingBottom: "6px", borderBottom: "2px solid " + t.accent }}>
-                        <div style={{ fontSize: "15px", fontWeight: 600, color: t.text }}>{headerName}</div>
-
-                        <Badge>{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "12px", marginBottom: "12px", padding: "4px 4px 12px", borderBottom: "1px solid rgba(148,163,184,0.18)" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                          <div style={{ width: 36, height: 36, borderRadius: 14, display: "grid", placeItems: "center", background: group.key === "_unassigned" ? "#fef3c7" : "linear-gradient(135deg,#2563eb,#0f172a)", color: group.key === "_unassigned" ? "#92400e" : "#fff", fontWeight: 950, boxShadow: "0 10px 24px rgba(37,99,235,0.18)" }}>{headerName.slice(0,1)}</div>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: "17px", fontWeight: 950, color: t.text, letterSpacing: "-0.4px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{headerName}</div>
+                            <div style={{ fontSize: 11, color: t.textMuted, fontWeight: 750, textTransform: "uppercase", letterSpacing: "0.08em" }}>Crew route</div>
+                          </div>
+                        </div>
+                        <Badge color="#1d4ed8" bg="#dbeafe">{group.jobs.length} job{group.jobs.length !== 1 ? "s" : ""}</Badge>
                       </div>
                     );
                   })()}
@@ -7377,33 +7388,38 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       const allIds = updates.filter(u => u.jobId === job.id && u.notes && u.crewName).map(u => u.id);
                       localStorage.setItem(`ist_read_notes_${job.id}`, JSON.stringify(allIds));
                     }
+                    const jobAccent = job.type === "Foam" ? "#f97316" : job.type === "Energy Seal" ? "#10b981" : job.type === "Fiberglass" ? "#2563eb" : "#64748b";
                     return (
-                      <Card key={job.id} style={{ marginLeft: "8px", padding: "14px 16px" }}>
+                      <Card key={job.id} style={{ position: "relative", overflow: "hidden", marginLeft: 0, padding: "16px 18px 15px 20px", borderRadius: 24, border: "1px solid rgba(148,163,184,0.24)", background: "linear-gradient(135deg,#ffffff 0%,#f8fbff 100%)" }}>
+                        <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: jobAccent }} />
 
                         {/* Top row — customer + expand toggle */}
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "8px", cursor: "pointer" }} onClick={() => toggleJobExpand(job.id)}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", cursor: "pointer" }} onClick={() => toggleJobExpand(job.id)}>
                           <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontWeight: 600, color: t.text, fontSize: "15px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer Listed"}</div>
-                            <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: "underline" }}>{job.address}</a></div>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.12em", textTransform: "uppercase", color: jobAccent }}>{job.type}</span>
+                              {job.jobCategory && <span style={{ fontSize: 10, fontWeight: 850, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}
+                              <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 800 }}>{new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                            </div>
+                            <div style={{ fontWeight: 950, color: t.text, fontSize: "18px", letterSpacing: "-0.55px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer Listed"}</div>
+                            <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>📍 {job.address}</a></div>
                           </div>
-                          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexShrink: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: "7px", flexShrink: 0, flexWrap: "wrap", justifyContent: "flex-end" }}>
                             {unreadNotes.length > 0 && <Badge color="#1d4ed8" bg="#dbeafe">💬 {unreadNotes.length} new</Badge>}
                             <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
-                            <span style={{ fontSize: "14px", color: t.textMuted, lineHeight: 1 }}>{isExpanded ? "▲" : "▼"}</span>
+                            <span style={{ width: 28, height: 28, borderRadius: 12, display: "grid", placeItems: "center", background: "#eef2ff", color: t.accent, fontSize: "13px", fontWeight: 950 }}>{isExpanded ? "▲" : "▼"}</span>
                           </div>
                         </div>
 
                         {/* Pill row — always visible */}
-                        <div style={{ display: "flex", alignItems: "center", gap: "6px", marginTop: "10px", flexWrap: "wrap" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "7px", marginTop: "13px", flexWrap: "wrap" }}>
                           {job.amGeoTag
-                            ? <a href={`https://www.google.com/maps?q=${job.amGeoTag.lat},${job.amGeoTag.lng}`} target="_blank" rel="noreferrer" style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: "#dcfce7", color: "#15803d", textDecoration: "none" }}>AM ✓ 📍</a>
-                            : <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>}
+                            ? <a href={`https://www.google.com/maps?q=${job.amGeoTag.lat},${job.amGeoTag.lng}`} target="_blank" rel="noreferrer" style={{ fontSize: "11px", fontWeight: 850, padding: "5px 9px", borderRadius: "20px", background: "#dcfce7", color: "#15803d", textDecoration: "none" }}>AM ✓ 📍</a>
+                            : <span style={{ fontSize: "11px", fontWeight: 850, padding: "5px 9px", borderRadius: "20px", background: job.jobCheckedAM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedAM === "Yes" ? "#15803d" : "#dc2626" }}>AM {job.jobCheckedAM === "Yes" ? "✓" : "✗"}</span>}
                           {job.pmGeoTag
-                            ? <a href={`https://www.google.com/maps?q=${job.pmGeoTag.lat},${job.pmGeoTag.lng}`} target="_blank" rel="noreferrer" style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: "#dcfce7", color: "#15803d", textDecoration: "none" }}>PM ✓ 📍</a>
-                            : <span style={{ fontSize: "11px", fontWeight: 600, padding: "3px 8px", borderRadius: "20px", background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>}
-                          <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "2px" }}>{job.type}</span>
-                          {job.jobCategory && <span style={{ fontSize: "11px", fontWeight: 600, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}
-                          <span style={{ fontSize: "11px", color: t.textMuted, marginLeft: "auto" }}>{new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                            ? <a href={`https://www.google.com/maps?q=${job.pmGeoTag.lat},${job.pmGeoTag.lng}`} target="_blank" rel="noreferrer" style={{ fontSize: "11px", fontWeight: 850, padding: "5px 9px", borderRadius: "20px", background: "#dcfce7", color: "#15803d", textDecoration: "none" }}>PM ✓ 📍</a>
+                            : <span style={{ fontSize: "11px", fontWeight: 850, padding: "5px 9px", borderRadius: "20px", background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>}
+                          <span style={{ fontSize: "11px", color: t.textMuted, fontWeight: 800, padding: "5px 9px", borderRadius: 999, background: "#f1f5f9" }}>Crew check</span>
                         </div>
 
                         {/* Expanded detail */}
