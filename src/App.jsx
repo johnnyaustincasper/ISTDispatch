@@ -527,21 +527,23 @@ function getGeocache(addr) {
 
 // ─── Theme ───
 const t = {
-  bg: "#f8f9fb",
-  surface: "#ffffff",
+  bg: "#eef3f9",
+  surface: "rgba(255,255,255,0.82)",
   card: "#ffffff",
-  border: "#e2e5ea",
-  borderLight: "#eef0f3",
-  accent: "#1a56db",
-  accentHover: "#1648b8",
-  accentBg: "#eef2ff",
-  text: "#111827",
-  textSecondary: "#4b5563",
-  textMuted: "#9ca3af",
+  border: "#dbe5f2",
+  borderLight: "#edf2f7",
+  accent: "#2563eb",
+  accentHover: "#1d4ed8",
+  accentBg: "#dbeafe",
+  text: "#0f172a",
+  textSecondary: "#475569",
+  textMuted: "#94a3b8",
   danger: "#dc2626",
   dangerBg: "#fef2f2",
-  shadow: "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)",
-  shadowMd: "0 4px 12px rgba(0,0,0,0.08)",
+  success: "#16a34a",
+  warn: "#f59e0b",
+  shadow: "0 12px 32px rgba(15,23,42,0.08)",
+  shadowMd: "0 22px 60px rgba(15,23,42,0.14)",
 };
 
 // ─── Reusable Components ───
@@ -550,10 +552,10 @@ function Badge({ children, color, bg }) {
 }
 
 function Button({ children, onClick, variant = "primary", style: s, disabled }) {
-  const base = { padding: "11px 20px", border: "none", borderRadius: "9px", fontWeight: 600, fontSize: "14px", cursor: disabled ? "not-allowed" : "pointer", transition: "all 0.15s ease", opacity: disabled ? 0.45 : 1, fontFamily: "inherit", minHeight: "44px", display: "inline-flex", alignItems: "center", justifyContent: "center" };
+  const base = { padding: "11px 20px", border: "none", borderRadius: "14px", fontWeight: 750, fontSize: "14px", cursor: disabled ? "not-allowed" : "pointer", transition: "all 0.15s ease", opacity: disabled ? 0.45 : 1, fontFamily: "inherit", minHeight: "44px", display: "inline-flex", alignItems: "center", justifyContent: "center" };
   const v = {
-    primary: { background: t.accent, color: "#fff", boxShadow: "0 1px 4px rgba(26,86,219,0.3)" },
-    secondary: { background: t.bg, color: t.textSecondary, border: "1px solid " + t.border },
+    primary: { background: "linear-gradient(135deg,#2563eb,#1d4ed8)", color: "#fff", boxShadow: "0 12px 28px rgba(37,99,235,0.28)" },
+    secondary: { background: "rgba(255,255,255,0.9)", color: t.textSecondary, border: "1px solid " + t.border, boxShadow: "0 8px 20px rgba(15,23,42,0.05)" },
     danger: { background: t.dangerBg, color: t.danger, border: "1px solid #fecaca" },
     ghost: { background: "transparent", color: t.textMuted, padding: "8px 12px", minHeight: "36px" },
   };
@@ -591,9 +593,9 @@ function TextArea({ label, ...props }) {
 
 function Card({ children, style: s, onClick }) {
   return (
-    <div onClick={onClick} style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "12px", padding: "16px 18px", marginBottom: "12px", cursor: onClick ? "pointer" : "default", transition: "all 0.15s ease", boxShadow: t.shadow, ...s }}
-      onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.accent; e.currentTarget.style.boxShadow = t.shadowMd; } }}
-      onMouseLeave={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.border; e.currentTarget.style.boxShadow = t.shadow; } }}>
+    <div onClick={onClick} style={{ background: t.card, border: "1px solid " + t.border, borderRadius: "20px", padding: "18px 20px", marginBottom: "14px", cursor: onClick ? "pointer" : "default", transition: "all 0.15s ease", boxShadow: t.shadow, ...s }}
+      onMouseEnter={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.accent; e.currentTarget.style.boxShadow = t.shadowMd; e.currentTarget.style.transform = "translateY(-1px)"; } }}
+      onMouseLeave={(e) => { if (onClick) { e.currentTarget.style.borderColor = s?.borderColor || t.border; e.currentTarget.style.boxShadow = t.shadow; e.currentTarget.style.transform = "none"; } }}>
       {children}
     </div>
   );
@@ -623,7 +625,7 @@ function Modal({ title, onClose, children, footer }) {
 function SectionHeader({ title, right }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "18px", flexWrap: "wrap", gap: "10px" }}>
-      <h2 style={{ fontSize: "20px", fontWeight: 800, color: t.text, margin: 0, letterSpacing: "-0.3px" }}>{title}</h2>
+      <h2 style={{ fontSize: "24px", fontWeight: 900, color: t.text, margin: 0, letterSpacing: "-0.8px" }}>{title}</h2>
       {right && <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>{right}</div>}
     </div>
   );
@@ -7147,6 +7149,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const todayDay = new Date().getDate();
   const todayMonth = new Date().getMonth();
   const todayYear = new Date().getFullYear();
+  const todaysJobs = activeJobs.filter((j) => j.date === todayCST());
+  const unassignedActiveJobs = activeJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
+  const completedTodayCount = updates.filter((u) => u.status === "completed" && tsToCST(u.timestamp) === todayCST()).length;
 
   const tabStyle = (active) => ({ padding: "8px 16px", background: active ? t.accent : "transparent", color: active ? "#fff" : t.textMuted, border: active ? "none" : "1px solid " + t.border, borderRadius: "6px", fontSize: "12.5px", fontWeight: 500, cursor: "pointer", fontFamily: "inherit", position: "relative" });
 
@@ -7171,12 +7176,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   ];
 
   return (
-    <div style={{ minHeight: "100dvh", background: t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "calc(84px + env(safe-area-inset-bottom, 0px))", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
       {/* Top header — title + logout only */}
-      <div className="glass-header" style={{ padding: "12px 20px", paddingTop: "calc(12px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 2px 12px rgba(0,0,0,0.18)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div className="glass-header" style={{ padding: "10px 20px", paddingTop: "calc(10px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, boxShadow: "0 18px 45px rgba(15,23,42,0.22)", borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1480, margin: "0 auto" }}>
           <svg width="180" height="50" viewBox="0 0 360 100" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
             <rect width="360" height="100" fill="#0f172a" rx="8"/>
             <rect x="18" y="14" width="4" height="72" fill="#2563eb" rx="2"/>
@@ -7194,7 +7199,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       </div>
 
       {/* Bottom nav */}
-      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, display: "flex", flexDirection: "column", background: t.surface, borderTop: "1px solid " + t.border, boxShadow: "0 -4px 20px rgba(0,0,0,0.18)" }}>
+      <div style={{ position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200, display: "flex", flexDirection: "column", background: "rgba(255,255,255,0.88)", WebkitBackdropFilter: "blur(18px)", backdropFilter: "blur(18px)", borderTop: "1px solid rgba(148,163,184,0.22)", boxShadow: "0 -18px 48px rgba(15,23,42,0.12)" }}>
         <div style={{ display: "flex", padding: "4px 4px 0" }}>
         {NAV_ITEMS.map(item => {
           const isActive = view === item.key;
@@ -7231,17 +7236,35 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         <div style={{ height: "env(safe-area-inset-bottom, 0px)", background: "transparent" }} />
       </div>
 
-      <div style={{ padding: "20px", maxWidth: "1400px", margin: "0 auto" }}>
+      <div style={{ padding: "24px 20px", maxWidth: "1480px", margin: "0 auto" }}>
 
         {view === "schedule" && (
           <>
-            {/* Department toggle */}
-            <div style={{ display: "flex", gap: 0, marginBottom: 16, borderRadius: 8, overflow: "hidden", border: "1px solid " + t.border, width: "fit-content" }}>
-              {[{key:"insulation",label:"🏠 Insulation"},{key:"energySeal",label:"⚡ Energy Seal"}].map(({key,label}) => (
-                <button key={key} onClick={() => { setScheduleView(key); setTruckFilter(null); }} style={{ padding: "9px 20px", border: "none", cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: scheduleView === key ? 700 : 500, background: scheduleView === key ? t.accent : t.surface, color: scheduleView === key ? "#fff" : t.textMuted, transition: "all 0.15s" }}>{label}</button>
-              ))}
+            <div style={{ position: "relative", overflow: "hidden", borderRadius: 28, padding: "22px 24px", marginBottom: 18, background: "linear-gradient(135deg,#0f172a,#1e3a8a 58%,#2563eb)", color: "#fff", boxShadow: "0 24px 70px rgba(15,23,42,0.22)" }}>
+              <div style={{ position: "absolute", width: 260, height: 260, borderRadius: "50%", background: "rgba(255,255,255,0.10)", right: -70, top: -110 }} />
+              <div style={{ position: "relative", display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: "#bfdbfe", marginBottom: 8 }}>IST Dispatch Command</div>
+                  <h1 style={{ margin: 0, fontSize: "clamp(28px, 4vw, 48px)", letterSpacing: "-1.6px", lineHeight: 1 }}>Today’s schedule</h1>
+                  <div style={{ marginTop: 8, color: "rgba(255,255,255,0.72)", fontSize: 14 }}>{new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })} · {scheduleView === "energySeal" ? "Energy Seal" : "Insulation"}</div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(88px, 1fr))", gap: 10, minWidth: 360 }}>
+                  {[{ label: "Today", value: todaysJobs.length }, { label: "Active", value: activeJobs.length }, { label: "Done", value: completedTodayCount }, { label: "Unassigned", value: unassignedActiveJobs.length }].map((stat) => (
+                    <div key={stat.label} style={{ padding: "13px 14px", borderRadius: 18, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.16)", backdropFilter: "blur(12px)" }}>
+                      <div style={{ fontSize: 24, fontWeight: 950, letterSpacing: "-0.8px" }}>{stat.value}</div>
+                      <div style={{ fontSize: 11, color: "rgba(255,255,255,0.68)", fontWeight: 800, textTransform: "uppercase", letterSpacing: "0.08em" }}>{stat.label}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
 
+            {/* Department toggle */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 18, borderRadius: 18, padding: 6, overflow: "hidden", border: "1px solid " + t.border, width: "fit-content", background: "rgba(255,255,255,0.76)", boxShadow: "0 10px 28px rgba(15,23,42,0.07)" }}>
+              {[{key:"insulation",label:"🏠 Insulation"},{key:"energySeal",label:"⚡ Energy Seal"}].map(({key,label}) => (
+                <button key={key} onClick={() => { setScheduleView(key); setTruckFilter(null); }} style={{ padding: "10px 20px", border: "none", borderRadius: 13, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: scheduleView === key ? 850 : 650, background: scheduleView === key ? t.accent : "transparent", color: scheduleView === key ? "#fff" : t.textSecondary, transition: "all 0.15s" }}>{label}</button>
+              ))}
+            </div>
 
             <div>
               <div>
