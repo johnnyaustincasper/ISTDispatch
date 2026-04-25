@@ -2272,6 +2272,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
     const completedRequiredGroups = Object.fromEntries(
       CREW_CHECKLIST_REQUIRED_GROUPS.map((group) => [group.key, group.items.filter((item) => checklistChecks[`required:${group.key}:${item}`])])
     );
+    const shortageAlerts = [];
+    selectedChecklist.items.forEach((item) => {
+      const baseKey = `job:${selectedChecklistType}:${item}`;
+      if (checklistChecks[`none:${baseKey}`]) shortageAlerts.push({ item, group: selectedChecklist.label, severity: "none" });
+      else if (checklistChecks[`low:${baseKey}`]) shortageAlerts.push({ item, group: selectedChecklist.label, severity: "low" });
+    });
+    CREW_CHECKLIST_REQUIRED_GROUPS.forEach((group) => {
+      group.items.forEach((item) => {
+        const baseKey = `required:${group.key}:${item}`;
+        if (checklistChecks[`none:${baseKey}`]) shortageAlerts.push({ item, group: group.label, severity: "none" });
+        else if (checklistChecks[`low:${baseKey}`]) shortageAlerts.push({ item, group: group.label, severity: "low" });
+      });
+    });
     setSavingChecklist(true);
     try {
       await onSaveCrewChecklist({
@@ -2288,12 +2301,37 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         checks: checklistChecks,
         completedJobItems: selectedChecklist.items.filter((item) => checklistChecks[`job:${selectedChecklistType}:${item}`]),
         completedRequiredGroups,
+        shortageAlerts,
         status: "completed",
         completed: true,
         completedAt: new Date().toISOString(),
         completedBy: { crewMemberId, crewName },
         source: "crew-dashboard",
       });
+      if (shortageAlerts.length && onSubmitTicket) {
+        const noneItems = shortageAlerts.filter((alert) => alert.severity === "none");
+        const lowItems = shortageAlerts.filter((alert) => alert.severity === "low");
+        const lines = [
+          `Checklist supply alert from ${crewName} — ${truck.name}`,
+          noneItems.length ? `NONE ON TRUCK / WAREHOUSE: ${noneItems.map((alert) => `${alert.item} (${alert.group})`).join(", ")}` : null,
+          lowItems.length ? `LOW: ${lowItems.map((alert) => `${alert.item} (${alert.group})`).join(", ")}` : null,
+        ].filter(Boolean);
+        await onSubmitTicket({
+          ticketType: "inventory",
+          priority: noneItems.length ? "critical" : "high",
+          status: "open",
+          truckId: truck.id,
+          truckName: truck.name,
+          submittedBy: crewName,
+          crewMemberId,
+          description: lines.join("\n"),
+          timestamp: new Date().toISOString(),
+          source: "crew-checklist-shortage",
+          checklistDate: todayCST(),
+          checklistKey: selectedChecklistType,
+          shortageAlerts,
+        });
+      }
       setShowChecklistModal(false);
     } catch (error) {
       console.error("Failed to save crew checklist", error);
@@ -2346,6 +2384,29 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           const selectedItems = selectedChecklist?.items || [];
           const allRequiredChecked = CREW_CHECKLIST_REQUIRED_GROUPS.every((group) => group.items.every((item) => checklistChecks[`required:${group.key}:${item}`]));
           const selectedChecked = selectedChecklist ? selectedItems.every((item) => checklistChecks[`job:${selectedChecklistType}:${item}`]) : false;
+          const renderChecklistRow = (baseKey, item) => {
+            const isChecked = !!checklistChecks[baseKey];
+            const lowKey = `low:${baseKey}`;
+            const noneKey = `none:${baseKey}`;
+            return (
+              <div key={baseKey} style={{ display: "grid", gap: 9, padding: "13px 14px", borderRadius: 12, border: `1px solid ${isChecked ? t.accent : t.borderLight}`, background: isChecked ? "rgba(37,99,235,0.08)" : "#fff" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 17, color: t.text, cursor: "pointer", fontWeight: 650, lineHeight: 1.3 }}>
+                  <input type="checkbox" checked={isChecked} onChange={(e) => setChecklistChecks((prev) => ({ ...prev, [baseKey]: e.target.checked }))} style={{ width: 24, height: 24, accentColor: t.accent, cursor: "pointer", flexShrink: 0 }} />
+                  <span>{item}</span>
+                </label>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, paddingLeft: 38 }}>
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 9px", borderRadius: 999, border: `1px solid ${checklistChecks[lowKey] ? "#f59e0b" : t.borderLight}`, background: checklistChecks[lowKey] ? "#fffbeb" : "#f8fafc", color: checklistChecks[lowKey] ? "#92400e" : t.textMuted, fontSize: 12, fontWeight: 850, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!checklistChecks[lowKey]} onChange={(e) => setChecklistChecks((prev) => ({ ...prev, [lowKey]: e.target.checked, ...(e.target.checked ? { [noneKey]: false } : {}) }))} style={{ width: 16, height: 16, accentColor: "#f59e0b" }} />
+                    Low
+                  </label>
+                  <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 9px", borderRadius: 999, border: `1px solid ${checklistChecks[noneKey] ? "#dc2626" : t.borderLight}`, background: checklistChecks[noneKey] ? "#fef2f2" : "#f8fafc", color: checklistChecks[noneKey] ? "#991b1b" : t.textMuted, fontSize: 12, fontWeight: 850, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!checklistChecks[noneKey]} onChange={(e) => setChecklistChecks((prev) => ({ ...prev, [noneKey]: e.target.checked, ...(e.target.checked ? { [lowKey]: false } : {}) }))} style={{ width: 16, height: 16, accentColor: "#dc2626" }} />
+                    None / WH
+                  </label>
+                </div>
+              </div>
+            );
+          };
           return (
             <Modal title={selectedChecklist ? `${selectedChecklist.label} Checklist` : "Morning Checklist"} onClose={() => setShowChecklistModal(false)} footer={selectedChecklist ? (
               <div style={{ display: "flex", gap: 8 }}>
@@ -2382,30 +2443,14 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   <div style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden" }}>
                     <div style={{ padding: "12px 14px", background: t.surface, fontSize: 14, fontWeight: 800, color: t.text }}>{selectedChecklist.label}</div>
                     <div style={{ padding: "8px 14px 14px", display: "grid", gap: 10 }}>
-                      {selectedItems.map((item) => {
-                        const key = `job:${selectedChecklistType}:${item}`;
-                        return (
-                          <label key={key} style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 17, color: t.text, padding: "14px 16px", borderRadius: 12, border: `1px solid ${checklistChecks[key] ? t.accent : t.borderLight}`, background: checklistChecks[key] ? "rgba(37,99,235,0.08)" : "#fff", cursor: "pointer", fontWeight: 600, lineHeight: 1.3 }}>
-                            <input type="checkbox" checked={!!checklistChecks[key]} onChange={(e) => setChecklistChecks((prev) => ({ ...prev, [key]: e.target.checked }))} style={{ width: 24, height: 24, accentColor: t.accent, cursor: "pointer", flexShrink: 0 }} />
-                            <span>{item}</span>
-                          </label>
-                        );
-                      })}
+                      {selectedItems.map((item) => renderChecklistRow(`job:${selectedChecklistType}:${item}`, item))}
                     </div>
                   </div>
                   {CREW_CHECKLIST_REQUIRED_GROUPS.map((group) => (
                     <div key={group.key} style={{ border: `1px solid ${t.border}`, borderRadius: 12, overflow: "hidden" }}>
                       <div style={{ padding: "12px 14px", background: t.surface, fontSize: 14, fontWeight: 800, color: t.text }}>{group.label}</div>
                       <div style={{ padding: "8px 14px 14px", display: "grid", gap: 10 }}>
-                        {group.items.map((item) => {
-                          const key = `required:${group.key}:${item}`;
-                          return (
-                            <label key={key} style={{ display: "flex", alignItems: "center", gap: 14, fontSize: 17, color: t.text, padding: "14px 16px", borderRadius: 12, border: `1px solid ${checklistChecks[key] ? t.accent : t.borderLight}`, background: checklistChecks[key] ? "rgba(37,99,235,0.08)" : "#fff", cursor: "pointer", fontWeight: 600, lineHeight: 1.3 }}>
-                              <input type="checkbox" checked={!!checklistChecks[key]} onChange={(e) => setChecklistChecks((prev) => ({ ...prev, [key]: e.target.checked }))} style={{ width: 24, height: 24, accentColor: t.accent, cursor: "pointer", flexShrink: 0 }} />
-                              <span>{item}</span>
-                            </label>
-                          );
-                        })}
+                        {group.items.map((item) => renderChecklistRow(`required:${group.key}:${item}`, item))}
                       </div>
                     </div>
                   ))}
