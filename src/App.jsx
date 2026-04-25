@@ -811,6 +811,16 @@ const kbStyles = `
     .office-job-expanded-columns > div { flex: 1 1 auto !important; min-width: 0 !important; }
     .office-job-action-row { display: grid !important; grid-template-columns: repeat(2, minmax(0, 1fr)) !important; gap: 8px !important; }
     .office-job-action-row button { width: 100% !important; min-height: 38px !important; }
+    .office-ticket-tabs { gap: 6px !important; margin-bottom: 12px !important; }
+    .office-ticket-tabs button { min-width: 0 !important; padding-left: 3px !important; padding-right: 3px !important; font-size: 11px !important; }
+    .office-ticket-card, .office-truck-card { max-width: 100% !important; overflow: hidden !important; border-radius: 18px !important; padding: 14px !important; box-sizing: border-box !important; }
+    .office-ticket-card, .office-ticket-card * { overflow-wrap: anywhere; }
+    .office-truck-card * { max-width: 100%; }
+    .office-truck-top { align-items: flex-start !important; gap: 12px !important; }
+    .office-truck-title-row { min-width: 0 !important; flex: 1 1 210px !important; }
+    .office-truck-name { white-space: normal !important; overflow-wrap: anywhere !important; }
+    .office-truck-actions { width: 100% !important; justify-content: flex-start !important; flex-wrap: wrap !important; }
+    .office-truck-actions button { flex: 1 1 88px !important; min-height: 34px !important; }
   }
 `;
 
