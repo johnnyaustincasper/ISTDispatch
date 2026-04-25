@@ -38,6 +38,7 @@ import {
   buildInventoryEvent,
   compareTruckInventoryStates,
   deriveTruckInventoryFromEvents,
+  getCloseoutOnlyMaterialsUsedDelta,
   getJobUsageParityReport,
   getWarehouseInventoryParityReport,
 } from "./inventoryEvents.js";
@@ -119,10 +120,9 @@ const getCloseoutAttributionTruckId = (jobLike = {}, fallbackTruckId = null) => 
   if (explicitCloseoutTruckId) return explicitCloseoutTruckId;
 
   const attribution = getMaterialLogTruckAttribution(jobLike?.dailyMaterialLogs || []);
-  if (attribution.isAmbiguous) return null;
-  if (attribution.truckIds.length === 1) return attribution.truckIds[0];
+  if (!attribution.isAmbiguous && attribution.truckIds.length === 1) return attribution.truckIds[0];
 
-  return normalizeMaterialLogTruckId(fallbackTruckId ?? null);
+  return normalizeMaterialLogTruckId(fallbackTruckId ?? getAuthoritativeTruckIdForJob(jobLike) ?? null);
 };
 const roundInventoryQty = (value) => Math.round((parseFloat(value) || 0) * 1000) / 1000;
 const JOB_USAGE_PARITY_TOLERANCE = 0.001;
@@ -8246,6 +8246,23 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             return items.length > 0 && (!searchLower || items.some(i => i.name.toLowerCase().includes(searchLower)));
           });
 
+          const inventoryMockModes = ["current", "ledger", "shelf", "table"];
+          const activeInventoryMock = inventoryMockModes.includes(inventoryUiMock) ? inventoryUiMock : "current";
+          const mockPreviewItems = sortAllItems(
+            allMainItems
+              .filter(item => statusFilterFn(item))
+              .filter(item => !searchLower || item.name.toLowerCase().includes(searchLower))
+          );
+          const mockLedgerItems = mockPreviewItems.slice(0, 14);
+          const mockTableItems = mockPreviewItems.slice(0, 16);
+          const mockShelfCategories = (visibleCats2.length ? visibleCats2 : categories.filter(cat => !invCatFilter || invCatFilter === cat))
+            .map(cat => ({
+              cat,
+              items: sortAllItems(allMainItems.filter(i => i.category === cat).filter(item => !searchLower || item.name.toLowerCase().includes(searchLower))).slice(0, 4),
+            }))
+            .filter(section => section.items.length > 0)
+            .slice(0, 4);
+
           const StatFilterBtn = ({ id, label, count, color, activeBg, activeBorder }) => {
             const isActive = invStatusFilter === id;
             return (
@@ -8631,9 +8648,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                         style={{
                           padding: "5px 10px",
                           borderRadius: 999,
-                          border: "1px solid " + (inventoryUiMock === opt.id ? "#2563eb" : "#e2e8f0"),
-                          background: inventoryUiMock === opt.id ? "#2563eb" : "#ffffff",
-                          color: inventoryUiMock === opt.id ? "#ffffff" : "#64748b",
+                          border: "1px solid " + (activeInventoryMock === opt.id ? "#2563eb" : "#e2e8f0"),
+                          background: activeInventoryMock === opt.id ? "#2563eb" : "#ffffff",
+                          color: activeInventoryMock === opt.id ? "#ffffff" : "#64748b",
                           cursor: "pointer",
                           fontFamily: "inherit",
                           fontSize: 11,
@@ -8646,20 +8663,21 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     ))}
                   </div>
 
-                  {inventoryUiMock !== "current" ? (
+                  {activeInventoryMock !== "current" ? (
                     <div style={{ flex: 1, overflowY: "auto", padding: 12, background: "#f8fafc" }}>
                       <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 14, marginBottom: 12 }}>
                         <div style={{ fontSize: 12, fontWeight: 800, color: "#2563eb", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 6 }}>
-                          {inventoryUiMock === "ledger" ? "Ledger mock" : inventoryUiMock === "shelf" ? "Shelf mock" : "Table mock"}
+                          {activeInventoryMock === "ledger" ? "Ledger mock" : activeInventoryMock === "shelf" ? "Shelf mock" : "Table mock"}
                         </div>
                         <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.45 }}>
                           Visual direction only. Live inventory editing stays untouched until we pick a winner.
                         </div>
                       </div>
 
-                      {inventoryUiMock === "ledger" && (
+                      {activeInventoryMock === "ledger" && (
+                        mockLedgerItems.length ? (
                         <div style={{ display: "grid", gap: 8 }}>
-                          {sortAllItems(INVENTORY_ITEMS.filter(i => !i.isPieces).slice(0, 14)).map(item => {
+                          {mockLedgerItems.map(item => {
                             const qty = getQty(item.id);
                             const sc = stockColors[stockStatus(qty)];
                             return (
@@ -8680,12 +8698,17 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             );
                           })}
                         </div>
+                        ) : (
+                          <div style={{ background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 14, padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>
+                            No materials match the current filters for this mock.
+                          </div>
+                        )
                       )}
 
-                      {inventoryUiMock === "shelf" && (
+                      {activeInventoryMock === "shelf" && (
+                        mockShelfCategories.length ? (
                         <div style={{ display: "grid", gap: 14 }}>
-                          {visibleCats2.slice(0, 4).map(cat => {
-                            const items = sortAllItems(INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces)).slice(0, 4);
+                          {mockShelfCategories.map(({ cat, items }) => {
                             return (
                               <div key={cat} style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, padding: 12 }}>
                                 <div style={{ fontSize: 12, fontWeight: 800, color: "#334155", textTransform: "uppercase", letterSpacing: 0.4, marginBottom: 10 }}>{cat}</div>
@@ -8705,15 +8728,21 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             );
                           })}
                         </div>
+                        ) : (
+                          <div style={{ background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 14, padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>
+                            No materials match the current filters for this mock.
+                          </div>
+                        )
                       )}
 
-                      {inventoryUiMock === "table" && (
+                      {activeInventoryMock === "table" && (
+                        mockTableItems.length ? (
                         <div style={{ background: "#fff", border: "1px solid #e2e8f0", borderRadius: 14, overflow: "auto" }}>
                           <div style={{ minWidth: 640 }}>
                             <div style={{ display: "grid", gridTemplateColumns: "2.4fr .8fr .7fr 1fr", padding: "10px 12px", background: "#eff6ff", borderBottom: "1px solid #dbeafe", fontSize: 11, fontWeight: 800, color: "#1d4ed8", textTransform: "uppercase", letterSpacing: 0.4 }}>
                               <div>Item</div><div>Qty</div><div>Unit</div><div>Adjust</div>
                             </div>
-                            {sortAllItems(INVENTORY_ITEMS.filter(i => !i.isPieces).slice(0, 16)).map((item, idx) => {
+                            {mockTableItems.map((item, idx) => {
                               const qty = getQty(item.id);
                               return (
                                 <div key={item.id} style={{ display: "grid", gridTemplateColumns: "2.4fr .8fr .7fr 1fr", padding: "10px 12px", borderBottom: "1px solid #eef2f7", background: idx % 2 ? "#fcfdff" : "#fff", alignItems: "center" }}>
@@ -8732,6 +8761,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             })}
                           </div>
                         </div>
+                        ) : (
+                          <div style={{ background: "#fff", border: "1px dashed #cbd5e1", borderRadius: 14, padding: 24, textAlign: "center", color: "#64748b", fontSize: 13 }}>
+                            No materials match the current filters for this mock.
+                          </div>
+                        )
                       )}
                     </div>
                   ) : (
@@ -12565,6 +12599,7 @@ export default function App() {
     }
 
     const jobRef = doc(db, "jobs", id);
+    let materialEventWriteContext = null;
     await runTransaction(db, async (tx) => {
       const jobSnap = await tx.get(jobRef);
       if (!jobSnap.exists()) return;
@@ -12589,7 +12624,15 @@ export default function App() {
       }
 
       tx.update(jobRef, data);
+      materialEventWriteContext = { existingJob, nextJob, occurredAt: new Date().toISOString() };
     });
+
+    if (materialEventWriteContext?.existingJob && materialEventWriteContext?.nextJob) {
+      const inventoryEvents = buildJobMaterialEditInventoryEvents(materialEventWriteContext);
+      if (inventoryEvents.length > 0) {
+        await writeInventoryEventsBestEffort(inventoryEvents, "admin-job-material-edit-dual-write", { jobId: id });
+      }
+    }
   };
   const handleSubmitTicket = async (data) => { await addDoc(collection(db, "tickets"), { ...data, createdAt: serverTimestamp() }); };
   const handleUpdateTicket = async (id, data) => { await updateDoc(doc(db, "tickets", id), data); };
@@ -12787,6 +12830,134 @@ export default function App() {
     return usageByTruck;
   };
 
+  const buildJobMaterialEditInventoryEvents = ({ previousJob = {}, nextJob = {}, occurredAt }) => {
+    const actor = {
+      actorName: adminName || null,
+      actorRole: "admin",
+      source: "admin-dashboard",
+    };
+    const jobId = nextJob?.id || previousJob?.id || null;
+    if (!jobId) return [];
+
+    const eventTime = occurredAt || new Date().toISOString();
+    const events = [];
+    const buildLogKey = (log = {}) => [
+      log?.date || "date",
+      normalizeMaterialLogTruckId(log?.truckId ?? null) || "legacy-truck",
+    ].join("::");
+
+    const previousLogsByKey = new Map((previousJob?.dailyMaterialLogs || []).map((log) => [buildLogKey(log), log]));
+    const nextLogsByKey = new Map((nextJob?.dailyMaterialLogs || []).map((log) => [buildLogKey(log), log]));
+    const logKeys = new Set([...previousLogsByKey.keys(), ...nextLogsByKey.keys()]);
+
+    logKeys.forEach((key) => {
+      const priorLog = previousLogsByKey.get(key) || {};
+      const nextLog = nextLogsByKey.get(key);
+      const payloadLog = nextLog
+        ? {
+            ...nextLog,
+            audit: {
+              source: "admin-dashboard",
+              actorRole: "admin",
+              capturedAt: eventTime,
+            },
+          }
+        : {
+            ...priorLog,
+            date: priorLog?.date || null,
+            truckId: normalizeMaterialLogTruckId(priorLog?.truckId ?? null),
+            materials: {},
+            audit: {
+              source: "admin-dashboard",
+              actorRole: "admin",
+              capturedAt: eventTime,
+            },
+          };
+
+      events.push(...adaptLiveDailyMaterialLogUpsertToEvents({
+        job: { ...nextJob, ...previousJob, id: jobId },
+        log: payloadLog,
+        priorLog,
+        actor,
+        legacyDocId: jobId,
+      }));
+    });
+
+    const previousCloseoutDelta = getCloseoutOnlyMaterialsUsedDelta(previousJob);
+    const nextCloseoutDelta = getCloseoutOnlyMaterialsUsedDelta(nextJob);
+    const previousCloseoutTruckId = normalizeMaterialLogTruckId(getCloseoutAttributionTruckId(previousJob));
+    const nextCloseoutTruckId = normalizeMaterialLogTruckId(getCloseoutAttributionTruckId(nextJob));
+    const previousEffectiveDate = previousJob?.closedAt || previousJob?.date || null;
+    const nextEffectiveDate = nextJob?.closedAt || nextJob?.date || null;
+
+    events.push(...adaptCloseoutMaterialsUsedDeltaToEvents({
+      job: { ...nextJob, id: jobId, closeoutTruckId: nextCloseoutTruckId },
+      materialsUsed: nextCloseoutDelta,
+      actor,
+      legacyDocId: jobId,
+      truckId: nextCloseoutTruckId,
+      occurredAt: eventTime,
+      effectiveDate: nextEffectiveDate,
+    }).map((event) => ({
+      ...event,
+      metadata: {
+        ...(event.metadata || {}),
+        upsert: true,
+        editedByAdmin: true,
+      },
+    })));
+
+    const clearedCloseoutItemIds = Array.from(new Set([
+      ...Object.keys(previousCloseoutDelta).filter((itemId) => (nextCloseoutDelta[itemId] || 0) <= 0),
+      ...(previousCloseoutTruckId && previousCloseoutTruckId !== nextCloseoutTruckId ? Object.keys(previousCloseoutDelta) : []),
+      ...(previousEffectiveDate && nextEffectiveDate && previousEffectiveDate !== nextEffectiveDate ? Object.keys(previousCloseoutDelta) : []),
+    ]));
+
+    clearedCloseoutItemIds.forEach((itemId) => {
+      const priorQty = Math.round((parseFloat(previousCloseoutDelta?.[itemId]) || 0) * 1000) / 1000;
+      if (priorQty <= 0) return;
+      events.push(buildInventoryEvent({
+        eventType: INVENTORY_EVENT_TYPES.jobUsage,
+        occurredAt: eventTime,
+        effectiveDate: previousEffectiveDate,
+        actor,
+        item: { itemId },
+        quantity: { delta: 0, before: -Math.abs(priorQty), after: 0 },
+        location: {
+          truckId: previousCloseoutTruckId,
+          jobId,
+          jobAddress: nextJob?.address || previousJob?.address || null,
+        },
+        refs: {
+          legacyCollection: "jobs",
+          legacyDocId: jobId,
+          legacyLogType: "materialsUsed",
+          correlationKey: [
+            jobId || "job",
+            previousEffectiveDate || "date",
+            previousCloseoutTruckId || "legacy-truck",
+            "closeout-materials-used",
+          ].join("::"),
+        },
+        metadata: {
+          upsert: true,
+          cleared: true,
+          closeoutOnly: true,
+          movedTruck: !!(previousCloseoutTruckId && previousCloseoutTruckId !== nextCloseoutTruckId),
+          editedByAdmin: true,
+          eventKind: "closeout_materials_used_upsert",
+        },
+        legacy: {
+          priorMaterialsUsed: previousJob?.materialsUsed || {},
+          nextMaterialsUsed: nextJob?.materialsUsed || {},
+          closeoutOnlyDelta: true,
+        },
+      }));
+    });
+
+    return events;
+  };
+
   // Deduct job materials from truck. usedMap = { itemId: qty } (tubes and loose pcs as entered by crew).
   // Transaction-backed so concurrent saves don't overwrite each other.
   const handleDeductFromTruck = async (truckId, usedMap) => {
@@ -12976,7 +13147,7 @@ export default function App() {
           dailyLogged[id] = (dailyLogged[id] || 0) + (parseFloat(qty) || 0);
         });
       });
-      resolvedCloseoutTruckId = getCloseoutAttributionTruckId(jobData, truckId);
+      resolvedCloseoutTruckId = getCloseoutAttributionTruckId(jobData, truckId) ?? normalizeMaterialLogTruckId(truckId);
       const netNew = {};
       Object.entries(materialsUsed || {}).forEach(([id, qty]) => {
         const extra = Math.max(0, (parseFloat(qty) || 0) - (dailyLogged[id] || 0));

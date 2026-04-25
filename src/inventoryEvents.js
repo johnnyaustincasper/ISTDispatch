@@ -99,12 +99,13 @@ const getLegacyMaterialLogTruckAttribution = (logs = []) => {
   };
 };
 const resolveLegacyJobTruckId = (job = {}, fallbackTruckId = null) => {
-  const explicitTruckId = asNullableString(fallbackTruckId) || asNullableString(job?.closeoutTruckId);
+  const explicitTruckId = asNullableString(fallbackTruckId)
+    || asNullableString(job?.closeoutTruckId)
+    || asNullableString(job?.truckId);
   if (explicitTruckId) return explicitTruckId;
 
   const attribution = getLegacyMaterialLogTruckAttribution(job?.dailyMaterialLogs || []);
-  if (attribution.isAmbiguous) return null;
-  if (attribution.truckIds.length === 1) return attribution.truckIds[0];
+  if (!attribution.isAmbiguous && attribution.truckIds.length === 1) return attribution.truckIds[0];
 
   return null;
 };
