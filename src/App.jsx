@@ -725,6 +725,10 @@ const kbStyles = `
     0%, 100% { transform: scale(1); }
     50% { transform: scale(1.15); }
   }
+  @keyframes borderPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.22); border-color: #ef4444; }
+    50% { box-shadow: 0 0 0 4px rgba(239,68,68,0.12); border-color: #dc2626; }
+  }
   @keyframes toastSlide {
     from { opacity: 0; transform: translateX(40px); }
     to { opacity: 1; transform: translateX(0); }
@@ -7030,6 +7034,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [invSort, setInvSort] = useState("category");
   const [invStatusFilter, setInvStatusFilter] = useState("all");
   const [invTab, setInvTab] = useState("materials");
+  const [invAdminTab, setInvAdminTab] = useState("parity");
+  const [showResolvedShortageAlerts, setShowResolvedShortageAlerts] = useState(false);
   const [jobSearch, setJobSearch] = useState("");
   const [jobStatusFilter, setJobStatusFilter] = useState("active");
   const [jobDateFilter, setJobDateFilter] = useState("all");
@@ -7141,6 +7147,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   });
   const openTicketCount = tickets.filter((tk) => tk.status === "open").length;
   const STATUS_SORT_ORDER = { open: 0, acknowledged: 1, in_progress: 2, resolved: 3 };
+  const isChecklistShortageTicket = (tk) => tk?.source === "crew-checklist-shortage" || (tk?.ticketType === "inventory" && Array.isArray(tk?.shortageAlerts) && tk.shortageAlerts.length > 0);
+  const checklistShortageTickets = tickets
+    .filter(isChecklistShortageTicket)
+    .sort((a, b) => (STATUS_SORT_ORDER[a.status] ?? 0) - (STATUS_SORT_ORDER[b.status] ?? 0) || new Date(b.timestamp) - new Date(a.timestamp));
+  const activeChecklistShortageTickets = checklistShortageTickets.filter((tk) => tk.status !== "resolved");
+  const resolvedChecklistShortageTickets = checklistShortageTickets.filter((tk) => tk.status === "resolved");
+  const openChecklistShortageCount = activeChecklistShortageTickets.length;
+  const unrespondedChecklistShortageCount = checklistShortageTickets.filter((tk) => tk.status === "open" && !tk.adminNote).length;
   const filteredTickets = tickets
     .filter((tk) => !truckFilter || tk.truckId === truckFilter)
     .filter((tk) => (tk.ticketType || "equipment") === ticketTypeTab)
@@ -7469,7 +7483,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
     { key: "calendar", label: "Calendar" },
-    { key: "inventory", label: "Inventory" },
+    { key: "inventory", label: "Inventory", badge: openChecklistShortageCount },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
     { key: "roster", label: "Roster" },
@@ -8708,30 +8722,115 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               {/* ── Tab nav ── */}
               <div className="office-inventory-tabs" style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
                 {[
-                  { id: "materials",     label: "Materials" },
-                  { id: "parity",        label: "Parity" },
-                  { id: "audit",         label: "Audit" },
-                  { id: "summary",       label: "💰 Value" },
-                  { id: "report",        label: "Usage Report" },
-                  { id: "trucks",        label: "Truck Loads" },
+                  { id: "materials", label: "Materials" },
+                  { id: "shortages", label: "Crew Shortage Alerts", badge: openChecklistShortageCount, pulse: unrespondedChecklistShortageCount > 0, accent: "#ef4444" },
+                  { id: "admin", label: "Admin", accent: "#0f172a" },
                 ].map(tab => {
                   const active = invTab === tab.id;
+                  const accent = tab.accent || "#2563eb";
                   return (
                     <button key={tab.id} onClick={() => setInvTab(tab.id)} style={{
-                      padding: "6px 12px", borderRadius: "8px 8px 0 0", fontSize: 12, fontWeight: active ? 700 : 500,
-                      border: "1px solid " + (active ? "#2563eb" : "#e2e8f0"),
+                      padding: "6px 12px", borderRadius: "8px 8px 0 0", fontSize: 12, fontWeight: active ? 800 : 600,
+                      border: "1px solid " + (active ? accent : tab.pulse ? "#ef4444" : "#e2e8f0"),
                       borderBottom: active ? "1px solid #fff" : "1px solid " + lk.headerBorder,
                       background: active ? "#ffffff" : "transparent",
-                      color: active ? "#2563eb" : "#64748b",
+                      color: active ? accent : tab.pulse ? "#b91c1c" : "#64748b",
                       cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
                       marginBottom: active ? -1 : 0,
-                      transition: "all 0.15s",
-                    }}>{tab.label}</button>
+                      transition: "all 0.15s", position: "relative",
+                      animation: !active && tab.pulse ? "borderPulse 1.8s ease-in-out infinite" : "none",
+                    }}>
+                      {tab.label}
+                      {tab.badge > 0 && <span style={{ marginLeft: 6, display: "inline-flex", alignItems: "center", justifyContent: "center", minWidth: 18, height: 18, padding: "0 5px", borderRadius: 999, background: "#ef4444", color: "#fff", fontSize: 10, fontWeight: 900 }}>{tab.badge}</span>}
+                    </button>
                   );
                 })}
               </div>
 
-              {invTab === "parity" && (() => {
+
+              {invTab === "admin" && (
+                <div className="office-inventory-tabs" style={{ flexShrink: 0, padding: "8px 12px", background: "#fff", borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 6, overflowX: "auto" }}>
+                  {[
+                    { id: "parity", label: "Parity" },
+                    { id: "audit", label: "Audit" },
+                    { id: "summary", label: "Value" },
+                    { id: "report", label: "Usage Report" },
+                    { id: "trucks", label: "Truck Loads" },
+                  ].map(tab => {
+                    const active = invAdminTab === tab.id;
+                    return (
+                      <button key={tab.id} onClick={() => setInvAdminTab(tab.id)} style={{
+                        padding: "7px 11px", borderRadius: 999, fontSize: 12, fontWeight: active ? 850 : 650,
+                        border: "1px solid " + (active ? "#0f172a" : "#e2e8f0"),
+                        background: active ? "#0f172a" : "#f8fafc", color: active ? "#fff" : "#475569",
+                        cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                      }}>{tab.label}</button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {invTab === "shortages" && (() => {
+                const renderShortageTicket = (ticket, resolved = false) => {
+                  const prioObj = TICKET_PRIORITIES.find((p) => p.value === ticket.priority);
+                  const statObj = TICKET_STATUSES.find((s) => s.value === ticket.status);
+                  const isOpen = ticket.status === "open" && !ticket.adminNote;
+                  const alerts = Array.isArray(ticket.shortageAlerts) ? ticket.shortageAlerts : [];
+                  return (
+                    <Card key={ticket.id} onClick={() => { setActiveTicket(ticket); setTicketStatus(ticket.status === "open" ? "acknowledged" : ticket.status); setTicketNote(ticket.adminNote || ""); }} style={{ cursor: "pointer", marginBottom: 10, border: isOpen ? "2px solid #ef4444" : "1px solid #e5e7eb", opacity: resolved ? 0.62 : 1 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+                        <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+                          <Badge color="#b91c1c" bg="#fee2e2">Checklist Shortage</Badge>
+                          <Badge color={prioObj?.color} bg={prioObj?.bg}>{prioObj?.label?.split("—")[0]?.trim()}</Badge>
+                          <Badge color={statObj?.color} bg={statObj?.bg}>{statObj?.label}</Badge>
+                          <span style={{ fontSize: 11, color: t.textMuted }}>{ticket.truckName || "Unknown Truck"}</span>
+                        </div>
+                        <span style={{ fontSize: 11.5, color: t.textMuted, flexShrink: 0 }}>{dateStr(ticket.timestamp)}</span>
+                      </div>
+                      <div style={{ fontSize: 14, color: t.text, lineHeight: 1.5 }}>{ticket.description}</div>
+                      {alerts.length > 0 && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+                          {alerts.map((alert, idx) => (
+                            <span key={`${alert.item || idx}-${idx}`} style={{ fontSize: 11, fontWeight: 800, borderRadius: 999, padding: "4px 8px", background: alert.severity === "none" ? "#fee2e2" : "#fef3c7", color: alert.severity === "none" ? "#991b1b" : "#92400e", border: "1px solid " + (alert.severity === "none" ? "#fecaca" : "#fde68a") }}>
+                              {alert.severity === "none" ? "Out" : "Low"}: {alert.item}{alert.group ? ` · ${alert.group}` : ""}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <div style={{ fontSize: 12, color: t.textMuted, marginTop: 8 }}>Submitted by {ticket.submittedBy || "Crew"}{ticket.checklistDate ? ` · ${ticket.checklistDate}` : ""}</div>
+                      {ticket.adminNote && <div style={{ fontSize: 13, color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: 6, marginTop: 8, borderLeft: "3px solid #15803d" }}>Response: {ticket.adminNote}</div>}
+                    </Card>
+                  );
+                };
+                return (
+                  <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+                      <div>
+                        <div style={{ fontSize: 18, fontWeight: 900, color: t.text }}>Crew checklist shortage alerts</div>
+                        <div style={{ fontSize: 12, color: t.textMuted, marginTop: 3 }}>Low and out-of-stock items marked by crew during morning checklist.</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <Badge color="#b91c1c" bg="#fee2e2">{openChecklistShortageCount} active</Badge>
+                        <Badge color="#64748b" bg="#f1f5f9">{resolvedChecklistShortageTickets.length} resolved</Badge>
+                      </div>
+                    </div>
+                    {activeChecklistShortageTickets.length === 0
+                      ? <EmptyState text="No active crew shortage alerts." sub={resolvedChecklistShortageTickets.length ? "Resolved shortage alerts are tucked below." : "Crew Low/Out checklist items will land here."} />
+                      : activeChecklistShortageTickets.map((ticket) => renderShortageTicket(ticket))}
+                    {resolvedChecklistShortageTickets.length > 0 && (
+                      <div style={{ marginTop: 18, border: "1px solid " + t.border, borderRadius: 12, overflow: "hidden", background: t.surface }}>
+                        <button onClick={() => setShowResolvedShortageAlerts((v) => !v)} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "12px 14px", background: t.bg, border: "none", cursor: "pointer", fontFamily: "inherit", color: t.text }}>
+                          <span style={{ fontSize: 13, fontWeight: 800 }}>Resolved shortage alerts</span>
+                          <span style={{ display: "flex", alignItems: "center", gap: 8, color: t.textMuted, fontSize: 12, fontWeight: 700 }}>{resolvedChecklistShortageTickets.length} closed <span>{showResolvedShortageAlerts ? "▲" : "▼"}</span></span>
+                        </button>
+                        {showResolvedShortageAlerts && <div style={{ padding: "10px 10px 4px" }}>{resolvedChecklistShortageTickets.map((ticket) => renderShortageTicket(ticket, true))}</div>}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {invTab === "admin" && invAdminTab === "parity" && (() => {
                 const parity = warehouseInventoryParity || { mismatches: [], matches: true, warehouseEventCount: 0, warehouseSnapshotCount: 0, warehouseDeltaEventCount: 0 };
                 const topMismatches = (parity.mismatches || []).slice(0, 50);
                 const statusColor = parity.matches ? "#15803d" : "#b45309";
@@ -8795,7 +8894,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 );
               })()}
 
-              {invTab === "audit" && (
+              {invTab === "admin" && invAdminTab === "audit" && (
                 <InventoryAuditView
                   inventoryEvents={inventoryEvents}
                   truckInventoryParity={truckInventoryParity}
@@ -8806,7 +8905,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               )}
 
 
-              {invTab === "report" && (
+              {invTab === "admin" && invAdminTab === "report" && (
                 <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
                   <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
                     <div><label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>Start Date</label><input type="date" value={reportStart} onChange={e => setReportStart(e.target.value)} style={{ padding: "8px 10px", border: "1px solid " + t.border, borderRadius: 6, fontSize: 13, fontFamily: "inherit" }} /></div>
@@ -8844,7 +8943,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   })()}
                 </div>
               )}
-              {invTab === "trucks" && (
+              {invTab === "admin" && invAdminTab === "trucks" && (
                 <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 12 }}>
                     {sortedTrucks.map(tr => {
@@ -8902,7 +9001,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
 
               {/* ── Value Summary tab ── */}
-              {invTab === "summary" && (() => {
+              {invTab === "admin" && invAdminTab === "summary" && (() => {
                 const getQty = (itemId) => (inventory || []).find(r => r.itemId === itemId)?.qty || 0;
                 const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
                 const getManufacturer = (item) => {
