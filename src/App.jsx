@@ -7375,6 +7375,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       const mondayOffset = (base.getDay() + 6) % 7;
       start.setDate(base.getDate() - mondayOffset);
       end.setDate(start.getDate() + 6);
+    } else if (mode === "month") {
+      start.setDate(1);
+      end.setMonth(start.getMonth() + 1, 0);
     }
     setCalDayView(null);
     setJobSummaryReport({ mode, start: start.toLocaleDateString("en-CA"), end: end.toLocaleDateString("en-CA") });
@@ -8110,6 +8113,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <button onClick={calPrev} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: "6px", padding: "6px 14px", cursor: "pointer", color: t.text, fontSize: "14px", fontFamily: "inherit" }}>←</button>
               <div style={{ fontSize: "18px", fontWeight: 600, color: t.text }}>{calMonthNames[calMonth]} {calYear}</div>
               <button onClick={calNext} style={{ background: t.surface, border: "1px solid " + t.border, borderRadius: "6px", padding: "6px 14px", cursor: "pointer", color: t.text, fontSize: "14px", fontFamily: "inherit" }}>→</button>
+            </div>
+            <div style={{ display: "flex", justifyContent: "center", margin: "-6px 0 14px" }}>
+              <Button onClick={() => openJobSummaryReport(calYear + "-" + String(calMonth + 1).padStart(2, "0") + "-01", "month")} style={{ fontSize: 12, padding: "9px 14px" }}>📆 Monthly Summary Report</Button>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(7, minmax(0, 1fr))", gap: "1px", background: t.border, border: "1px solid " + t.border, borderRadius: "8px", overflow: "hidden", width: "100%" }}>
               {["Su","Mo","Tu","We","Th","Fr","Sa"].map((d) => (
@@ -9556,7 +9562,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       {jobSummaryReport && (() => {
         const report = buildJobSummaryReport(jobSummaryReport);
         if (!report) return null;
-        const title = report.mode === "week"
+        const title = report.mode === "month"
+          ? `Monthly Job Report · ${new Date(report.start + "T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })}`
+          : report.mode === "week"
           ? `Weekly Job Report · ${report.start} to ${report.end}`
           : `Daily Job Report · ${report.start}`;
         const statCards = [
