@@ -165,6 +165,7 @@ const INVENTORY_ITEMS = [
   { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown", cost: MAT_RATE.blown },
   { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown", cost: MAT_RATE.blown },
   { id: "blown_cel",       name: "Blown Cellulose",              unit: "bags", category: "Blown", cost: MAT_RATE.blown },
+  { id: "orkin_cellulose",  name: "Orkin Cellulose",             unit: "bags", category: "Blown", cost: 0 },
   // Certainteed R11 ($0.26/sqft)
   { id: "r11_15_8_t",     name: 'R11 x 15" x 93" (8ft)', pcsPerTube: 16, sqftPerTube: 155,    unit: "tubes", category: "Certainteed R11", hasPieces: true, cost: tubeCost(155, MAT_RATE.r11) },
   { id: "r11_15_8_pcs",   name: 'R11 x 15" x 93" (8ft)', unit: "pcs",   category: "Certainteed R11", isPieces: true, parentId: "r11_15_8_t", cost: pcsCost(155, MAT_RATE.r11, 16) },
