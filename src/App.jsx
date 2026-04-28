@@ -2114,6 +2114,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const [histCalYear, setHistCalYear] = useState(new Date().getFullYear());
   const [histDayJobs, setHistDayJobs] = useState(null); // { date, jobs[] }
   const [loadTruckMode, setLoadTruckMode] = useState(false);
+  const [loadSaving, setLoadSaving] = useState(false);
   const [loadQtys, setLoadQtys] = useState({});   // from warehouse
   const [carriedQtys, setCarriedQtys] = useState({});  // already on truck
   const [loadSectionTab, setLoadSectionTab] = useState("foam");
@@ -3110,12 +3111,20 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   </div>
                 )}
                 {mode === "load"
-                  ? <button onClick={async () => {
-                      const allItems = INVENTORY_ITEMS.map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] || 0 }));
-                      await onLoadTruck(allItems, truck?.id);
-                      setLoadTruckMode(false); setLoadQtys({}); setCarriedQtys({});
-                    }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", marginTop: 12 }}>
-                      Confirm Load Out
+                  ? <button type="button" disabled={loadSaving} onClick={async () => {
+                      if (loadSaving) return;
+                      setLoadSaving(true);
+                      try {
+                        const allItems = INVENTORY_ITEMS.map(i => ({ itemId: i.id, name: i.name, unit: i.unit, qty: loadQtys[i.id] || 0 }));
+                        await onLoadTruck(allItems, truck?.id);
+                        setLoadTruckMode(false); setLoadQtys({}); setCarriedQtys({});
+                      } catch (error) {
+                        alert("Could not confirm loadout: " + (error?.message || error));
+                      } finally {
+                        setLoadSaving(false);
+                      }
+                    }} style={{ width: "100%", padding: "14px", borderRadius: 12, background: loadSaving ? "#93c5fd" : "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: loadSaving ? "not-allowed" : "pointer", fontFamily: "inherit", marginTop: 12 }}>
+                      {loadSaving ? "Saving Loadout…" : "Confirm Load Out"}
                     </button>
                   : <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 8 }}>
                       <div style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, textAlign: "center", marginBottom: 2 }}>What are you doing with the remaining material?</div>
