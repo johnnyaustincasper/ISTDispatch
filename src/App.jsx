@@ -3385,14 +3385,18 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         const fmtDateLabel = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d)+", "+y; };
         const jobType = (dailyMaterialsJob.type || "").toLowerCase();
         const materialLogInventory = getInventoryForMaterialLog(dailyMaterialsJob, matchedDailyLog, truck?.id);
+        const isFiberglassLike = (item) => {
+          const hay = `${item?.name || ""} ${item?.category || ""}`.toLowerCase();
+          return hay.includes("r11") || hay.includes("r13") || hay.includes("r15") || hay.includes("r19") || hay.includes("r22") || hay.includes("r26") || hay.includes("r30") || hay.includes("r38") || hay.includes("fiberglass") || hay.includes("blown") || hay.includes("cellulose") || hay.includes("rockwool") || hay.includes("lambswool") || hay.includes("orkin") || hay.includes("certainteed") || hay.includes("johns manville") || hay.includes("owens corning") || hay.includes("jm ");
+        };
         const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (
           (materialLogInventory[i.id] || 0) > 0 ||
           (i.hasPieces && (materialLogInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0) ||
           existingDailyEntry[i.id] ||
           (i.hasPieces && existingDailyEntry[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id]) ||
-          (jobType === "fiberglass" && (i.category === "Certainteed" || i.category === "JM" || i.category === "Rockwool" || i.category === "Blown")) ||
+          (jobType === "fiberglass" && isFiberglassLike(i)) ||
           (jobType === "foam" && i.category === "Foam") ||
-          (jobType === "removal" && i.category === "Removal")
+          (jobType === "removal" && isFiberglassLike(i))
         ));
         return (
           <Modal title={isEditingPast ? "Edit Materials — " + fmtDateLabel(today) : "Log Today's Materials"} onClose={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }}>
@@ -3503,16 +3507,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   }
                 });
                 if (!valid) return;
-                // Delta adjust if editing existing entry, full deduct if new
-                await onSaveJobMaterials(dailyMaterialsJob.id, {
-                  date: today,
-                  truckId: normalizeMaterialLogTruckId(truck?.id ?? dailyMaterialsJob._logTruckId ?? null),
-                  sourceTruckId: dailyMaterialsJob._sourceTruckId,
-                  materials: used,
-                  loggedBy: crewName,
-                  timestamp: new Date().toISOString(),
-                }, truck?.id || null);
-                setDailyMaterialsJob(null); setDailyMaterialQtys({});
+                try {
+                  await onSaveJobMaterials(dailyMaterialsJob.id, {
+                    date: today,
+                    truckId: normalizeMaterialLogTruckId(truck?.id ?? dailyMaterialsJob._logTruckId ?? null),
+                    sourceTruckId: dailyMaterialsJob._sourceTruckId,
+                    materials: used,
+                    loggedBy: crewName,
+                    timestamp: new Date().toISOString(),
+                  }, truck?.id || null);
+                  setDailyMaterialsJob(null); setDailyMaterialQtys({});
+                } catch (error) {
+                  alert("Could not save materials: " + (error?.message || error));
+                }
               }} style={{ flex: 1 }}>Save</Button>
             </div>
           </Modal>
