@@ -45,8 +45,16 @@ import {
 import { writeInventoryEvents } from "./inventoryEventWrites.js";
 
 // ─── Constants ───
-const JOB_TYPES = ["Foam","Fiberglass","Removal","Energy Seal"];
+const INSULATION_JOB_TYPES = ["Foam","Fiberglass","Removal"];
+const JOB_TYPES = [...INSULATION_JOB_TYPES,"Energy Seal"];
 const ES_JOB_TYPES = ["Energy Seal","Air Seal","Weatherization","Other"];
+const normalizeInsulationJobType = (type) => {
+  const value = String(type || "").trim().toLowerCase();
+  if (value.includes("foam")) return "Foam";
+  if (value.includes("removal") || value.includes("remove") || value.includes("tear")) return "Removal";
+  if (value.includes("fiberglass") || value.includes("blown") || value.includes("batt") || value.includes("attic") || value.includes("r-")) return "Fiberglass";
+  return INSULATION_JOB_TYPES.includes(type) ? type : "Fiberglass";
+};
 const STATUS_OPTIONS = [
   { value: "not_started", label: "Not Started", color: "#6b7280", bg: "#f3f4f6" },
   { value: "in_progress", label: "In Progress", color: "#b45309", bg: "#fef3c7" },
@@ -7274,7 +7282,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     }
   };
 
-  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null; const safeDate = normalizeSchedulableJobDate(jobForm.date); onAddJob({ ...jobForm, date: safeDate, crewMemberIds: cleanCrew, revenue: revenueVal }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" }); setAddCrewSearch(""); setBuilderSearch(""); setShowBuilderDropdown(false); setShowAddJob(false); };
+  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null; const safeDate = normalizeSchedulableJobDate(jobForm.date); const safeType = scheduleView === "energySeal" ? jobForm.type : normalizeInsulationJobType(jobForm.type); onAddJob({ ...jobForm, type: safeType, date: safeDate, crewMemberIds: cleanCrew, revenue: revenueVal }); onLogAction("Added job: " + jobForm.address + " (" + safeType + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" }); setAddCrewSearch(""); setBuilderSearch(""); setShowBuilderDropdown(false); setShowAddJob(false); };
 
   const openTakeoffImport = async () => {
     setShowTakeoffImport(true);
@@ -7337,7 +7345,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     const revenueVal = editForm.revenue !== "" ? parseFloat(editForm.revenue) : null;
     const sqftVal = editForm.sqft !== "" ? parseFloat(editForm.sqft) : null;
     const laborVal = editForm.laborValue !== "" ? parseFloat(editForm.laborValue) : null;
-    await onEditJob(editingJob.id, { ...editForm, date: normalizeSchedulableJobDate(editForm.date), crewMemberIds: cleanCrew, revenue: revenueVal, sqft: sqftVal, laborValue: laborVal });
+    const editTruck = editForm.truckId ? trucks.find(tr => tr.id === editForm.truckId) : null;
+    const safeType = editTruck?.department === "energySeal" ? editForm.type : normalizeInsulationJobType(editForm.type);
+    await onEditJob(editingJob.id, { ...editForm, type: safeType, date: normalizeSchedulableJobDate(editForm.date), crewMemberIds: cleanCrew, revenue: revenueVal, sqft: sqftVal, laborValue: laborVal });
     onLogAction("Edited job: " + editForm.address);
     setEditingJob(null);
   };
@@ -7814,7 +7824,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       const allIds = updates.filter(u => u.jobId === job.id && u.notes && u.crewName).map(u => u.id);
                       localStorage.setItem(`ist_read_notes_${job.id}`, JSON.stringify(allIds));
                     }
-                    const jobAccent = job.type === "Foam" ? "#f97316" : job.type === "Energy Seal" ? "#10b981" : job.type === "Fiberglass" ? "#2563eb" : "#64748b";
+                    const displayType = scheduleView === "energySeal" ? job.type : normalizeInsulationJobType(job.type);
+                    const jobAccent = displayType === "Foam" ? "#f97316" : displayType === "Energy Seal" ? "#10b981" : displayType === "Fiberglass" ? "#2563eb" : "#64748b";
                     return (
                       <Card key={job.id} style={{ position: "relative", overflow: "hidden", marginLeft: 0, padding: "16px 18px 15px 20px", borderRadius: 24, border: "1px solid rgba(148,163,184,0.24)", background: "linear-gradient(135deg,#ffffff 0%,#f8fbff 100%)" }}>
                         <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: jobAccent }} />
@@ -7823,7 +7834,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "10px", cursor: "pointer" }} onClick={() => toggleJobExpand(job.id)}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
-                              <span style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.12em", textTransform: "uppercase", color: jobAccent }}>{job.type}</span>
+                              <span style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.12em", textTransform: "uppercase", color: jobAccent }}>{displayType}</span>
                               {job.jobCategory && <span style={{ fontSize: 10, fontWeight: 850, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}
                               <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 800 }}>{new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
                             </div>
@@ -9275,7 +9286,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             })()}
           </div>
           <Input label="Job Address" placeholder="e.g. 1234 E 91st St, Tulsa" value={jobForm.address} onChange={(e) => setJobForm({ ...jobForm, address: e.target.value })} inputMode="text" autoComplete="street-address" />
-          <Select label="Job Type" value={jobForm.type} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : JOB_TYPES.filter(t => t !== "Energy Seal")).map((jt) => ({ value: jt, label: jt }))} />
+          <Select label="Job Type" value={scheduleView === "energySeal" ? jobForm.type : normalizeInsulationJobType(jobForm.type)} onChange={(e) => setJobForm({ ...jobForm, type: e.target.value })} options={(scheduleView === "energySeal" ? ES_JOB_TYPES : INSULATION_JOB_TYPES).map((jt) => ({ value: jt, label: jt }))} />
           <Select label="Truck (logistics only — does not set crew)" value={jobForm.truckId} onChange={(e) => setJobForm({ ...jobForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: truckDisplayName(tr) }))]} />
           {/* Employee tap-to-toggle — source of truth for timesheet */}
           <div style={{ marginBottom: "16px" }}>
@@ -9562,7 +9573,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         <Modal title="Edit Job" onClose={() => setEditingJob(null)} footer={<div style={{ display: "flex", gap: "10px" }}><Button variant="secondary" onClick={() => setEditingJob(null)} style={{ flex: 1 }}>Cancel</Button><Button onClick={handleSaveEdit} disabled={!editForm.address.trim()} style={{ flex: 1 }}>Save Changes</Button></div>}>
           <Input label="Builder / Customer" value={editForm.builder} onChange={(e) => setEditForm({ ...editForm, builder: e.target.value })} />
           <Input label="Job Address" value={editForm.address} onChange={(e) => setEditForm({ ...editForm, address: e.target.value })} />
-          <Select label="Job Type" value={editForm.type} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
+          <Select label="Job Type" value={normalizeInsulationJobType(editForm.type)} onChange={(e) => setEditForm({ ...editForm, type: e.target.value })} options={INSULATION_JOB_TYPES.map((jt) => ({ value: jt, label: jt }))} />
           <Select label="Truck (logistics only — does not set crew)" value={editForm.truckId} onChange={(e) => setEditForm({ ...editForm, truckId: e.target.value })} options={[{ value: "", label: "— No Truck Assigned —" }, ...sortedTrucks.map((tr) => ({ value: tr.id, label: truckDisplayName(tr) }))]} />
           {/* Employee tap-to-toggle for edit form */}
           <div style={{ marginBottom: "16px" }}>
@@ -9824,7 +9835,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         };
         const grouped = {};
         calDayView.jobs.forEach(j => {
-          const type = j.type || "Other";
+          const type = normalizeInsulationJobType(j.type);
           if (!grouped[type]) grouped[type] = [];
           grouped[type].push(j);
         });
@@ -9897,7 +9908,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <div style={{ fontSize: "13.5px", color: t.textMuted, marginTop: "3px" }}>{calViewJob.address}</div>
               <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "8px", flexWrap: "wrap" }}>
                 <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
-                <span style={{ fontSize: "12.5px", color: t.textMuted }}>{calViewJob.type}</span>
+                <span style={{ fontSize: "12.5px", color: t.textMuted }}>{normalizeInsulationJobType(calViewJob.type)}</span>
                 {calViewJob.jobCategory && <span style={{ fontSize: "12.5px", fontWeight: 600, color: calViewJob.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{calViewJob.jobCategory}</span>}
                 <span style={{ fontSize: "12.5px", color: t.textMuted }}>{new Date(calViewJob.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
               </div>
