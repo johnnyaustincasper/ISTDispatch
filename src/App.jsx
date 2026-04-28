@@ -7107,7 +7107,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     }))]));
   }, [truckDailyLogs, trucks]);
   const activeJobs = jobs.filter((j) => {
-    if (j.closedOut) return false;
     if (j.onHold) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
     const isCompleted = latest && latest.status === "completed";
