@@ -2639,6 +2639,22 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               const logged = getTruckAwareLoggedDates(job.dailyMaterialLogs, getLogTruckIdForJob(job));
               const todayStr = todayCST();
               const missingDays = workedDays.filter(d => d !== todayStr && !logged.has(d));
+              const existingToday = findDailyMaterialLog(job.dailyMaterialLogs, todayStr, getLogTruckIdForJob(job));
+              const openTodayMaterials = () => {
+                if (existingToday) {
+                  const preQtys = {};
+                  INVENTORY_ITEMS.forEach(i => {
+                    const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(i.id);
+                    const val = existingToday.materials[i.id];
+                    if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
+                  });
+                  setDailyMaterialQtys(preQtys);
+                  setDailyMaterialsJob(buildMaterialLogEditContext(job, existingToday, todayStr));
+                } else {
+                  setDailyMaterialQtys({});
+                  setDailyMaterialsJob(job);
+                }
+              };
               const fmt = (ds) => { const [y,m,d] = ds.split("-"); return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][parseInt(m)-1]+" "+parseInt(d); };
               // Distance
               const geocache = getGeocache(job.address);
@@ -2667,15 +2683,26 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                   )}
                   {/* Quick action buttons */}
                   {latestStatus !== "completed" && (
-                    <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
-                      <button onClick={() => {
-                        onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "in_progress", notes: "", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
-                      }} style={{ flex: 1, padding: "12px 8px", borderRadius: "99px", border: "none", background: "#b45309", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                        🔄 In Progress
+                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "10px" }}>
+                      <button onClick={async () => {
+                        try {
+                          await onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "in_progress", notes: "", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
+                        } catch (error) {
+                          alert("Could not start job: " + (error?.message || error));
+                        }
+                      }} style={{ padding: "12px 8px", borderRadius: "99px", border: "none", background: "#b45309", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        🔄 {latestStatus === "not_started" ? "Start Job" : "In Progress"}
                       </button>
-                      <button onClick={() => {
-                        onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "issue", notes: "", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
-                      }} style={{ flex: 1, padding: "12px 8px", borderRadius: "99px", border: "none", background: "#b91c1c", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      <button onClick={openTodayMaterials} style={{ padding: "12px 8px", borderRadius: "99px", border: "none", background: "#2563eb", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                        📦 {existingToday ? "Edit Materials" : "Log Materials"}
+                      </button>
+                      <button onClick={async () => {
+                        try {
+                          await onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "issue", notes: "", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
+                        } catch (error) {
+                          alert("Could not mark issue: " + (error?.message || error));
+                        }
+                      }} style={{ padding: "12px 8px", borderRadius: "99px", border: "none", background: "#b91c1c", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                         ⚠️ Issue
                       </button>
                       <button onClick={() => {
@@ -2683,7 +2710,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                         setStatus("completed");
                         setEta("");
                         setNotes("");
-                      }} style={{ flex: 1, padding: "12px 8px", borderRadius: "99px", border: "none", background: "#0f172a", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                      }} style={{ padding: "12px 8px", borderRadius: "99px", border: "none", background: "#0f172a", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
                         ✅ Complete
                       </button>
                     </div>
@@ -2743,21 +2770,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                         return (
                           <div style={{ display: "flex", gap: "8px" }}>
                             <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
-                            <Button variant="secondary" onClick={() => {
-                              if (existingToday) {
-                                const preQtys = {};
-                                INVENTORY_ITEMS.forEach(i => {
-                                  const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(i.id);
-                                  const val = existingToday.materials[i.id];
-                                  if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
-                                });
-                                setDailyMaterialQtys(preQtys);
-                                setDailyMaterialsJob(buildMaterialLogEditContext(job, existingToday, todayStr));
-                              } else {
-                                setDailyMaterialQtys({});
-                                setDailyMaterialsJob(job);
-                              }
-                            }} style={{ flex: 1 }}>{existingToday ? "Edit Today" : "Log Materials"}</Button>
+                            <Button variant="secondary" onClick={openTodayMaterials} style={{ flex: 1 }}>{existingToday ? "Edit Today" : "Log Materials"}</Button>
                           </div>
                         );
                       })()}
