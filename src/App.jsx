@@ -7787,7 +7787,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   {group.jobs.map((job) => {
                     const latest = getLatestUpdate(job.id);
                     const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
-                    const jobStatusUpdates = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const jobStatusUpdatesRaw = updates.filter((u) => u.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                    const jobStatusUpdates = jobStatusUpdatesRaw.filter((u, idx, arr) => idx === arr.findIndex(v =>
+                      (v.timeStr || "") === (u.timeStr || "")
+                      && (v.crewName || "") === (u.crewName || "")
+                      && (v.status || "") === (u.status || "")
+                      && (v.eta || "") === (u.eta || "")
+                      && (v.notes || "") === (u.notes || "")
+                    ));
                     const jobPmUpds = pmUpdates.filter((p) => p.jobId === job.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
                     const isChecked = job.jobCheckedAM === "Yes" && job.jobCheckedPM === "Yes";
                     const partialCheck = job.jobCheckedAM === "Yes" || job.jobCheckedPM === "Yes";
