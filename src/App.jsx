@@ -7138,12 +7138,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
     const isCompleted = latest && latest.status === "completed";
     const truckMatch = !truckFilter || j.truckId === truckFilter;
-    const isEnergySeaJob = (j.type || "") === "Energy Seal" || ES_JOB_TYPES.includes(j.type);
-    if (scheduleView === "insulation" && isEnergySeaJob) return false;
+    const isEnergySealType = (j.type || "") === "Energy Seal" || ES_JOB_TYPES.includes(j.type);
     const jobTruck = j.truckId ? trucks.find(tr => tr.id === j.truckId) : null;
     const truckIsES = jobTruck ? jobTruck.department === "energySeal" : false;
-    // A job belongs to the ES view if its truck is an ES truck OR its job type is an ES type
-    const jobIsES = isEnergySeaJob || truckIsES;
+    // Truck assignment wins. If an Energy Seal-labeled job is assigned to a normal crew,
+    // it still belongs on the insulation schedule instead of disappearing.
+    const jobIsES = truckIsES || (!jobTruck && isEnergySealType);
     if (scheduleView === "energySeal" && !jobIsES) return false;
     if (scheduleView === "insulation" && jobIsES) return false;
     const deptMatch = true;
