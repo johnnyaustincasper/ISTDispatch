@@ -192,6 +192,9 @@ const INVENTORY_ITEMS = [
   { id: "r19_24_48_pcs",  name: 'R19 x 24" x 48"',       unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_24_48_t", cost: pcsCost(144, MAT_RATE.r19, 18) },
   { id: "r19_24_8_t",     name: 'R19 x 24" x 96"',       pcsPerTube: 9,  sqftPerTube: 144,    unit: "tubes", category: "Certainteed R19", hasPieces: true, cost: tubeCost(144, MAT_RATE.r19) },
   { id: "r19_24_8_pcs",   name: 'R19 x 24" x 96"',       unit: "pcs",   category: "Certainteed R19", isPieces: true, parentId: "r19_24_8_t", cost: pcsCost(144, MAT_RATE.r19, 9) },
+  // Orkin R19 ($0.38/sqft)
+  { id: "orkin_r19_24_48_t",   name: 'Orkin R19 x 24" x 48"', pcsPerTube: 18, sqftPerTube: 144, unit: "tubes", category: "Orkin R19", hasPieces: true, cost: tubeCost(144, MAT_RATE.r19) },
+  { id: "orkin_r19_24_48_pcs", name: 'Orkin R19 x 24" x 48"', unit: "pcs",   category: "Orkin R19", isPieces: true, parentId: "orkin_r19_24_48_t", cost: pcsCost(144, MAT_RATE.r19, 18) },
   // Certainteed R30 ($0.75/sqft)
   { id: "r30_15_t",       name: 'R30 x 16" x 48"',       pcsPerTube: 11, sqftPerTube: 58.67,  unit: "tubes", category: "Certainteed R30", hasPieces: true, cost: tubeCost(58.67, MAT_RATE.r30) },
   { id: "r30_15_pcs",     name: 'R30 x 16" x 48"',       unit: "pcs",   category: "Certainteed R30", isPieces: true, parentId: "r30_15_t", cost: pcsCost(58.67, MAT_RATE.r30, 11) },
