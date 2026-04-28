@@ -469,6 +469,7 @@ const MECHANIC_PROFILES = ["Turrell", "Nick"];
 const todayCST = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 const tsToCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
 const todayStr = todayCST; // alias
+const normalizeSchedulableJobDate = (date) => (!date || date < todayCST() ? todayCST() : date);
 const normalizeEnergySealLabel = (label) => String(label || "").trim().toLowerCase() === "energy seal technician" ? "Energy Seal Van" : label;
 const truckDisplayName = (tr) => normalizeEnergySealLabel(tr?.vehicleName || tr?.members || tr?.name) || "Truck";
 const naturalSort = (a, b) => truckDisplayName(a).localeCompare(truckDisplayName(b), undefined, { numeric: true, sensitivity: "base" });
@@ -7260,7 +7261,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         builder:        r.builder  || prev.builder,
         address:        r.address  || prev.address,
         type:           r.type     || prev.type,
-        date:           r.date     || prev.date,
+        date:           normalizeSchedulableJobDate(r.date || prev.date),
         sqft:           r.sqft     != null ? String(r.sqft)    : prev.sqft,
         revenue:        r.revenue  != null ? String(r.revenue) : prev.revenue,
         notes:          r.notes    || prev.notes,
@@ -7273,7 +7274,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     }
   };
 
-  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null; onAddJob({ ...jobForm, crewMemberIds: cleanCrew, revenue: revenueVal }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" }); setAddCrewSearch(""); setBuilderSearch(""); setShowBuilderDropdown(false); setShowAddJob(false); };
+  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null; const safeDate = normalizeSchedulableJobDate(jobForm.date); onAddJob({ ...jobForm, date: safeDate, crewMemberIds: cleanCrew, revenue: revenueVal }); onLogAction("Added job: " + jobForm.address + " (" + jobForm.type + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" }); setAddCrewSearch(""); setBuilderSearch(""); setShowBuilderDropdown(false); setShowAddJob(false); };
 
   const openTakeoffImport = async () => {
     setShowTakeoffImport(true);
@@ -7336,7 +7337,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     const revenueVal = editForm.revenue !== "" ? parseFloat(editForm.revenue) : null;
     const sqftVal = editForm.sqft !== "" ? parseFloat(editForm.sqft) : null;
     const laborVal = editForm.laborValue !== "" ? parseFloat(editForm.laborValue) : null;
-    await onEditJob(editingJob.id, { ...editForm, crewMemberIds: cleanCrew, revenue: revenueVal, sqft: sqftVal, laborValue: laborVal });
+    await onEditJob(editingJob.id, { ...editForm, date: normalizeSchedulableJobDate(editForm.date), crewMemberIds: cleanCrew, revenue: revenueVal, sqft: sqftVal, laborValue: laborVal });
     onLogAction("Edited job: " + editForm.address);
     setEditingJob(null);
   };
@@ -9306,7 +9307,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </div>
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
-            <input type="date" value={jobForm.date} onChange={(e) => setJobForm({ ...jobForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
+            <input type="date" min={todayStr()} value={jobForm.date} onChange={(e) => setJobForm({ ...jobForm, date: normalizeSchedulableJobDate(e.target.value) })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <TextArea label="Office Notes (visible to crew)" placeholder="Special instructions, materials needed..." value={jobForm.notes} onChange={(e) => setJobForm({ ...jobForm, notes: e.target.value })} />
           {/* 💰 Financials collapsible */}
@@ -9596,7 +9597,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </div>
           <div style={{ marginBottom: "16px" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Date</label>
-            <input type="date" value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: e.target.value })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
+            <input type="date" min={todayStr()} value={editForm.date} onChange={(e) => setEditForm({ ...editForm, date: normalizeSchedulableJobDate(e.target.value) })} style={{ width: "100%", padding: "9px 12px", background: "#fff", border: "1px solid " + t.border, borderRadius: "6px", color: t.text, fontSize: "14px", fontFamily: "inherit", boxSizing: "border-box" }} />
           </div>
           <TextArea label="Office Notes (visible to crew)" value={editForm.notes} onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })} />
           {/* 💰 Financials collapsible */}
@@ -10126,7 +10127,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
             <div style={{ marginBottom: 10 }}>
               <label style={{ fontSize: 12, fontWeight: 600, color: t.textMuted, display: "block", marginBottom: 4 }}>Move Job Date</label>
-              <input type="date" defaultValue={calViewJob.date} onChange={async (e) => { if (e.target.value) { await onEditJob(calViewJob.id, { ...calViewJob, date: e.target.value }); setCalViewJob(null); }}} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+              <input type="date" min={todayStr()} defaultValue={normalizeSchedulableJobDate(calViewJob.date)} onChange={async (e) => { if (e.target.value) { await onEditJob(calViewJob.id, { ...calViewJob, date: normalizeSchedulableJobDate(e.target.value) }); setCalViewJob(null); }}} style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
             </div>
             <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
               <Button variant="secondary" onClick={() => setCalViewJob(null)} style={{ flex: 1, minWidth: "80px" }}>Close</Button>
