@@ -7107,6 +7107,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     }))]));
   }, [truckDailyLogs, trucks]);
   const activeJobs = jobs.filter((j) => {
+    if (j.closedOut) return false;
     if (j.onHold) return false;
     const latest = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
     const isCompleted = latest && latest.status === "completed";
@@ -8024,7 +8025,14 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             </div>
 
                             {/* Action row */}
-                            <div style={{ display: "flex", gap: "8px", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid " + t.borderLight }}>
+                            <div style={{ display: "flex", gap: "8px", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid " + t.borderLight, flexWrap: "wrap" }}>
+                              {!job.closedOut && onSubmitUpdate && onCloseOutJob && (
+                                <Button onClick={async () => {
+                                  if (!window.confirm("Close this job from the office now? This will mark it completed and remove it from the active schedule.")) return;
+                                  await onSubmitUpdate({ jobId: job.id, truckId: job.truckId, status: "completed", notes: "Closed by office", eta: "", crewName: adminName, timestamp: new Date().toISOString(), timeStr: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
+                                  await onCloseOutJob(job.id, Object.keys(job.materialsUsed || {}).length ? job.materialsUsed : null, getAuthoritativeTruckIdForJob(job));
+                                }} style={{ padding: "6px 12px", fontSize: "12px", flex: "1 0 100%" }}>✅ Close Job Now</Button>
+                              )}
                               <Button variant="secondary" onClick={() => { setPmJob(job); setPmCheckedAM(job.jobCheckedAM || "No"); setPmCheckedPM(job.jobCheckedPM || "No"); }} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>PM Note</Button>
                               <Button variant="secondary" onClick={() => openEditJob(job)} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Edit</Button>
                               <Button variant="secondary" onClick={() => onEditJob(job.id, { ...job, onHold: true })} style={{ padding: "6px 12px", fontSize: "12px", flex: 1 }}>Hold</Button>
