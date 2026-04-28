@@ -7908,7 +7908,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               );
                             })()}
                             {/* Office close / reopen controls */}
-                            {onSubmitUpdate && onCloseOutJob && !job.closedOut && (
+                            {onSubmitUpdate && onCloseOutJob && latest?.status !== "completed" && (
                               <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
                                 <button onClick={async () => {
                                   if (!window.confirm("Close this job from the office now? This will mark it completed without requiring materials logs.")) return;
@@ -8045,7 +8045,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
                             {/* Action row */}
                             <div style={{ display: "flex", gap: "8px", marginTop: "14px", paddingTop: "12px", borderTop: "1px solid " + t.borderLight, flexWrap: "wrap" }}>
-                              {!job.closedOut && onSubmitUpdate && onCloseOutJob && (
+                              {latest?.status !== "completed" && onSubmitUpdate && onCloseOutJob && (
                                 <Button onClick={async () => {
                                   if (!window.confirm("Close this job from the office now? This will mark it completed and remove it from the active schedule.")) return;
                                   await onSubmitUpdate({ jobId: job.id, truckId: job.truckId, status: "completed", notes: "Closed by office", eta: "", crewName: adminName, timestamp: new Date().toISOString(), timeStr: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
@@ -9947,7 +9947,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
 
             {/* Manual close / reopen controls */}
-            {latestStatus !== "completed" && !calViewJob.closedOut && onSubmitUpdate && onCloseOutJob && (
+            {latestStatus !== "completed" && onSubmitUpdate && onCloseOutJob && (
               <div style={{ marginBottom: "16px" }}>
                 <button onClick={async () => {
                   if (!window.confirm("Close this job from the office now? This will mark it completed without requiring crew closeout.")) return;
