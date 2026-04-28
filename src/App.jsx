@@ -3393,10 +3393,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
           (materialLogInventory[i.id] || 0) > 0 ||
           (i.hasPieces && (materialLogInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0) ||
           existingDailyEntry[i.id] ||
-          (i.hasPieces && existingDailyEntry[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id]) ||
-          (jobType === "fiberglass" && isFiberglassLike(i)) ||
-          (jobType === "foam" && i.category === "Foam") ||
-          (jobType === "removal" && isFiberglassLike(i))
+          (i.hasPieces && existingDailyEntry[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id])
         ));
         return (
           <Modal title={isEditingPast ? "Edit Materials — " + fmtDateLabel(today) : "Log Today's Materials"} onClose={() => { setDailyMaterialsJob(null); setDailyMaterialQtys({}); }}>
