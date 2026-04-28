@@ -9840,6 +9840,13 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         const crew = trucks.find((tr) => tr.id === calViewJob.truckId);
         const jobPm = pmUpdates.filter((p) => p.jobId === calViewJob.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
         const jobCrew = updates.filter((u) => u.jobId === calViewJob.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        const visibleJobCrew = jobCrew.filter((u, idx, arr) => idx === arr.findIndex(v =>
+          (v.timeStr || "") === (u.timeStr || "")
+          && (v.crewName || "") === (u.crewName || "")
+          && (v.status || "") === (u.status || "")
+          && (v.eta || "") === (u.eta || "")
+          && (v.notes || "") === (u.notes || "")
+        ));
         const latestStatus = jobCrew.length > 0 ? jobCrew[0].status : "not_started";
         const statusObj = STATUS_OPTIONS.find((s) => s.value === latestStatus);
         return (
@@ -9855,7 +9862,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
               {(() => {
                 // Show crew who actually submitted updates; fall back to assigned crewMemberIds
-                const updaterNames = [...new Set(jobCrew.map(u => u.submittedBy).filter(Boolean))];
+                const updaterNames = [...new Set(visibleJobCrew.map(u => u.submittedBy || u.crewName).filter(Boolean))];
                 const assignedNames = (calViewJob.crewMemberIds || []).filter(Boolean).map(id => members.find(m => m.id === id)?.name).filter(Boolean);
                 const crewNames = updaterNames.length > 0 ? updaterNames : assignedNames;
                 return crewNames.length > 0 ? (
@@ -9896,7 +9903,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
             <div style={{ marginBottom: "16px" }}>
               <div style={{ fontSize: "12px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>Crew Updates</div>
-              {jobCrew.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>No crew updates.</div> : jobCrew.map((u) => {
+              {visibleJobCrew.length === 0 ? <div style={{ fontSize: "12.5px", color: t.textMuted }}>No crew updates.</div> : visibleJobCrew.map((u) => {
                 const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
                 return (
                   <div key={u.id} style={{ fontSize: "12.5px", padding: "6px 0", borderBottom: "1px solid " + t.borderLight, color: t.textSecondary }}>
@@ -9912,7 +9919,19 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               })}
             </div>
 
-            {/* Reopen button */}
+            {/* Manual close / reopen controls */}
+            {latestStatus !== "completed" && !calViewJob.closedOut && onSubmitUpdate && onCloseOutJob && (
+              <div style={{ marginBottom: "16px" }}>
+                <button onClick={async () => {
+                  if (!window.confirm("Close this job from the office now? This will mark it completed without requiring crew closeout.")) return;
+                  await onSubmitUpdate({ jobId: calViewJob.id, truckId: calViewJob.truckId, status: "completed", notes: "Closed by office", eta: "", crewName: adminName, timestamp: new Date().toISOString(), timeStr: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
+                  await onCloseOutJob(calViewJob.id, Object.keys(calViewJob.materialsUsed || {}).length ? calViewJob.materialsUsed : null, getAuthoritativeTruckIdForJob(calViewJob));
+                  setCalViewJob(null);
+                }} style={{ width: "100%", padding: "12px 8px", borderRadius: "99px", border: "none", background: "#15803d", color: "#fff", fontSize: "14px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                  ✅ Close Job Now
+                </button>
+              </div>
+            )}
             {latestStatus === "completed" && onSubmitUpdate && (
               <div style={{ marginBottom: "16px" }}>
                 <button onClick={() => {
