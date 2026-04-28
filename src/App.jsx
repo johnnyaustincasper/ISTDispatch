@@ -8629,7 +8629,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             const shortName = (item) => {
               const cat = item.category || "";
               const raw = item.name || "";
-              const brand = cat.includes("Certainteed") ? "CT" : cat.includes("Owens Corning") ? "OC" : cat.includes("Johns Manville") ? "JM" : "";
+              const brand = cat.includes("Certainteed") ? "CT" : cat.includes("Owens Corning") ? "OC" : cat.includes("Johns Manville") ? "JM" : cat.includes("Orkin") ? "Orkin" : "";
               if (item.unit === "bbl") return raw;
               if (cat === "Rockwool" || cat === "Lambswool") return raw;
               if (cat === "Blown") {
