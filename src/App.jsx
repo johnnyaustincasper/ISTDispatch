@@ -2932,8 +2932,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
             });
             const fiberglassManufacturerForItem = (item) => {
               const name = (item?.name || "").toLowerCase();
-              if (name.includes("owens corning")) return "Owens Corning";
-              if (name.includes("jm")) return "Johns Manville";
+              const category = (item?.category || "").toLowerCase();
+              if (name.includes("owens corning") || category.includes("owens corning")) return "Owens Corning";
+              if (name.includes("jm") || category.includes("johns manville")) return "Johns Manville";
+              if (name.includes("orkin") || category.includes("orkin")) return "Orkin";
               return "CertainTeed";
             };
             const sectionedItems = [
@@ -2951,6 +2953,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 groups: [
                   { key: "owens-corning", label: "Owens Corning", items: fiberglassItems.filter(i => fiberglassManufacturerForItem(i) === "Owens Corning") },
                   { key: "johns-manville", label: "Johns Manville", items: fiberglassItems.filter(i => fiberglassManufacturerForItem(i) === "Johns Manville") },
+                  { key: "orkin", label: "Orkin", items: fiberglassItems.filter(i => fiberglassManufacturerForItem(i) === "Orkin") },
                   { key: "certainteed", label: "CertainTeed", items: fiberglassItems.filter(i => fiberglassManufacturerForItem(i) === "CertainTeed") },
                 ].filter(group => group.items.length > 0),
               },
@@ -3267,6 +3270,17 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     setLoadQtys({});
                   }} style={{ padding: "18px", borderRadius: 12, background: "#1e40af", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: "pointer", fontFamily: "inherit", textAlign: "left" }}>
                     Load Out<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Take material from warehouse</div>
+                  </button>
+                  <button onClick={() => {
+                    const currentLoadout = {};
+                    INVENTORY_ITEMS.forEach(i => {
+                      const qty = truckInventory[i.id] || 0;
+                      if (qty > 0) currentLoadout[i.id] = qty;
+                    });
+                    setLoadTruckMode("return");
+                    setLoadQtys(currentLoadout);
+                  }} disabled={!loadedItems.length} style={{ padding: "18px", borderRadius: 12, background: loadedItems.length ? "#15803d" : "#94a3b8", border: "none", color: "#fff", fontWeight: 800, fontSize: 16, cursor: loadedItems.length ? "pointer" : "not-allowed", fontFamily: "inherit", textAlign: "left", opacity: loadedItems.length ? 1 : 0.72 }}>
+                    Unload to Warehouse<div style={{ fontSize: 12, fontWeight: 400, marginTop: 4, opacity: 0.85 }}>Return remaining truck material back to warehouse</div>
                   </button>
                 </div>
               ) : renderTruckForm(loadTruckMode)}
