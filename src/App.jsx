@@ -3228,10 +3228,10 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                     {ocSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Ambit Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ocSets.toFixed(2)} sets ({bblToGals(ocSets, "oc_a")*2} gal total)</span></div>}
                     {ccSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Ambit Closed Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{ccSets.toFixed(2)} sets ({bblToGals(ccSets, "cc_a")*2} gal total)</span></div>}
                     {envOcSets > 0 && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid " + t.borderLight }}><span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>Enverge Open Cell</span><span style={{ fontSize: 13, fontWeight: 800, color: t.accent }}>{envOcSets.toFixed(2)} sets ({bblToGals(envOcSets, "env_oc_a")*2} gal total)</span></div>}
-                    {INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0).map(item => (
+                    {INVENTORY_ITEMS.filter(i => !i.isPieces && isFoam(i.id) && (truckInventory[i.id] || 0) > 0).map(item => (
                       <div key={item.id + "_foamline"} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid " + t.borderLight }}>
                         <span style={{ fontSize: 13, fontWeight: 600, color: t.text }}>{item.name}</span>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>{isFoam(item.id) ? `${bblToGals(truckInventory[item.id] || 0, item.id)} gal` : `${truckInventory[item.id] || 0} ${item.unit}`}</span>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: t.text }}>{`${bblToGals(truckInventory[item.id] || 0, item.id)} gal`}</span>
                       </div>
                     ))}
                     {nonFoamLoaded.filter(i => !i.isPieces).map(item => {
