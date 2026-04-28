@@ -10020,14 +10020,44 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
             )}
 
-            {/* Est. Material Cost */}
+            {/* 💰 Job P&L */}
             {(() => {
-              const cost = calcJobMaterialCost(calViewJob);
-              if (cost <= 0) return null;
+              const matCost = calcJobMaterialCost(calViewJob);
+              const rev = calViewJob.revenue || 0;
+              const laborCost = (() => {
+                if (!calViewJob.laborValue) return 0;
+                if (calViewJob.laborMode === "sqft" && calViewJob.sqft) return parseFloat(calViewJob.laborValue) * parseFloat(calViewJob.sqft);
+                if (calViewJob.laborMode === "percent") return rev * (parseFloat(calViewJob.laborValue) / 100);
+                return 0;
+              })();
+              const totalCost = matCost + laborCost;
+              const profit = rev - totalCost;
+              const margin = rev > 0 ? Math.round((profit / rev) * 100) : null;
+              const marginColor = margin === null ? t.textMuted : margin >= 30 ? "#15803d" : margin >= 10 ? "#b45309" : "#dc2626";
               return (
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 13, fontWeight: 600, color: "#15803d", background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "8px 12px", marginBottom: 12 }}>
-                  <span>Est. Material Cost</span>
-                  <span>${cost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span>
+                <div style={{ marginBottom: "16px" }}>
+                  <div style={{ fontSize: "12px", fontWeight: 700, color: "#15803d", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "6px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>💰 Job P&L</div>
+                  {rev > 0 ? (
+                    <div style={{ background: profit >= 0 ? "#f0fdf4" : "#fff1f2", border: "1px solid " + (profit >= 0 ? "#86efac" : "#fca5a5"), borderRadius: 8, padding: "10px 12px", fontSize: 13 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: t.text }}><span>Revenue</span><span style={{ fontWeight: 600 }}>${rev.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>
+                      {matCost > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: t.textSecondary }}><span>Material Cost</span><span>−${matCost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>}
+                      {laborCost > 0 && <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, color: t.textSecondary }}><span>Labor Cost{calViewJob.laborMode === "percent" ? ` (${calViewJob.laborValue}%)` : ` (${calViewJob.laborValue}/sqft)`}</span><span>−${laborCost.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>}
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: margin !== null ? 4 : 0, fontWeight: 700, color: profit >= 0 ? "#15803d" : "#dc2626", borderTop: "1px solid " + (profit >= 0 ? "#86efac" : "#fca5a5"), paddingTop: 6, marginTop: 2 }}><span>Gross Profit</span><span>{profit >= 0 ? "+" : ""}${profit.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}</span></div>
+                      {margin !== null && <div style={{ display: "flex", justifyContent: "space-between", color: marginColor, fontSize: 12, fontWeight: 700 }}><span>Margin</span><span>{margin}%</span></div>}
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, color: t.textMuted, fontSize: 12, background: t.bg, border: "1px solid " + t.borderLight, borderRadius: 8, padding: "10px 12px" }}>
+                      <span>Add revenue to see P&L{matCost > 0 ? ` · material cost $${matCost.toLocaleString("en-US", { maximumFractionDigits: 0 })}` : ""}</span>
+                      <button onClick={() => { setQuickRevenueJobId(calViewJob.id); setQuickRevenueVal(""); }} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 6, border: "1px solid " + t.border, background: t.surface, cursor: "pointer", fontFamily: "inherit", color: t.accent }}>+ Add</button>
+                    </div>
+                  )}
+                  {quickRevenueJobId === calViewJob.id && (
+                    <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                      <input type="number" min="0" placeholder="Revenue $" value={quickRevenueVal} onChange={e => setQuickRevenueVal(e.target.value)} style={{ flex: 1, padding: "7px 10px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 13, fontFamily: "inherit" }} />
+                      <button onClick={async () => { if (quickRevenueVal) { await onEditJob(calViewJob.id, { ...calViewJob, revenue: parseFloat(quickRevenueVal) }); setQuickRevenueJobId(null); } }} style={{ padding: "7px 12px", borderRadius: 6, background: "#15803d", color: "#fff", border: "none", cursor: "pointer", fontFamily: "inherit", fontWeight: 600, fontSize: 13 }}>Save</button>
+                      <button onClick={() => setQuickRevenueJobId(null)} style={{ padding: "7px 10px", borderRadius: 6, background: "none", border: "1px solid " + t.border, cursor: "pointer", fontFamily: "inherit", fontSize: 13 }}>✕</button>
+                    </div>
+                  )}
                 </div>
               );
             })()}
