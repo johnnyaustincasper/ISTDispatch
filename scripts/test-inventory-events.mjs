@@ -20,6 +20,7 @@ import {
   getWarehouseInventoryParityReport,
   getInventoryTraceDiagnostics,
   normalizeJobSiteAddress,
+  planTruckLoadoutTransfer,
 } from "../src/inventoryEvents.js";
 import { buildInventoryEventWriteEntries } from "../src/inventoryEventWrites.js";
 import {
@@ -58,6 +59,84 @@ test("canonical inventory event ids stay stable for the same logical event", () 
     "job-usage__job-42-2026-04-18-truck-7__oc_b",
   );
   assert.equal(buildCanonicalInventoryEventId(event), buildCanonicalInventoryEventId({ ...event }));
+});
+
+test("truck loadout planning tops up to target instead of pulling full target", () => {
+  const plan = planTruckLoadoutTransfer({
+    currentTruckState: { blown_fg: 15 },
+    requestedTruckState: { blown_fg: 50 },
+    warehouseInventoryByItemId: { blown_fg: 100 },
+  });
+
+  assert.deepEqual(plan.nextTruckState, { blown_fg: 50 });
+  assert.deepEqual(plan.changes, [
+    {
+      itemId: "blown_fg",
+      beforeTruckQty: 15,
+      targetTruckQty: 50,
+      delta: 35,
+      transferDirection: "load",
+      transferQty: 35,
+      beforeWarehouseQty: 100,
+      afterWarehouseQty: 65,
+    },
+  ]);
+});
+
+test("truck loadout planning returns unloaded leftovers to warehouse", () => {
+  const plan = planTruckLoadoutTransfer({
+    currentTruckState: { blown_fg: 15 },
+    requestedTruckState: { blown_fg: 0 },
+    warehouseInventoryByItemId: { blown_fg: 100 },
+  });
+
+  assert.deepEqual(plan.nextTruckState, {});
+  assert.deepEqual(plan.changes, [
+    {
+      itemId: "blown_fg",
+      beforeTruckQty: 15,
+      targetTruckQty: 0,
+      delta: -15,
+      transferDirection: "return",
+      transferQty: 15,
+      beforeWarehouseQty: 100,
+      afterWarehouseQty: 115,
+    },
+  ]);
+});
+
+test("warehouse manual adjustment snapshot re-anchors projection to corrected legacy quantity", () => {
+  const legacyInventory = [{ id: "row-blown", itemId: "blown_fg", qty: 42 }];
+  const historicalTransfer = buildInventoryEvent({
+    eventType: INVENTORY_EVENT_TYPES.warehouseAdjustment,
+    occurredAt: "2026-04-18T12:00:00.000Z",
+    item: { itemId: "blown_fg", unit: "bags" },
+    quantity: { delta: -10 },
+    location: { warehouseId: "main" },
+    refs: { correlationKey: "truck-load-1" },
+  });
+  const manualEventGroupId = "manual-adjustment::blown_fg::2026-04-19T12:00:00.000Z";
+  const manualAdjustment = buildInventoryEvent({
+    eventType: INVENTORY_EVENT_TYPES.warehouseAdjustment,
+    occurredAt: "2026-04-19T12:00:00.000Z",
+    item: { itemId: "blown_fg", unit: "bags" },
+    quantity: { delta: -8, after: 42 },
+    location: { warehouseId: "main" },
+    refs: { correlationKey: "manual-adjustment-1" },
+    metadata: { eventGroupId: manualEventGroupId },
+  });
+  const [manualSnapshot] = buildInventorySnapshotEvents({
+    eventType: INVENTORY_EVENT_TYPES.warehouseSnapshot,
+    occurredAt: "2026-04-19T12:00:00.000Z",
+    item: { itemId: "blown_fg", unit: "bags" },
+    location: { warehouseId: "main" },
+    items: [{ itemId: "blown_fg", unit: "bags", qty: 42 }],
+    refs: { snapshotKey: "warehouse-adjustment::blown_fg::manual-adjustment-1", correlationKey: "manual-adjustment-1" },
+    metadata: { eventGroupId: manualEventGroupId },
+  });
+
+  const derived = deriveWarehouseInventoryFromEvents(legacyInventory, [historicalTransfer, manualAdjustment, manualSnapshot]);
+  assert.equal(derived.find((row) => row.itemId === "blown_fg")?.qty, 42);
 });
 
 test("inventory event write entries stamp deterministic ids without live wiring", () => {

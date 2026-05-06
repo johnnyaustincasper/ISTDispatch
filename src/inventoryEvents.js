@@ -75,6 +75,48 @@ export const normalizeInventoryItemId = (itemId) => {
   const normalized = canonicalizeInventoryItemKey(itemId);
   return INVENTORY_ITEM_ID_ALIASES[normalized] || normalized || null;
 };
+
+export const planTruckLoadoutTransfer = ({
+  currentTruckState = {},
+  requestedTruckState = {},
+  warehouseInventoryByItemId = {},
+} = {}) => {
+  const normalizedCurrent = currentTruckState && typeof currentTruckState === "object" ? currentTruckState : {};
+  const normalizedRequested = requestedTruckState && typeof requestedTruckState === "object" ? requestedTruckState : {};
+  const warehouseLookup = warehouseInventoryByItemId && typeof warehouseInventoryByItemId === "object" ? warehouseInventoryByItemId : {};
+  const itemIds = new Set([
+    ...Object.keys(normalizedCurrent).filter((key) => key !== "_custom"),
+    ...Object.keys(normalizedRequested).filter((key) => key !== "_custom"),
+  ]);
+  const nextTruckState = {};
+  const changes = [];
+
+  itemIds.forEach((rawItemId) => {
+    const itemId = normalizeInventoryItemId(rawItemId);
+    if (!itemId) return;
+    const beforeTruckQty = roundQty(normalizedCurrent[rawItemId] ?? normalizedCurrent[itemId]);
+    const targetTruckQty = roundQty(normalizedRequested[rawItemId] ?? normalizedRequested[itemId]);
+    const delta = roundQty(targetTruckQty - beforeTruckQty);
+    if (targetTruckQty > 0) nextTruckState[itemId] = targetTruckQty;
+    if (delta === 0) return;
+
+    const warehouseQty = roundQty(warehouseLookup[rawItemId] ?? warehouseLookup[itemId]);
+    changes.push({
+      itemId,
+      beforeTruckQty,
+      targetTruckQty,
+      delta,
+      transferDirection: delta > 0 ? "load" : "return",
+      transferQty: Math.abs(delta),
+      beforeWarehouseQty: warehouseQty,
+      afterWarehouseQty: delta > 0
+        ? Math.max(0, roundQty(warehouseQty - delta))
+        : roundQty(warehouseQty + Math.abs(delta)),
+    });
+  });
+
+  return { nextTruckState, changes };
+};
 const asNullableString = (value) => {
   if (value === undefined || value === null) return null;
   const trimmed = `${value}`.trim();

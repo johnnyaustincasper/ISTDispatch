@@ -36,8 +36,11 @@ import {
   adaptLiveDailyMaterialLogUpsertToEvents,
   adaptTruckTransferToEvents,
   buildInventoryEvent,
+  buildInventorySnapshotEvents,
   compareTruckInventoryStates,
   deriveTruckInventoryFromEvents,
+  planTruckLoadoutTransfer,
+  normalizeInventoryItemId,
   getCloseoutOnlyMaterialsUsedDelta,
   getJobUsageParityReport,
   getWarehouseInventoryParityReport,
@@ -169,6 +172,8 @@ const INVENTORY_ITEMS = [
   { id: "env_oc_a",   name: "Enverge A",               unit: "bbl",   category: "Foam", cost: 0 },
   { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
   { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
+  { id: "accufoam_a", name: "Accufoam A",              unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "accufoam_b", name: "Accufoam B",              unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
   // Blown — $32/bag
   { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown", cost: MAT_RATE.blown },
   { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown", cost: MAT_RATE.blown },
@@ -259,8 +264,8 @@ const calcJobMaterialCost = (job) => {
   }
   return total;
 };
-const FOAM_MATERIAL_IDS = new Set(["oc_a", "oc_b", "cc_a", "cc_b", "env_oc_a", "env_oc_b", "env_cc_b"]);
-const FOAM_BSIDE_IDS = new Set(["oc_b", "cc_b", "env_oc_b", "env_cc_b"]);
+const FOAM_MATERIAL_IDS = new Set(["oc_a", "oc_b", "cc_a", "cc_b", "env_oc_a", "env_oc_b", "env_cc_b", "accufoam_a", "accufoam_b"]);
+const FOAM_BSIDE_IDS = new Set(["oc_b", "cc_b", "env_oc_b", "env_cc_b", "accufoam_b"]);
 const foamQtyToGallons = (itemId, qty) => {
   const gallonsPerBbl = ["cc_a", "cc_b", "env_cc_b"].includes(itemId) ? 50 : 48;
   return (parseFloat(qty) || 0) * gallonsPerBbl;
@@ -449,6 +454,7 @@ const MATERIAL_COSTS = {
   oc_a: 0,    oc_b: MAT_RATE.oc_bbl,
   cc_a: 0,    cc_b: MAT_RATE.cc_bbl,
   env_oc_a: 0, env_oc_b: MAT_RATE.oc_bbl,
+  accufoam_a: 0, accufoam_b: MAT_RATE.oc_bbl,
   env_cc_b: MAT_RATE.cc_bbl,
     blown_fg: MAT_RATE.blown, blown_fg_jm: MAT_RATE.blown, blown_cel: MAT_RATE.blown,
 };
@@ -523,7 +529,7 @@ const getCurrentWorkWeekDates = () => {
     return date.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
   });
 };
-const mapsUrl = (addr) => `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`;
+const mapsUrl = (addr) => `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}`;
 
 function haversineKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
@@ -742,6 +748,15 @@ const kbStyles = `
     0%, 100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.22); border-color: #ef4444; }
     50% { box-shadow: 0 0 0 4px rgba(239,68,68,0.12); border-color: #dc2626; }
   }
+  @keyframes fireTextFlicker {
+    0%, 100% { filter: brightness(1); text-shadow: 0 0 3px rgba(239,68,68,0.85), 0 0 8px rgba(249,115,22,0.70), 0 -1px 10px rgba(251,191,36,0.55); transform: translateY(0); }
+    35% { filter: brightness(1.2); text-shadow: 0 0 4px rgba(220,38,38,1), 0 0 12px rgba(249,115,22,0.95), 0 -2px 14px rgba(251,191,36,0.75); transform: translateY(-0.5px); }
+    70% { filter: brightness(0.95); text-shadow: 0 0 2px rgba(185,28,28,0.9), 0 0 7px rgba(249,115,22,0.65), 0 -1px 9px rgba(251,191,36,0.45); transform: translateY(0.4px); }
+  }
+  @keyframes greenTextPulse {
+    0%, 100% { filter: brightness(1); text-shadow: 0 0 2px rgba(22,163,74,0.55), 0 0 6px rgba(34,197,94,0.42); transform: translateY(0); }
+    50% { filter: brightness(1.12); text-shadow: 0 0 4px rgba(22,163,74,0.72), 0 0 10px rgba(34,197,94,0.56); transform: translateY(-0.25px); }
+  }
   @keyframes toastSlide {
     from { opacity: 0; transform: translateX(40px); }
     to { opacity: 1; transform: translateX(0); }
@@ -808,6 +823,44 @@ const kbStyles = `
     .crew-nav-card:last-child > span:first-of-type { flex-shrink: 0 !important; }
   }
   .office-mobile-bottom-nav { display: none; }
+  .office-tv-mode { padding-left: 0 !important; padding-top: 0 !important; padding-bottom: 0 !important; min-height: 100dvh !important; overflow-x: hidden !important; }
+  .office-tv-mode .office-top-header, .office-tv-mode .office-left-dock, .office-tv-mode .office-mobile-bottom-nav, .office-tv-mode .office-schedule-hero, .office-tv-mode .office-dept-toggle { display: none !important; }
+  .office-tv-mode .office-content { max-width: none !important; width: 100% !important; padding: 8px !important; box-sizing: border-box !important; }
+  .office-tv-mode .office-schedule-toolbar { margin: 0 0 6px !important; padding: 8px 10px !important; border-radius: 16px !important; gap: 8px !important; }
+  .office-tv-mode .office-schedule-toolbar-title > div:first-child { font-size: 16px !important; line-height: 1 !important; }
+  .office-tv-mode .office-schedule-toolbar-title > div:last-child { margin-top: 1px !important; font-size: 10px !important; line-height: 1.05 !important; }
+  .office-tv-mode .office-schedule-actions button { min-height: 34px !important; padding: 7px 10px !important; border-radius: 12px !important; line-height: 1 !important; }
+  .schedule-tv-board { --tv-row-gap: 8px; height: calc(100dvh - 58px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+  .schedule-tv-head { flex: 0 0 auto; }
+  .schedule-tv-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); grid-auto-rows: calc((100% - (var(--tv-row-gap) * 2)) / 3); gap: var(--tv-row-gap); align-items: stretch; overflow: hidden; }
+  .schedule-tv-card { height: 100%; min-height: 0; max-height: 100%; }
+  .schedule-tv-card * { min-width: 0; }
+  @media (min-width: 1180px) {
+    .office-tv-mode .schedule-tv-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--tv-row-gap); }
+    .office-tv-mode .schedule-tv-card { height: 100%; }
+  }
+  @media (min-width: 1180px) and (max-height: 820px) {
+    .schedule-tv-board { --tv-row-gap: 6px; height: calc(100dvh - 50px); }
+    .schedule-tv-head { margin-bottom: 6px !important; padding: 7px 9px !important; border-radius: 15px !important; }
+    .schedule-tv-head-title { font-size: clamp(18px, 2.2vw, 27px) !important; }
+    .schedule-tv-stat { min-width: 64px !important; padding: 5px 7px !important; border-radius: 11px !important; }
+    .schedule-tv-stat-value { font-size: 16px !important; }
+    .schedule-tv-stat-label { margin-top: 1px !important; font-size: 7px !important; }
+    .schedule-tv-card { border-radius: 17px !important; padding: 8px !important; gap: 5px !important; }
+    .schedule-tv-customer { margin-top: 1px !important; font-size: 15px !important; line-height: 1 !important; }
+    .schedule-tv-address { font-size: 11px !important; line-height: 1.08 !important; -webkit-line-clamp: 1 !important; }
+    .schedule-tv-meta { gap: 5px !important; }
+    .schedule-tv-meta-box { padding: 5px 6px !important; border-radius: 10px !important; }
+    .schedule-tv-note { padding-top: 4px !important; font-size: 10px !important; line-height: 1.1 !important; -webkit-line-clamp: 1 !important; }
+  }
+  @media (max-width: 760px) {
+    .schedule-tv-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+    .schedule-tv-card { height: auto; min-height: 170px; aspect-ratio: auto; }
+  }
+  @media (max-width: 420px) {
+    .schedule-tv-grid { grid-template-columns: 1fr; }
+    .schedule-tv-card { min-height: 0; aspect-ratio: auto; }
+  }
   @media (max-width: 640px) {
     .office-app-shell { padding-left: 0 !important; padding-top: calc(58px + env(safe-area-inset-top, 0px)) !important; padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px)) !important; overflow-x: hidden; }
     .office-top-header { padding: 7px 12px !important; padding-top: calc(7px + env(safe-area-inset-top, 0px)) !important; }
@@ -2240,7 +2293,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
   const handleCloseoutConfirm = (bypass) => {
     const { job, status: s, eta: e, notes: n } = closeoutJob;
-    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
     const materialsUsed = bypass ? null : (() => {
       const used = {};
       INVENTORY_ITEMS.forEach(i => {
@@ -2654,7 +2707,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 if (existingToday) {
                   const preQtys = {};
                   INVENTORY_ITEMS.forEach(i => {
-                    const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(i.id);
+                    const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(i.id);
                     const val = existingToday.materials[i.id];
                     if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                   });
@@ -2747,7 +2800,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                               {Object.entries(log.materials).map(([itemId, qty]) => {
                                 const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                                 if (!item) return null;
-                                const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(itemId);
+                                const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(itemId);
                                 const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                                 return <span key={itemId} style={{ marginRight: "8px" }}>{item.name}: <strong>{display}</strong></span>;
                               })}
@@ -2799,7 +2852,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
         {/* ── LOAD TRUCK MODAL ── */}
         {crewView === "history" && (() => { // eslint-disable-line no-extra-parens
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
           const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
           const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
           // All completed jobs for this crew member
@@ -2924,7 +2977,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         })()}
 
         {crewView === "truck" && (() => {
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
           const loadedItems = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0);
@@ -2968,6 +3021,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 groups: [
                   { key: "ambit", label: "Ambit", items: itemsForMode.filter(i => ["oc_a","oc_b","cc_a","cc_b"].includes(i.id)) },
                   { key: "enverge", label: "Enverge", items: itemsForMode.filter(i => ["env_oc_a","env_oc_b","env_cc_b"].includes(i.id)) },
+                  { key: "accufoam", label: "Accufoam", items: itemsForMode.filter(i => ["accufoam_a","accufoam_b"].includes(i.id)) },
                 ].filter(group => group.items.length > 0),
               },
               {
@@ -3178,7 +3232,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 ))}
               </div>
               {truckTab === "loadHistory" && (() => {
-                const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+                const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
                 const truckLoads = (loadLog || []).filter(r => r.truckId === truck.id);
                 const truckReturns = (returnLog || []).filter(r => r.truckId === truck.id);
                 const allEntries = [
@@ -3394,7 +3448,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
       {/* ── CLOSEOUT MATERIALS MODAL ── */}
       {dailyMaterialsJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
         const today = dailyMaterialsJob._editingDate || dailyMaterialsJob._forceDate || todayCST();
         const isEditingPast = !!dailyMaterialsJob._editingDate || !!dailyMaterialsJob._forceDate;
         const matchedDailyLog = findDailyMaterialLog(dailyMaterialsJob.dailyMaterialLogs, today, normalizeMaterialLogTruckId(truck?.id ?? dailyMaterialsJob._logTruckId ?? null));
@@ -3542,7 +3596,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       })()}
 
       {closeoutJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
         const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
         return (
           <Modal title="Close Out Job" onClose={() => setCloseoutJob(null)}>
@@ -3557,7 +3611,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               const logs = getMaterialLogsForJob(closeoutJob.job);
               if (logs.length === 0) return null;
               const fmtDate = (ds) => { const [y,m,d] = ds.split("-"); const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return months[parseInt(m)-1] + " " + parseInt(d); };
-              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
               return (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, fontWeight: 600, marginBottom: 8 }}>Materials Logged — Previous Days</div>
@@ -3578,7 +3632,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                       <button onClick={() => {
                         const preQtys = {};
                         INVENTORY_ITEMS.forEach(i => {
-                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(i.id);
+                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(i.id);
                           const val = log.materials[i.id];
                           if (val) preQtys[i.id] = isFoamItem ? String(Math.round(val * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                         });
@@ -3637,7 +3691,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               <Button variant="secondary" onClick={() => setCloseoutJob(null)} style={{ flex: 1 }}>Cancel</Button>
               <Button onClick={() => {
                 // Build materials summary for confirmation
-                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
                 const allMaterials = {};
                 if (!closeoutJob.skipMaterials) {
                   INVENTORY_ITEMS.forEach(i => {
@@ -3658,7 +3712,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       {closeoutConfirm && (() => {
         const { closeoutJobData, materialsForConfirm } = closeoutConfirm;
         const job = closeoutJobData.job;
-        const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
         const allMats = { ...materialsForConfirm };
         (job.dailyMaterialLogs || []).forEach(log => {
           Object.entries(log.materials || {}).forEach(([id, qty]) => { allMats[id] = (allMats[id] || 0) + qty; });
@@ -3699,7 +3753,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
       {/* ── EDIT MATERIALS MODAL ── */}
       {editMaterialsJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
         const editDate = editMaterialsJob._editingDate || todayCST();
         const targetTruckId = normalizeMaterialLogTruckId(truck?.id ?? editMaterialsJob._logTruckId ?? null);
         const targetTruck = trucks.find(tr => tr.id === targetTruckId) || truck || null;
@@ -4086,7 +4140,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* TRUCKS TAB */}
       {tab === "trucks" && (() => {
-        const isFoamItem = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const isFoamItem = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
         const visibleTrucks = trucks.filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         return (
           <div>
@@ -4806,9 +4860,9 @@ function useJobUpdateToasts(updates, jobs) {
 }
 
 // ─── EOD Summary Modal ───
-function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, onClose }) {
+function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, onClose, hideMaterialCosts = false }) {
   const today = todayCST();
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
 
   // Jobs with any activity today
   const todayJobs = jobs.filter(j => {
@@ -4976,13 +5030,15 @@ function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, 
                       <span style={{ fontSize: 13, fontWeight: 600, color: "#0f172a" }}>{row.name}</span>
                       <span style={{ fontSize: 12, color: "#64748b", marginLeft: 8 }}>{row.display}</span>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: row.lineCost > 0 ? "#0f172a" : "#94a3b8" }}>{row.lineCost > 0 ? "$" + row.lineCost.toFixed(2) : "—"}</span>
+                    {!hideMaterialCosts && <span style={{ fontSize: 13, fontWeight: 600, color: row.lineCost > 0 ? "#0f172a" : "#94a3b8" }}>{row.lineCost > 0 ? "$" + row.lineCost.toFixed(2) : "—"}</span>}
                   </div>
                 ))}
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#1e293b", borderTop: "2px solid #334155" }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Material Cost</span>
-                  <span style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>${grandCost.toFixed(2)}</span>
-                </div>
+                {!hideMaterialCosts && (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", background: "#1e293b", borderTop: "2px solid #334155" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: "#e2e8f0", textTransform: "uppercase", letterSpacing: "0.5px" }}>Total Material Cost</span>
+                    <span style={{ fontSize: 15, fontWeight: 800, color: "#fff" }}>${grandCost.toFixed(2)}</span>
+                  </div>
+                )}
               </div>
             </div>
           );
@@ -4999,7 +5055,7 @@ function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, 
 // ─── Truck Reconciliation View ───
 function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckInventory, derivedTruckInventory = {}, truckInventoryParity = {} }) {
   const today = todayCST();
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
 
   const fmtQty = (itemId, qty) => {
     if (isFoam(itemId)) return Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal";
@@ -5522,8 +5578,8 @@ function TimesheetModal({ member, jobs, updates, jobUpdates, weekOffset, setWeek
   });
 
   // Category colors
-  const catColor = { Foam: "#f59e0b", Fiberglass: "#3b82f6", Removal: "#ef4444" };
-  const catBg   = { Foam: "#fef3c7", Fiberglass: "#dbeafe", Removal: "#fee2e2" };
+  const catColor = { Foam: "#16a34a", Fiberglass: "#3b82f6", Removal: "#dc2626" };
+  const catBg   = { Foam: "#dcfce7", Fiberglass: "#dbeafe", Removal: "#fee2e2" };
 
   const handlePrint = () => {
     const dayJobMap = {};
@@ -5987,7 +6043,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, truckSecondaryInvent
   const allLoadout = [...inventoryLoadout, ...customItems.map(c => ({ key: "custom_" + c.name, name: c.name, qty: c.qty, unit: c.unit, isCustom: true }))];
   const secondaryLoadout = getTruckInventoryDisplayRows(tsi);
 
-  const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+  const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
   const fmtQty = (key, qty) => {
     if (isFoamId(key)) return Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(key) ? 50 : 48)) + " gal";
     const u = INVENTORY_ITEMS.find(i => i.id === key)?.unit || "";
@@ -6220,7 +6276,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, truckSecondaryInvent
         // Jobs assigned to this truck
         const truckJobs = (jobs || []).filter(j => j.truckId === truck.id);
 
-        const isFoamIdLocal = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const isFoamIdLocal = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
 
         // Build per-day data, broken out by job
         const dayData = days.map(dateStr => {
@@ -6500,7 +6556,7 @@ async function generateJobPDF(job, updates, pmUpdates, members) {
     doc2.setTextColor(17, 24, 39);
     doc2.setFontSize(9);
 
-    const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+    const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
 
     const renderMaterials = (mats) => {
       Object.entries(mats || {}).forEach(([itemId, qty]) => {
@@ -7021,9 +7077,247 @@ function WeatherTab({ jobs, trucks, updates }) {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onCloseOutJob, onUpdateTruck, onSaveTruckToolInventory, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts, onSuppliesCheckout }) {
+
+function FoamPricingCalculatorView() {
+  const STORAGE_KEY = "ist_foam_pricing_calculator_v3";
+  const manufacturerPresets = {
+    ris: { label: "RIS", openCellCost: "2062", openCellYield: "19000", closedCellCost: "2604", closedCellYield: "3200" },
+    cameronAshley: { label: "Cameron Ashley", openCellCost: "1927", openCellYield: "19000", closedCellCost: "2467", closedCellYield: "3200" },
+  };
+  const defaults = {
+    sqft: "4000",
+    thickness: "5",
+    foamType: "openCell",
+    manufacturer: "ris",
+    openCellCost: "2062",
+    openCellYield: "19000",
+    closedCellCost: "2604",
+    closedCellYield: "3200",
+    laborPct: "15",
+    targetMarginPct: "50",
+    wastePct: "0",
+    lines: [{ id: "line-1", sqft: "4000", thickness: "5", foamType: "openCell" }],
+  };
+  const [form, setForm] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+      const merged = { ...defaults, ...saved };
+      if (!Array.isArray(merged.lines) || merged.lines.length === 0) {
+        merged.lines = [{ id: "line-1", sqft: merged.sqft || "4000", thickness: merged.thickness || "5", foamType: merged.foamType || "openCell" }];
+      }
+      return merged;
+    }
+    catch { return defaults; }
+  });
+  useEffect(() => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(form)); } catch {} }, [form]);
+
+  const n = (key) => { const value = parseFloat(form[key]); return Number.isFinite(value) ? value : 0; };
+  const money = (value, digits = 0) => `$${(Number.isFinite(value) ? value : 0).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}`;
+  const qty = (value, digits = 1) => (Number.isFinite(value) ? value : 0).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+  const setField = (key, value) => setForm(prev => ({ ...prev, [key]: value }));
+  const jobLines = Array.isArray(form.lines) && form.lines.length ? form.lines : defaults.lines;
+  const firstLine = jobLines[0] || defaults.lines[0];
+  const activeYield = firstLine.foamType === "closedCell" ? n("closedCellYield") : n("openCellYield");
+  const activeLabel = firstLine.foamType === "closedCell" ? "Closed cell" : "Open cell";
+  const activeManufacturer = manufacturerPresets[form.manufacturer]?.label || "Custom";
+  const marginOptions = [30, 35, 40, 45, 50, 55, 60];
+  const guideDepths = [
+    { foamType: "openCell", label: "Open cell", depth: 4 },
+    { foamType: "openCell", label: "Open cell", depth: 5 },
+    { foamType: "openCell", label: "Open cell", depth: 6 },
+    { foamType: "openCell", label: "Open cell", depth: 7 },
+    { foamType: "closedCell", label: "Closed cell", depth: 0.5 },
+    { foamType: "closedCell", label: "Closed cell", depth: 1 },
+    { foamType: "closedCell", label: "Closed cell", depth: 1.5 },
+    { foamType: "closedCell", label: "Closed cell", depth: 2 },
+  ];
+
+  const calcFor = ({ sqft, depth, foamType, marginPct = n("targetMarginPct"), wastePct = n("wastePct"), laborPct = n("laborPct"), lines } = {}) => {
+    const explicitSingleLine = sqft !== undefined || depth !== undefined || foamType !== undefined;
+    const sourceLines = lines || (explicitSingleLine ? [{ sqft: sqft ?? n("sqft"), thickness: depth ?? n("thickness"), foamType: foamType || form.foamType }] : jobLines);
+    const parsedLines = (sourceLines || []).map((line, idx) => {
+      const lineSqft = parseFloat(line.sqft);
+      const lineDepth = parseFloat(line.thickness);
+      const lineFoamType = line.foamType || "openCell";
+      const safeSqft = Number.isFinite(lineSqft) ? lineSqft : 0;
+      const safeDepth = Number.isFinite(lineDepth) ? lineDepth : 0;
+      const cost = lineFoamType === "closedCell" ? n("closedCellCost") : n("openCellCost");
+      const yieldPerSet = lineFoamType === "closedCell" ? n("closedCellYield") : n("openCellYield");
+      const rawBoardFeet = safeSqft * safeDepth;
+      const boardFeet = rawBoardFeet * (1 + wastePct / 100);
+      const sets = yieldPerSet > 0 ? boardFeet / yieldPerSet : 0;
+      const materialCost = sets * (Number.isFinite(cost) ? cost : 0);
+      return { ...line, idx, sqft: safeSqft, thickness: safeDepth, foamType: lineFoamType, cost, yieldPerSet, rawBoardFeet, boardFeet, sets, materialCost };
+    });
+    const totalSqft = parsedLines.reduce((sum, line) => sum + line.sqft, 0);
+    const rawBoardFeet = parsedLines.reduce((sum, line) => sum + line.rawBoardFeet, 0);
+    const boardFeet = parsedLines.reduce((sum, line) => sum + line.boardFeet, 0);
+    const materialCost = parsedLines.reduce((sum, line) => sum + line.materialCost, 0);
+    const openSets = parsedLines.filter(line => line.foamType !== "closedCell").reduce((sum, line) => sum + line.sets, 0);
+    const closedSets = parsedLines.filter(line => line.foamType === "closedCell").reduce((sum, line) => sum + line.sets, 0);
+    const denominator = 1 - (laborPct / 100) - (marginPct / 100);
+    const salePrice = denominator > 0 ? materialCost / denominator : 0;
+    const labor = salePrice * (laborPct / 100);
+    const profit = salePrice - labor - materialCost;
+    const pricePerSqft = totalSqft > 0 ? salePrice / totalSqft : 0;
+    const materialPerSqft = totalSqft > 0 ? materialCost / totalSqft : 0;
+    const profitMargin = salePrice > 0 ? (profit / salePrice) * 100 : 0;
+    return { cost: parsedLines[0]?.cost || 0, yieldPerSet: parsedLines[0]?.yieldPerSet || 0, rawBoardFeet, boardFeet, sets: openSets + closedSets, openSets, closedSets, materialCost, salePrice, labor, profit, pricePerSqft, materialPerSqft, profitMargin, denominator, totalSqft, lines: parsedLines };
+  };
+
+  const calc = useMemo(() => calcFor(), [form]);
+  const applyManufacturerPreset = (manufacturerKey) => {
+    const preset = manufacturerPresets[manufacturerKey];
+    setForm(prev => ({ ...prev, manufacturer: manufacturerKey, ...(preset ? { openCellCost: preset.openCellCost, openCellYield: preset.openCellYield, closedCellCost: preset.closedCellCost, closedCellYield: preset.closedCellYield } : {}) }));
+  };
+  const setLineField = (id, key, value) => setForm(prev => ({ ...prev, lines: (prev.lines || defaults.lines).map(line => line.id === id ? { ...line, [key]: value } : line) }));
+  const addLine = () => setForm(prev => ({ ...prev, lines: [...(prev.lines || defaults.lines), { id: `line-${Date.now()}`, sqft: "", thickness: "", foamType: firstLine.foamType || "openCell" }] }));
+  const removeLine = (id) => setForm(prev => { const next = (prev.lines || defaults.lines).filter(line => line.id !== id); return { ...prev, lines: next.length ? next : defaults.lines }; });
+  const inputStyle = { width: "100%", padding: "11px 12px", borderRadius: 12, border: "1px solid " + t.border, fontFamily: "inherit", fontWeight: 750, color: t.text, background: "#fff" };
+  const labelStyle = { display: "block", fontSize: 11, fontWeight: 900, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 6 };
+  const hintStyle = { marginTop: 5, fontSize: 11, color: t.textMuted, fontWeight: 650 };
+  const fieldWrapStyle = { display: "grid", gap: 0 };
+  const Metric = ({ label, value, sub, accent = t.text }) => (
+    <div style={{ padding: 16, borderRadius: 18, background: "rgba(255,255,255,0.84)", border: "1px solid rgba(148,163,184,0.24)", boxShadow: "0 10px 28px rgba(15,23,42,0.06)" }}>
+      <div style={{ fontSize: 11, fontWeight: 900, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 7 }}>{label}</div>
+      <div style={{ fontSize: 24, lineHeight: 1, fontWeight: 950, color: accent, letterSpacing: "-0.9px" }}>{value}</div>
+      {sub && <div style={{ marginTop: 7, color: t.textSecondary, fontSize: 12, fontWeight: 650 }}>{sub}</div>}
+    </div>
+  );
+  const rowStyle = { display: "grid", gridTemplateColumns: "1.2fr repeat(7, minmax(72px, 1fr))", gap: 0, alignItems: "stretch", minWidth: 760 };
+  const cell = (content, opts = {}) => <div style={{ padding: "10px 9px", borderBottom: "1px solid #e2e8f0", borderRight: "1px solid #e2e8f0", fontSize: opts.header ? 11 : 12, fontWeight: opts.header ? 900 : 750, color: opts.color || (opts.header ? "#fff" : t.text), background: opts.bg || (opts.header ? "#0f172a" : "#fff"), textAlign: opts.align || "right", whiteSpace: "nowrap" }}>{content}</div>;
+
+  return (
+    <div className="tab-view-enter">
+      <div style={{ position: "relative", overflow: "hidden", borderRadius: 28, padding: "24px", marginBottom: 18, background: "linear-gradient(135deg,#0f172a,#1e3a8a 54%,#0891b2)", color: "#fff", boxShadow: "0 24px 70px rgba(15,23,42,0.22)" }}>
+        <div style={{ position: "absolute", width: 260, height: 260, borderRadius: "50%", background: "rgba(255,255,255,0.10)", right: -70, top: -120 }} />
+        <div style={{ position: "relative", display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 900, letterSpacing: "0.18em", textTransform: "uppercase", color: "#bae6fd", marginBottom: 8 }}>Pricing Guide</div>
+            <h1 style={{ margin: 0, fontSize: "clamp(28px, 4vw, 46px)", letterSpacing: "-1.6px", lineHeight: 1 }}>Spray foam pricing that matches the way we bid.</h1>
+            <div style={{ marginTop: 9, color: "rgba(255,255,255,0.78)", fontSize: 14, maxWidth: 850 }}>Formula: board feet = square feet × depth. Material = sets used × set cost. Labor = sale price × 15%. Profit margin = profit ÷ sale price.</div>
+          </div>
+          <Button variant="secondary" onClick={() => setForm(defaults)} style={{ background: "rgba(255,255,255,0.14)", color: "#fff", border: "1px solid rgba(255,255,255,0.20)" }}>Reset defaults</Button>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 380px), 1fr))", gap: 16, alignItems: "start" }}>
+        <Card style={{ marginBottom: 0 }}>
+          <SectionHeader title="Job Inputs" />
+          <div style={{ display: "grid", gap: 13 }}>
+            <div style={{ display: "grid", gap: 10 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+                <div style={labelStyle}>Foam areas</div>
+                <button type="button" onClick={addLine} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 999, padding: "7px 11px", fontSize: 12, fontWeight: 850, fontFamily: "inherit", cursor: "pointer" }}>+ Add area</button>
+              </div>
+              {jobLines.map((line, idx) => (
+                <div key={line.id} style={{ display: "grid", gridTemplateColumns: "1fr 0.72fr 1fr auto", gap: 8, alignItems: "end", padding: 10, border: "1px solid " + t.borderLight, borderRadius: 16, background: "#f8fafc" }}>
+                  <div style={fieldWrapStyle}><label style={labelStyle}>Sqft</label><input type="text" inputMode="decimal" value={line.sqft} onChange={(e) => setLineField(line.id, "sqft", e.target.value)} style={inputStyle} /></div>
+                  <div style={fieldWrapStyle}><label style={labelStyle}>Depth</label><input type="text" inputMode="decimal" value={line.thickness} onChange={(e) => setLineField(line.id, "thickness", e.target.value)} style={inputStyle} /></div>
+                  <div style={fieldWrapStyle}><label style={labelStyle}>Foam</label><select value={line.foamType || "openCell"} onChange={(e) => setLineField(line.id, "foamType", e.target.value)} style={inputStyle}><option value="openCell">Open cell</option><option value="closedCell">Closed cell</option></select></div>
+                  <button type="button" onClick={() => removeLine(line.id)} disabled={jobLines.length <= 1} style={{ height: 42, width: 42, borderRadius: 12, border: "1px solid " + (jobLines.length <= 1 ? "#e2e8f0" : "#fecaca"), background: jobLines.length <= 1 ? "#f8fafc" : "#fff1f2", color: jobLines.length <= 1 ? "#cbd5e1" : "#dc2626", fontWeight: 950, cursor: jobLines.length <= 1 ? "not-allowed" : "pointer" }}>×</button>
+                  <div style={{ gridColumn: "1 / -1", fontSize: 11, color: t.textMuted, fontWeight: 700 }}>Area {idx + 1}: {qty((parseFloat(line.sqft) || 0) * (parseFloat(line.thickness) || 0), 0)} board feet</div>
+                </div>
+              ))}
+            </div>
+            <div style={fieldWrapStyle}>
+              <label style={labelStyle}>Manufacturer preset</label>
+              <select value={form.manufacturer} onChange={(e) => applyManufacturerPreset(e.target.value)} style={inputStyle}><option value="ris">RIS</option><option value="cameronAshley">Cameron Ashley</option><option value="custom">Custom / manual</option></select>
+              <div style={hintStyle}>Preset fills set cost and yield below. All four values stay editable for the presentation.</div>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
+              {Object.entries(manufacturerPresets).map(([key, preset]) => {
+                const active = form.manufacturer === key;
+                return <button key={key} type="button" onClick={() => applyManufacturerPreset(key)} style={{ textAlign: "left", padding: "13px 14px", borderRadius: 16, border: `1px solid ${active ? "#2563eb" : "#dbeafe"}`, background: active ? "linear-gradient(180deg,#eff6ff,#fff)" : "#fff", boxShadow: active ? "0 12px 28px rgba(37,99,235,0.12)" : "none", cursor: "pointer", fontFamily: "inherit" }}>
+                  <div style={{ fontSize: 13, fontWeight: 950, color: active ? "#1d4ed8" : t.text }}>{preset.label}</div>
+                  <div style={{ marginTop: 7, fontSize: 11.5, fontWeight: 750, color: t.textSecondary, lineHeight: 1.45 }}>Open: {money(parseFloat(preset.openCellCost))} / {Number(preset.openCellYield).toLocaleString()} BF<br />Closed: {money(parseFloat(preset.closedCellCost))} / {Number(preset.closedCellYield).toLocaleString()} BF</div>
+                </button>;
+              })}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={fieldWrapStyle}><label style={labelStyle}>Open cell set cost</label><input type="text" inputMode="decimal" value={form.openCellCost} onChange={(e) => setField("openCellCost", e.target.value)} style={inputStyle} /><div style={hintStyle}>Cost per open-cell set</div></div>
+              <div style={fieldWrapStyle}><label style={labelStyle}>Open cell yield per set</label><input type="text" inputMode="decimal" value={form.openCellYield} onChange={(e) => setField("openCellYield", e.target.value)} style={inputStyle} /><div style={hintStyle}>Board feet per set</div></div>
+              <div style={fieldWrapStyle}><label style={labelStyle}>Closed cell set cost</label><input type="text" inputMode="decimal" value={form.closedCellCost} onChange={(e) => setField("closedCellCost", e.target.value)} style={inputStyle} /><div style={hintStyle}>Cost per closed-cell set</div></div>
+              <div style={fieldWrapStyle}><label style={labelStyle}>Closed cell yield per set</label><input type="text" inputMode="decimal" value={form.closedCellYield} onChange={(e) => setField("closedCellYield", e.target.value)} style={inputStyle} /><div style={hintStyle}>Board feet per set</div></div>
+            </div>
+            <div style={fieldWrapStyle}><label style={labelStyle}>{`Desired profit margin: ${qty(n("targetMarginPct"), 0)}%`}</label><input type="range" min="30" max="60" step="1" value={form.targetMarginPct} onChange={(e) => setField("targetMarginPct", e.target.value)} style={{ width: "100%" }} /><div style={hintStyle}>After material and labor</div></div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <div style={fieldWrapStyle}><label style={labelStyle}>Labor %</label><input type="text" inputMode="decimal" value={form.laborPct} onChange={(e) => setField("laborPct", e.target.value)} style={inputStyle} /></div>
+              <div style={fieldWrapStyle}><label style={labelStyle}>Waste %</label><input type="text" inputMode="decimal" value={form.wastePct} onChange={(e) => setField("wastePct", e.target.value)} style={inputStyle} /></div>
+            </div>
+          </div>
+        </Card>
+
+        <div style={{ display: "grid", gap: 14 }}>
+          <div style={{ position: "relative", overflow: "hidden", borderRadius: 26, padding: "22px 24px", background: "linear-gradient(135deg,#052e16,#16a34a)", color: "#fff", boxShadow: "0 24px 60px rgba(22,163,74,0.24)", border: "1px solid rgba(255,255,255,0.16)" }}>
+            <div style={{ position: "absolute", right: -46, top: -64, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,0.12)" }} />
+            <div style={{ position: "relative", fontSize: 11, fontWeight: 950, letterSpacing: "0.16em", textTransform: "uppercase", color: "#bbf7d0", marginBottom: 8 }}>Recommended bid price</div>
+            <div style={{ position: "relative", display: "flex", alignItems: "flex-end", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+              <div>
+                <div style={{ fontSize: "clamp(38px, 6vw, 62px)", lineHeight: 0.92, fontWeight: 1000, letterSpacing: "-2.4px" }}>{money(calc.salePrice)}</div>
+                <div style={{ marginTop: 8, color: "rgba(255,255,255,0.80)", fontSize: 14, fontWeight: 750 }}>{money(calc.pricePerSqft, 2)} / sqft at {qty(n("targetMarginPct"), 0)}% target margin</div>
+              </div>
+              <div style={{ minWidth: 170, padding: "12px 14px", borderRadius: 18, background: "rgba(255,255,255,0.13)", border: "1px solid rgba(255,255,255,0.16)", fontSize: 12.5, fontWeight: 750, lineHeight: 1.55 }}>
+                Labor: {money(calc.labor)}<br />Material: {money(calc.materialCost)}<br />Profit: {money(calc.profit)}
+              </div>
+            </div>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 12 }}>
+            <Metric label="Board feet needed" value={qty(calc.rawBoardFeet, 0)} sub="Sqft × depth before waste" />
+            <Metric label="Board feet with waste" value={qty(calc.boardFeet, 0)} sub={`${qty(n("wastePct"), 1)}% waste included`} />
+            <Metric label="Yield per set" value={qty(activeYield, 0)} sub={`${activeLabel} BF / set`} accent="#2563eb" />
+            <Metric label="Sets required" value={qty(calc.sets, 2)} sub={`Open ${qty(calc.openSets, 2)} · Closed ${qty(calc.closedSets, 2)}`} accent="#2563eb" />
+            <Metric label="Material" value={money(calc.materialCost)} sub={`${money(calc.materialPerSqft, 2)} / sqft`} accent="#0891b2" />
+          </div>
+
+          <Card style={{ marginBottom: 0, background: "linear-gradient(180deg,#ffffff,#f8fbff)" }}>
+            <SectionHeader title="Profit Breakdown" />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
+              <Metric label="Sale price" value={money(calc.salePrice)} sub={`${money(calc.pricePerSqft, 2)} / sqft`} />
+              <Metric label="Labor" value={money(calc.labor)} sub={`${qty(n("laborPct"), 1)}% of sale`} accent="#7c3aed" />
+              <Metric label="Material" value={money(calc.materialCost)} sub={`${activeManufacturer} ${activeLabel}`} accent="#0891b2" />
+              <Metric label="Profit" value={money(calc.profit)} sub={`${qty(calc.profitMargin, 1)}% margin`} accent="#16a34a" />
+            </div>
+            <div style={{ marginTop: 14, padding: "13px 14px", borderRadius: 16, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 13, fontWeight: 750, lineHeight: 1.5 }}>
+              Example math: total areas = {qty(calc.totalSqft, 0)} sqft and {qty(calc.rawBoardFeet, 0)} board feet. Material is {qty(calc.openSets, 2)} open-cell set(s) plus {qty(calc.closedSets, 2)} closed-cell set(s), totaling {money(calc.materialCost)}. To hit {qty(n("targetMarginPct"), 0)}% profit after {qty(n("laborPct"), 1)}% labor, sell at {money(calc.salePrice)} total, or {money(calc.pricePerSqft, 2)}/sqft.
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      <Card style={{ marginTop: 16 }}>
+        <SectionHeader title="Selected Job — Price by Profit Margin" />
+        <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 16 }}>
+          <div style={rowStyle}>{cell("Target", { header: true, align: "left" })}{marginOptions.map(m => cell(`${m}%`, { header: true }))}</div>
+          <div style={rowStyle}>{cell("Sell price", { align: "left", bg: "#f8fafc" })}{marginOptions.map(m => cell(money(calcFor({ marginPct: m }).salePrice), { bg: "#f8fafc" }))}</div>
+          <div style={rowStyle}>{cell("Price / sqft", { align: "left" })}{marginOptions.map(m => cell(money(calcFor({ marginPct: m }).pricePerSqft, 2)))}</div>
+          <div style={rowStyle}>{cell("Profit dollars", { align: "left", bg: "#f8fafc" })}{marginOptions.map(m => cell(money(calcFor({ marginPct: m }).profit), { bg: "#f8fafc", color: "#15803d" }))}</div>
+        </div>
+      </Card>
+
+      <Card style={{ marginTop: 16 }}>
+        <SectionHeader title="Quick Guide — Required Sell Price / Sqft" />
+        <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "1.15fr 0.7fr 0.9fr repeat(7, minmax(72px, 1fr))", minWidth: 980 }}>
+            {cell("Foam", { header: true, align: "left" })}{cell("Depth", { header: true })}{cell("Material/sqft", { header: true })}{marginOptions.map(m => cell(`${m}%`, { header: true }))}
+            {guideDepths.map((g, idx) => {
+              const c30 = calcFor({ foamType: g.foamType, depth: g.depth, marginPct: 30 });
+              return <React.Fragment key={`${g.foamType}-${g.depth}`}>
+                {cell(g.label, { align: "left", bg: idx % 2 ? "#fff" : "#f8fafc" })}{cell(`${g.depth}\"`, { bg: idx % 2 ? "#fff" : "#f8fafc" })}{cell(money(c30.materialPerSqft, 2), { bg: idx % 2 ? "#fff" : "#f8fafc" })}{marginOptions.map(m => cell(money(calcFor({ foamType: g.foamType, depth: g.depth, marginPct: m }).pricePerSqft, 2), { bg: idx % 2 ? "#fff" : "#f8fafc" }))}
+              </React.Fragment>;
+            })}
+          </div>
+        </div>
+        <div style={{ marginTop: 12, color: t.textSecondary, fontSize: 12, fontWeight: 650, lineHeight: 1.5 }}>Guide uses the selected square footage, manufacturer, labor %, waste %, and yields above. Change the inputs once and the whole guide recalculates.</div>
+      </Card>
+    </div>
+  );
+}
+
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], consumables = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onAddJobUpdate, onSubmitUpdate, onCloseOutJob, onUpdateTruck, onSaveTruckToolInventory, onSaveConsumable, onDeleteConsumable, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts, onSuppliesCheckout }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
+  const [scheduleTvMode, setScheduleTvMode] = useState(false);
   // Builders DB state
   const [builderSearchQuery, setBuilderSearchQuery] = useState("");
   const [showAddBuilder, setShowAddBuilder] = useState(false);
@@ -7088,6 +7382,12 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [invStatusFilter, setInvStatusFilter] = useState("all");
   const [invTab, setInvTab] = useState("materials");
   const [invAdminTab, setInvAdminTab] = useState("parity");
+  const [consumableSearch, setConsumableSearch] = useState("");
+  const [showConsumableForm, setShowConsumableForm] = useState(false);
+  const [consumableEditing, setConsumableEditing] = useState(null);
+  const [consumableForm, setConsumableForm] = useState({ name: "", vendor: "", buyLink: "", category: "", packQty: "", unitLabel: "roll", measurePerUnit: "", measureLabel: "yard", totalCost: "", stockOnHand: "", reorderPoint: "", leadTimeDays: "", notes: "", preferred: false });
+  const resetConsumableForm = () => { setConsumableEditing(null); setShowConsumableForm(false); setConsumableForm({ name: "", vendor: "", buyLink: "", category: "", packQty: "", unitLabel: "roll", measurePerUnit: "", measureLabel: "yard", totalCost: "", stockOnHand: "", reorderPoint: "", leadTimeDays: "", notes: "", preferred: false }); };
+
   const [showResolvedShortageAlerts, setShowResolvedShortageAlerts] = useState(false);
   const [jobSearch, setJobSearch] = useState("");
   const [jobStatusFilter, setJobStatusFilter] = useState("active");
@@ -7233,9 +7533,55 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       .slice(0, 1)
       .map(tr => ({ ...tr, name: "Energy Seal Van", vehicleName: "Energy Seal Van", members: normalizeEnergySealLabel(tr.members) }))
     : [...trucks].filter(tr => tr.department !== "energySeal").sort(orderSort);
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
+  const getCompletedUpdateForJob = (jobId) => updates.filter((u) => u.jobId === jobId && u.status === "completed").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0] || null;
+  const wasJobCompletedToday = (jobId) => { const completed = getCompletedUpdateForJob(jobId); return !!completed && tsToCST(completed.timestamp) === todayCST(); };
+  const isJobCompletedForSchedule = (job) => {
+    const latest = getLatestUpdate(job?.id);
+    if (latest?.status) return latest.status === "completed";
+    return !!job?.closedOut;
+  };
+  const getScheduleJobStatusRank = (job) => {
+    const latestStatus = getLatestUpdate(job?.id)?.status;
+    if (latestStatus === "in_progress") return 0;
+    if (isJobCompletedForSchedule(job)) return 2;
+    return 1;
+  };
+  const compareScheduleJobStatus = (a, b) => getScheduleJobStatusRank(a) - getScheduleJobStatusRank(b);
+  const isRemovalJob = (job) => normalizeInsulationJobType(job?.type || job?.jobCategory || "") === "Removal" || /removal|remove|tear/i.test(`${job?.type || ""} ${job?.jobCategory || ""} ${job?.notes || ""}`);
+  const isRetroJob = (job) => String(job?.jobCategory || "").toLowerCase() === "retro";
+  const isNewConstructionJob = (job) => String(job?.jobCategory || "").toLowerCase() === "new construction";
+  const categoryDisplayLabel = (job) => isNewConstructionJob(job) ? "NEW" : (job?.jobCategory || "");
+  const retroPulseTextStyle = { color: "#16a34a", fontWeight: 950, textShadow: "0 0 3px rgba(22,163,74,0.85), 0 0 8px rgba(34,197,94,0.70), 0 -1px 10px rgba(134,239,172,0.55)", animation: "greenTextPulse 1.8s ease-in-out infinite", letterSpacing: "0.14em" };
+  const newTextStyle = { color: "#dc2626", fontWeight: 950, letterSpacing: "0.14em" };
+  const categoryLabelStyle = (job, base = {}) => isRetroJob(job) ? { ...base, ...retroPulseTextStyle } : isNewConstructionJob(job) ? { ...base, ...newTextStyle } : { ...base, color: "#dc2626" };
+  const formatTvMaterialToken = (itemId, qty) => {
+    const n = parseFloat(qty) || 0;
+    if (n <= 0) return null;
+    const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+    if (!item) return null;
+    const isClosedFoam = ["cc_a","cc_b","env_cc_b"].includes(itemId);
+    if (isFoam(itemId)) {
+      const gal = Math.round(n * (isClosedFoam ? 50 : 48));
+      const side = /_a$/.test(itemId) ? "A" : /_b$/.test(itemId) ? "B" : "";
+      return `${gal}${side}`;
+    }
+    const clean = n % 1 === 0 ? String(n) : n.toFixed(1).replace(/\.0$/, "");
+    const shortName = (item.name || itemId).replace(/Certainteed|Owens Corning|Johns Manville|Ambit|Enverge|Accufoam/gi, "").replace(/Blown Fiberglass/i, "blown").replace(/Open Cell|Closed Cell/gi, "").replace(/x\s*/gi, "").trim().split(/\s+/).slice(0, 3).join(" ");
+    return `${clean} ${shortName || item.unit || itemId}`;
+  };
+  const getTvMaterialLines = (job) => {
+    const logs = getTruckAwareDailyMaterialLogs(job?.dailyMaterialLogs || [], getAuthoritativeTruckIdForJob(job, job?.truckId))
+      .filter(log => Object.values(log.materials || {}).some(qty => (parseFloat(qty) || 0) > 0))
+      .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
+    if (!logs.length && job?.materialsUsed && Object.keys(job.materialsUsed).length) logs.push({ date: "Closeout", materials: job.materialsUsed });
+    return logs.map((log, idx) => {
+      const tokens = Object.entries(log.materials || {}).map(([id, qty]) => formatTvMaterialToken(id, qty)).filter(Boolean);
+      return tokens.length ? `${idx + 1}. ${tokens.join(" ")}` : null;
+    }).filter(Boolean);
+  };
   const handleScanWorkOrder = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -7534,22 +7880,23 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     inventory: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M5 8h14M5 8a2 2 0 1 1-4 0 2 2 0 0 1 4 0zM5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8m-9 4h4"/></svg>,
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
     weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
+    foamPricing: <span style={{ fontSize: 20, lineHeight: 1 }}>💵</span>,
   };
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
     { key: "calendar", label: "Calendar" },
     { key: "inventory", label: "Inventory", badge: openChecklistShortageCount },
+    { key: "foamPricing", label: "Pricing" },
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
     { key: "roster", label: "Roster" },
-    { key: "weather", label: "Weather" },
   ];
 
   return (
-    <div className="office-app-shell" style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div className={`office-app-shell ${view === "schedule" && scheduleTvMode ? "office-tv-mode" : ""}`} style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <style>{kbStyles}</style>
       <ToastContainer toasts={toasts} onDismiss={dismissToast} />
-      {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} />}
+      {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} hideMaterialCosts={view === "schedule" && scheduleTvMode} />}
       {/* Top header — premium wordmark + session */}
       <div className="office-top-header" style={{ padding: "9px 20px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", boxShadow: "0 18px 45px rgba(15,23,42,0.16)", borderBottom: "1px solid rgba(148,163,184,0.24)" }}>
         <div className="office-header-inner" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 1480, margin: "0 auto", gap: 14 }}>
@@ -7644,7 +7991,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
         {view === "schedule" && (
           <>
-            <div style={{ position: "relative", overflow: "hidden", borderRadius: 28, padding: "22px 24px", marginBottom: 18, background: "linear-gradient(135deg,#0f172a,#1e3a8a 58%,#2563eb)", color: "#fff", boxShadow: "0 24px 70px rgba(15,23,42,0.22)" }}>
+            <div className="office-schedule-hero" style={{ position: "relative", overflow: "hidden", borderRadius: 28, padding: "22px 24px", marginBottom: 18, background: "linear-gradient(135deg,#0f172a,#1e3a8a 58%,#2563eb)", color: "#fff", boxShadow: "0 24px 70px rgba(15,23,42,0.22)" }}>
               <div style={{ position: "absolute", width: 260, height: 260, borderRadius: "50%", background: "rgba(255,255,255,0.10)", right: -70, top: -110 }} />
               <div style={{ position: "relative", display: "flex", justifyContent: "space-between", gap: 18, alignItems: "flex-start", flexWrap: "wrap" }}>
                 <div>
@@ -7664,7 +8011,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
 
             {/* Department toggle */}
-            <div style={{ display: "flex", gap: 7, marginBottom: 18, borderRadius: 20, padding: 6, overflow: "hidden", border: "1px solid rgba(148,163,184,0.24)", width: "fit-content", background: "rgba(255,255,255,0.78)", boxShadow: "0 14px 36px rgba(15,23,42,0.08)", WebkitBackdropFilter: "blur(14px)", backdropFilter: "blur(14px)" }}>
+            <div className="office-dept-toggle" style={{ display: "flex", gap: 7, marginBottom: 18, borderRadius: 20, padding: 6, overflow: "hidden", border: "1px solid rgba(148,163,184,0.24)", width: "fit-content", background: "rgba(255,255,255,0.78)", boxShadow: "0 14px 36px rgba(15,23,42,0.08)", WebkitBackdropFilter: "blur(14px)", backdropFilter: "blur(14px)" }}>
               {[{key:"insulation",label:"🏠 Insulation"},{key:"energySeal",label:"⚡ Energy Seal"}].map(({key,label}) => (
                 <button key={key} onClick={() => { setScheduleView(key); setTruckFilter(null); }} style={{ padding: "10px 20px", border: scheduleView === key ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent", borderRadius: 15, cursor: "pointer", fontFamily: "inherit", fontSize: 13, fontWeight: scheduleView === key ? 900 : 700, background: scheduleView === key ? "linear-gradient(135deg,#2563eb,#0f172a)" : "transparent", color: scheduleView === key ? "#fff" : t.textSecondary, boxShadow: scheduleView === key ? "0 12px 26px rgba(37,99,235,0.24)" : "none", transition: "all 0.15s" }}>{label}</button>
               ))}
@@ -7724,6 +8071,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 </div>
               </div>
               <div className="office-schedule-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                <Button variant="secondary" onClick={() => setScheduleTvMode((p) => !p)} style={{ fontSize: 12, background: scheduleTvMode ? "linear-gradient(135deg,#0f172a,#2563eb)" : "rgba(255,255,255,0.9)", color: scheduleTvMode ? "#fff" : t.textSecondary, boxShadow: scheduleTvMode ? "0 14px 30px rgba(37,99,235,0.26)" : "0 8px 20px rgba(15,23,42,0.05)" }}>{scheduleTvMode ? "↩ Standard View" : "📺 TV Mode"}</Button>
                 <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
                 <Button variant="secondary" onClick={() => setShowOnHold((p) => !p)} style={{ fontSize: 12, background: showOnHold ? "linear-gradient(135deg,#f59e0b,#92400e)" : "rgba(255,255,255,0.9)", color: showOnHold ? "#fff" : t.textSecondary, boxShadow: showOnHold ? "0 14px 30px rgba(245,158,11,0.24)" : "0 8px 20px rgba(15,23,42,0.05)" }}>⏸ On Hold {onHoldJobs.length > 0 ? `(${onHoldJobs.length})` : ""}</Button>
                 <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }} style={{ background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.28)" }}>+ Add Job</Button>
@@ -7759,11 +8107,28 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             )}
             {(() => {
               const displayJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
-              if (displayJobs.length === 0) return <EmptyState text={showUncheckedOnly ? "All jobs have been checked." : "No active jobs."} />;
-              const unassignedCrew = displayJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
+              const belongsToCurrentSchedule = (j) => {
+                if (j.onHold) return false;
+                const truckMatch = !truckFilter || j.truckId === truckFilter;
+                const isEnergySealType = (j.type || "") === "Energy Seal" || ES_JOB_TYPES.includes(j.type);
+                const jobTruck = j.truckId ? trucks.find(tr => tr.id === j.truckId) : null;
+                const truckIsES = jobTruck ? jobTruck.department === "energySeal" : false;
+                const jobIsES = truckIsES || (!jobTruck && isEnergySealType);
+                if (scheduleView === "energySeal" && !jobIsES) return false;
+                if (scheduleView === "insulation" && jobIsES) return false;
+                if (jobSearch) {
+                  const q = jobSearch.toLowerCase();
+                  if (!(j.address || "").toLowerCase().includes(q) && !(j.builder || "").toLowerCase().includes(q)) return false;
+                }
+                return truckMatch;
+              };
+              const completedTodayJobs = jobs.filter((j) => belongsToCurrentSchedule(j) && wasJobCompletedToday(j.id) && !displayJobs.some(dj => dj.id === j.id));
+              const boardJobs = [...displayJobs, ...completedTodayJobs];
+              if (boardJobs.length === 0) return <EmptyState text={showUncheckedOnly ? "All jobs have been checked." : "No active jobs."} />;
+              const unassignedCrew = boardJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
               // Group jobs by their assigned crew member combo (sorted IDs joined as key)
               const crewGroupMap = {};
-              displayJobs.forEach((j) => {
+              boardJobs.forEach((j) => {
                 const ids = (j.crewMemberIds || []).filter(Boolean).sort();
                 const key = ids.length > 0 ? ids.join(",") : "_unassigned";
                 if (!crewGroupMap[key]) {
@@ -7772,11 +8137,96 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 }
                 crewGroupMap[key].jobs.push(j);
               });
-              const crewGroups = Object.values(crewGroupMap).sort((a, b) => {
+              const crewGroups = Object.values(crewGroupMap).map((group) => ({
+                ...group,
+                jobs: [...group.jobs].sort(compareScheduleJobStatus),
+              })).sort((a, b) => {
                 if (a.key === "_unassigned") return 1;
                 if (b.key === "_unassigned") return -1;
                 return (a.names[0] || "").localeCompare(b.names[0] || "");
               }).filter((g) => !truckFilter || g.jobs.some(j => j.truckId === truckFilter));
+              if (scheduleTvMode) {
+                const tvJobs = [...boardJobs].sort((a, b) => {
+                  const at = trucks.find(tr => tr.id === a.truckId)?.order ?? 999;
+                  const bt = trucks.find(tr => tr.id === b.truckId)?.order ?? 999;
+                  return compareScheduleJobStatus(a, b) || at - bt || (a.date || "").localeCompare(b.date || "") || (a.builder || a.address || "").localeCompare(b.builder || b.address || "");
+                });
+                return (
+                  <div className="schedule-tv-board">
+                    <div className="schedule-tv-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8, padding: "8px 10px", borderRadius: 18, background: "linear-gradient(135deg,#0f172a,#1e3a8a)", color: "#fff", boxShadow: "0 12px 30px rgba(15,23,42,0.16)", flexWrap: "wrap" }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.14em", textTransform: "uppercase", color: "#bfdbfe", lineHeight: 1 }}>TV schedule · {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</div>
+                        <div className="schedule-tv-head-title" style={{ fontSize: "clamp(20px, 2.6vw, 32px)", fontWeight: 950, letterSpacing: "-1.1px", lineHeight: 0.98 }}>{scheduleView === "energySeal" ? "Energy Seal" : "Insulation"} · {tvJobs.length} active job{tvJobs.length !== 1 ? "s" : ""}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                        {[{ label: "Not Started", value: notStartedTodayCount }, { label: "In Progress", value: inProgressTodayCount }, { label: "Done", value: completedTodayCount }, { label: "Unassigned", value: unassignedActiveJobs.length }].map(stat => (
+                          <div key={stat.label} className="schedule-tv-stat" style={{ minWidth: 70, padding: "6px 8px", borderRadius: 12, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.16)" }}>
+                            <div className="schedule-tv-stat-value" style={{ fontSize: 18, fontWeight: 950, lineHeight: 1 }}>{stat.value}</div>
+                            <div className="schedule-tv-stat-label" style={{ marginTop: 2, fontSize: 8, fontWeight: 900, letterSpacing: "0.07em", textTransform: "uppercase", color: "rgba(255,255,255,0.72)", lineHeight: 1 }}>{stat.label}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    {unassignedCrew.length > 0 && (
+                      <div style={{ marginBottom: 10, padding: "9px 12px", borderRadius: 16, background: "#fff7ed", border: "1px solid #fed7aa", color: "#92400e", fontSize: 13, fontWeight: 850 }}>⚠️ {unassignedCrew.length} job{unassignedCrew.length !== 1 ? "s" : ""} missing assigned employees</div>
+                    )}
+                    <div className="schedule-tv-grid">
+                      {tvJobs.map((job) => {
+                        const latest = getLatestUpdate(job.id);
+                        const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
+                        const displayType = scheduleView === "energySeal" ? job.type : normalizeInsulationJobType(job.type);
+                        const jobAccent = displayType === "Foam" ? "#16a34a" : displayType === "Energy Seal" ? "#10b981" : displayType === "Fiberglass" ? "#2563eb" : displayType === "Removal" ? "#dc2626" : "#64748b";
+                        const truck = trucks.find(tr => tr.id === job.truckId);
+                        const crewNames = (job.crewMemberIds || []).map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+                        const crewFirstNames = crewNames.map(n => n.split(" ")[0]);
+                        const crewLine = crewFirstNames.length ? crewFirstNames.join(" + ") : "Unassigned";
+                        const crewLineSize = crewFirstNames.length >= 4 ? 10.5 : crewFirstNames.length === 3 ? 11.2 : 12.5;
+                        const whenLine = latest?.timeStr || (job.date ? new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date");
+                        const noteText = latest?.notes || job.notes || "";
+                        const isDone = latest?.status === "completed";
+                        const jobCardBg = isDone ? "linear-gradient(135deg,#f0fdf4,#ffffff)" : "linear-gradient(135deg,#ffffff,#f8fbff)";
+                        const needsDumpster = isDone && isRemovalJob(job);
+                        const materialLines = getTvMaterialLines(job).slice(0, 3);
+                        const cardBorder = needsDumpster ? "2px solid #ef4444" : isDone ? "1px solid rgba(21,128,61,0.35)" : "1px solid rgba(148,163,184,0.25)";
+                        const cardShadow = needsDumpster ? "0 0 0 3px rgba(239,68,68,0.10), 0 14px 32px rgba(239,68,68,0.22)" : isDone ? "0 10px 26px rgba(21,128,61,0.12)" : "0 10px 26px rgba(15,23,42,0.08)";
+                        return (
+                          <div key={job.id} className="schedule-tv-card" onClick={() => toggleJobExpand(job.id)} style={{ position: "relative", overflow: "hidden", borderRadius: 19, padding: 10, background: jobCardBg, border: cardBorder, boxShadow: cardShadow, animation: needsDumpster ? "borderPulse 1.25s ease-in-out infinite" : "none", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
+                            <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 5, background: "linear-gradient(135deg,#2563eb,#0f172a)" }} />
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
+                              <div style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.11em", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", gap: 5, alignItems: "center" }}><span style={{ color: jobAccent }}>{displayType}</span>{job.jobCategory && <span style={categoryLabelStyle(job, { letterSpacing: "0.13em" })}>· {categoryDisplayLabel(job)}</span>}</div>
+                                <div className="schedule-tv-customer" style={{ marginTop: 2, fontSize: 16.5, fontWeight: 950, letterSpacing: "-0.5px", color: t.text, lineHeight: 1.02, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{job.builder || "No Customer Listed"}</div>
+                              </div>
+                              <Badge color={statusObj?.color} bg={statusObj?.bg}>{statusObj?.label || "Not Started"}</Badge>
+                            </div>
+                            <div className="schedule-tv-address" style={{ fontSize: 11.5, color: "#2563eb", fontWeight: 800, lineHeight: 1.12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>📍 {job.address || "No address"}</div>
+                            {needsDumpster && <button type="button" onClick={(e) => e.stopPropagation()} style={{ width: "100%", padding: "7px 9px", borderRadius: 12, border: "1px solid #dc2626", background: "linear-gradient(135deg,#ef4444,#991b1b)", color: "#fff", fontSize: 11, fontWeight: 950, letterSpacing: "0.08em", textTransform: "uppercase", boxShadow: "0 10px 22px rgba(239,68,68,0.28)" }}>🚨 Order Dumpster</button>}
+                            {materialLines.length > 0 && <div style={{ padding: "7px 8px", borderRadius: 12, background: "rgba(15,23,42,0.04)", border: "1px solid rgba(148,163,184,0.18)", color: "#334155", fontSize: 10.5, fontWeight: 850, lineHeight: 1.18, display: "grid", gap: 2 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                <span style={{ fontSize: 8.5, fontWeight: 950, letterSpacing: "0.1em", textTransform: "uppercase", color: "#64748b" }}>Materials logged</span>
+                              </div>
+                              {materialLines.map((line) => <div key={line} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line}</div>)}
+                            </div>}
+                            <div className="schedule-tv-meta" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.35fr) minmax(72px,0.9fr)", gap: 6, marginTop: "auto" }}>
+                              <div className="schedule-tv-meta-box" style={{ padding: "6px 7px", borderRadius: 12, background: "#f1f5f9", minWidth: 0 }}>
+                                <div style={{ fontSize: 9, fontWeight: 950, letterSpacing: "0.1em", textTransform: "uppercase", color: t.textMuted }}>Crew / Truck</div>
+                                <div style={{ marginTop: 1, fontSize: crewLineSize, fontWeight: 950, color: t.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", whiteSpace: "normal", lineHeight: 1.05, overflowWrap: "anywhere" }}>{crewLine}</div>
+                                <div style={{ fontSize: 10.5, fontWeight: 750, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{truck ? truckDisplayName(truck) : "No truck"}</div>
+                              </div>
+                              <div className="schedule-tv-meta-box" style={{ padding: "6px 7px", borderRadius: 12, background: "#eff6ff", minWidth: 0 }}>
+                                <div style={{ fontSize: 9, fontWeight: 950, letterSpacing: "0.1em", textTransform: "uppercase", color: "#1d4ed8" }}>Time / Date</div>
+                                <div style={{ marginTop: 1, fontSize: 13, fontWeight: 950, color: "#1e3a8a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{whenLine}</div>
+                                <div style={{ fontSize: 10.5, fontWeight: 750, color: "#64748b", lineHeight: 1.05 }}>{job.date || "—"}</div>
+                              </div>
+                            </div>
+                            {noteText && <div className="schedule-tv-note" style={{ paddingTop: 5, borderTop: "1px solid rgba(148,163,184,0.18)", fontSize: 10.5, lineHeight: 1.15, color: t.textMuted, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>📝 {noteText}</div>}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              }
               return <>
                 {unassignedCrew.length > 0 && (
                   <div style={{ background: "linear-gradient(135deg,#fff7ed,#fef3c7)", border: "1px solid #fed7aa", borderRadius: "18px", padding: "13px 16px", marginBottom: "16px", display: "flex", alignItems: "center", gap: "12px", boxShadow: "0 12px 30px rgba(245,158,11,0.12)" }}>
@@ -7825,9 +8275,10 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       localStorage.setItem(`ist_read_notes_${job.id}`, JSON.stringify(allIds));
                     }
                     const displayType = scheduleView === "energySeal" ? job.type : normalizeInsulationJobType(job.type);
-                    const jobAccent = displayType === "Foam" ? "#f97316" : displayType === "Energy Seal" ? "#10b981" : displayType === "Fiberglass" ? "#2563eb" : "#64748b";
+                    const jobAccent = displayType === "Foam" ? "#16a34a" : displayType === "Energy Seal" ? "#10b981" : displayType === "Fiberglass" ? "#2563eb" : displayType === "Removal" ? "#dc2626" : "#64748b";
+                    const jobCardBg = "linear-gradient(135deg,#ffffff 0%,#f8fbff 100%)";
                     return (
-                      <Card key={job.id} style={{ position: "relative", overflow: "hidden", marginLeft: 0, padding: "16px 18px 15px 20px", borderRadius: 24, border: "1px solid rgba(148,163,184,0.24)", background: "linear-gradient(135deg,#ffffff 0%,#f8fbff 100%)" }}>
+                      <Card key={job.id} style={{ position: "relative", overflow: "hidden", marginLeft: 0, padding: "16px 18px 15px 20px", borderRadius: 24, border: "1px solid rgba(148,163,184,0.24)", background: jobCardBg }}>
                         <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 5, background: jobAccent }} />
 
                         {/* Top row — customer + expand toggle */}
@@ -7835,7 +8286,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4, flexWrap: "wrap" }}>
                               <span style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.12em", textTransform: "uppercase", color: jobAccent }}>{displayType}</span>
-                              {job.jobCategory && <span style={{ fontSize: 10, fontWeight: 850, color: job.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{job.jobCategory}</span>}
+                              {job.jobCategory && <span style={categoryLabelStyle(job, { fontSize: 10, fontWeight: 850 })}>{categoryDisplayLabel(job)}</span>}
                               <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 800 }}>{new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
                             </div>
                             <div style={{ fontWeight: 950, color: t.text, fontSize: "18px", letterSpacing: "-0.55px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer Listed"}</div>
@@ -7932,28 +8383,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 </div>
                               );
                             })()}
-                            {/* Office close / reopen controls */}
-                            {onSubmitUpdate && onCloseOutJob && latest?.status !== "completed" && (
-                              <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
-                                <button onClick={async () => {
-                                  if (!window.confirm("Close this job from the office now? This will mark it completed without requiring materials logs.")) return;
-                                  await onSubmitUpdate({ jobId: job.id, truckId: job.truckId, status: "completed", notes: "Closed by office", eta: "", crewName: adminName, timestamp: new Date().toISOString(), timeStr: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
-                                  await onCloseOutJob(job.id, Object.keys(job.materialsUsed || {}).length ? job.materialsUsed : null, getAuthoritativeTruckIdForJob(job));
-                                }} style={{ width: "100%", padding: "11px 8px", borderRadius: "99px", border: "none", background: "#15803d", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                                  ✅ Close Job Now
-                                </button>
-                              </div>
-                            )}
-                            {latest?.status === "completed" && onSubmitUpdate && (
-                              <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
-                                <button onClick={() => {
-                                  if (!window.confirm("Reopen this job and mark it back In Progress?")) return;
-                                  onSubmitUpdate({ jobId: job.id, truckId: job.truckId, status: "in_progress", notes: "Reopened by office", eta: "", crewName: adminName, timestamp: new Date().toISOString(), timeStr: new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) });
-                                }} style={{ width: "100%", padding: "11px 8px", borderRadius: "99px", border: "2px solid #b45309", background: "transparent", color: "#b45309", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                                  🔓 Reopen Job
-                                </button>
-                              </div>
-                            )}
                             {/* 💰 Job P&L */}
                             {(job.closedOut || job.revenue) && (() => {
                               const matCost = calcJobMaterialCost(job);
@@ -8031,6 +8460,43 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                       </div>
                                     )}
                                   </div>
+                                </div>
+                              );
+                            })()}
+
+                            {((job.dailyMaterialLogs || []).length > 0 || Object.keys(job.materialsUsed || {}).length > 0) && (() => {
+                              const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+                              const bblToGal = (qty, id) => Math.round((parseFloat(qty) || 0) * (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
+                              const renderMaterialPills = (materials = {}) => Object.entries(materials || {}).map(([itemId, qty]) => {
+                                const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                                const numericQty = parseFloat(qty) || 0;
+                                if (!item || numericQty <= 0) return null;
+                                const display = isFoamId(itemId) ? bblToGal(numericQty, itemId) + " gal" : numericQty + " " + item.unit;
+                                return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6, fontWeight: 600 }}>{item.name}: {display}</span>;
+                              }).filter(Boolean);
+                              const dailyLogs = (job.dailyMaterialLogs || []).filter(log => Object.values(log.materials || {}).some(qty => (parseFloat(qty) || 0) > 0));
+                              const closeoutPills = dailyLogs.length === 0 ? renderMaterialPills(job.materialsUsed || {}) : [];
+                              if (dailyLogs.length === 0 && closeoutPills.length === 0) return null;
+                              return (
+                                <div style={{ marginTop: "12px", paddingTop: "10px", borderTop: "1px solid " + t.borderLight }}>
+                                  <div style={{ fontSize: "11px", fontWeight: 700, color: "#2563eb", textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: 8 }}>📦 Materials Logged</div>
+                                  {dailyLogs.length > 0 ? dailyLogs.map((log, idx) => {
+                                    const pills = renderMaterialPills(log.materials || {});
+                                    if (pills.length === 0) return null;
+                                    return (
+                                      <div key={`${log.date || "log"}-${idx}`} style={{ marginBottom: idx < dailyLogs.length - 1 ? 10 : 0 }}>
+                                        <div style={{ fontSize: 12, fontWeight: 700, color: t.text, marginBottom: 6 }}>
+                                          {log.date || "Logged"}{log.loggedBy ? <span style={{ fontWeight: 400, color: t.textMuted }}> — {log.loggedBy}</span> : null}
+                                        </div>
+                                        <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>{pills}</div>
+                                      </div>
+                                    );
+                                  }) : (
+                                    <div>
+                                      <div style={{ fontSize: 12, fontWeight: 700, color: t.text, marginBottom: 6 }}>Logged at closeout</div>
+                                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>{closeoutPills}</div>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })()}
@@ -8233,8 +8699,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             const lat = updates.filter((u) => u.jobId === j.id).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0];
                             const isDone = lat && lat.status === "completed";
                             return (
-                              <div key={j.id} style={{ fontSize: "9px", padding: "2px 3px", marginBottom: "2px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "#dcfce7" : j.jobCategory === "New Construction" ? "#fee2e2" : "#dbeafe", color: j.jobCategory === "Retro" ? "#15803d" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", borderLeft: (j.jobCheckedAM === "Yes" && j.jobCheckedPM === "Yes") ? "2px solid #15803d" : (j.jobCheckedAM === "Yes" || j.jobCheckedPM === "Yes") ? "2px solid #f59e0b" : "2px solid #dc2626", display: "block", maxWidth: "100%" }} title={(j.builder || "No Customer") + " — " + j.address} onClick={() => setCalViewJob(j)}>
-                                {isDone ? "✓ " : ""}{j.builder || j.address}
+                              <div key={j.id} style={{ fontSize: "9px", padding: "2px 3px", marginBottom: "2px", borderRadius: "3px", background: j.jobCategory === "Retro" ? "linear-gradient(135deg,#dcfce7,#ffffff)" : j.jobCategory === "New Construction" ? "linear-gradient(135deg,#fee2e2,#ffffff)" : "#dbeafe", color: j.jobCategory === "Retro" ? "#16a34a" : j.jobCategory === "New Construction" ? "#dc2626" : "#1d4ed8", fontWeight: (j.jobCategory === "Retro" || j.jobCategory === "New Construction") ? 950 : 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", cursor: "pointer", borderLeft: (j.jobCheckedAM === "Yes" && j.jobCheckedPM === "Yes") ? "2px solid #15803d" : (j.jobCheckedAM === "Yes" || j.jobCheckedPM === "Yes") ? "2px solid #f59e0b" : "2px solid #dc2626", display: "block", maxWidth: "100%" }} title={(j.builder || "No Customer") + " — " + j.address} onClick={() => setCalViewJob(j)}>
+                                <span style={{ display: "inline-block", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", verticalAlign: "bottom", textShadow: j.jobCategory === "Retro" ? "0 0 5px rgba(34,197,94,0.75), 0 -1px 8px rgba(134,239,172,0.45)" : "none", animation: j.jobCategory === "Retro" ? "greenTextPulse 1.8s ease-in-out infinite" : "none" }}>{isDone ? "✓ " : ""}{j.builder || j.address}</span>
                               </div>
                             );
                           })
@@ -8252,7 +8718,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
             <div style={{ display: "flex", gap: "12px", marginTop: "12px", fontSize: "11px", color: t.textMuted, flexWrap: "wrap" }}>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#dcfce7", display: "inline-block" }}></span> Retro</div>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#fee2e2", display: "inline-block" }}></span> New Construction</div>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#fee2e2", display: "inline-block" }}></span> NEW</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#dbeafe", display: "inline-block" }}></span> Uncategorized</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>✓ = Completed</div>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}><span style={{ width: "3px", height: "10px", borderRadius: "1px", background: "#15803d", display: "inline-block" }}></span> Both Checked</div>
@@ -8262,6 +8728,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             </div>
           </>
         )}
+
+        {view === "foamPricing" && <FoamPricingCalculatorView />}
 
         {view === "tickets" && (
           <>
@@ -8430,7 +8898,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     const loaded = getTruckInventoryDisplayRows(ti);
                     const secondaryLoaded = getTruckInventoryDisplayRows(tsi);
                     const formatTruckInventoryLine = (item) => {
-                      if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(item.id)) {
+                      if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(item.id)) {
                         const gallonsPerBbl = ["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48;
                         return `${Math.round((item.qty || 0) * gallonsPerBbl)} gal`;
                       }
@@ -8793,6 +9261,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <div className="office-inventory-tabs" style={{ flexShrink: 0, padding: "8px 12px 0", background: lk.headerBg, borderBottom: "1px solid " + lk.headerBorder, display: "flex", gap: 4 }}>
                 {[
                   { id: "materials", label: "Materials" },
+                  { id: "consumables", label: "Consumables", accent: "#0f766e" },
                   { id: "shortages", label: "Crew Shortage Alerts", badge: openChecklistShortageCount, pulse: unrespondedChecklistShortageCount > 0, accent: "#ef4444" },
                   { id: "admin", label: "Admin", accent: "#0f172a" },
                 ].map(tab => {
@@ -8839,6 +9308,132 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   })}
                 </div>
               )}
+
+              {invTab === "consumables" && (() => {
+                const money = (value, digits = 2) => Number.isFinite(value) ? `$${value.toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits })}` : "—";
+                const num = (value) => parseFloat(value) || 0;
+                const calc = (item) => {
+                  const packQty = num(item.packQty);
+                  const measurePerUnit = num(item.measurePerUnit);
+                  const totalCost = num(item.totalCost);
+                  const totalMeasure = packQty * measurePerUnit;
+                  return {
+                    costPerUnit: packQty > 0 ? totalCost / packQty : 0,
+                    costPerMeasure: totalMeasure > 0 ? totalCost / totalMeasure : 0,
+                    totalMeasure,
+                  };
+                };
+                const filteredConsumables = [...(consumables || [])]
+                  .filter((item) => {
+                    const q = consumableSearch.trim().toLowerCase();
+                    if (!q) return true;
+                    return [item.name, item.vendor, item.category, item.notes].some((v) => String(v || "").toLowerCase().includes(q));
+                  })
+                  .sort((a, b) => (b.preferred === true) - (a.preferred === true) || (a.category || "").localeCompare(b.category || "") || (a.name || "").localeCompare(b.name || ""));
+                const bestByMeasure = filteredConsumables.reduce((best, item) => {
+                  const c = calc(item).costPerMeasure;
+                  return c > 0 && (!best || c < best.cost) ? { id: item.id, cost: c } : best;
+                }, null);
+                const currentCalc = calc(consumableForm);
+                const saveConsumable = async () => {
+                  if (!consumableForm.name.trim()) return;
+                  await onSaveConsumable?.(consumableEditing, {
+                    ...consumableForm,
+                    name: consumableForm.name.trim(),
+                    vendor: consumableForm.vendor.trim(),
+                    buyLink: consumableForm.buyLink.trim(),
+                    category: consumableForm.category.trim(),
+                    unitLabel: consumableForm.unitLabel.trim() || "unit",
+                    measureLabel: consumableForm.measureLabel.trim() || "measure",
+                    packQty: num(consumableForm.packQty),
+                    measurePerUnit: num(consumableForm.measurePerUnit),
+                    totalCost: num(consumableForm.totalCost),
+                    stockOnHand: num(consumableForm.stockOnHand),
+                    reorderPoint: num(consumableForm.reorderPoint),
+                    leadTimeDays: num(consumableForm.leadTimeDays),
+                    preferred: !!consumableForm.preferred,
+                  });
+                  resetConsumableForm();
+                };
+                const editConsumable = (item) => {
+                  setConsumableEditing(item.id);
+                  setShowConsumableForm(true);
+                  setConsumableForm({
+                    name: item.name || "", vendor: item.vendor || "", buyLink: item.buyLink || "", category: item.category || "",
+                    packQty: item.packQty ?? "", unitLabel: item.unitLabel || "roll", measurePerUnit: item.measurePerUnit ?? "", measureLabel: item.measureLabel || "yard",
+                    totalCost: item.totalCost ?? "", stockOnHand: item.stockOnHand ?? "", reorderPoint: item.reorderPoint ?? "", leadTimeDays: item.leadTimeDays ?? "", notes: item.notes || "", preferred: !!item.preferred,
+                  });
+                };
+                const fields = [
+                  ["name", "Item name", "Tape, plastic, blades…"], ["vendor", "Vendor", "Amazon / IDI / Lowe's"], ["buyLink", "Buy link", "https://…"], ["category", "Category", "Tape / Plastic / PPE"],
+                  ["packQty", "Pack qty", "30"], ["unitLabel", "Unit", "roll"], ["measurePerUnit", "Measure per unit", "55"], ["measureLabel", "Measure", "yard"],
+                  ["totalCost", "Total cost after tax", "180.10"], ["stockOnHand", "Stock on hand", "12"], ["reorderPoint", "Reorder point", "6"], ["leadTimeDays", "Lead time days", "2"],
+                ];
+                const lowStockCount = filteredConsumables.filter((item) => num(item.reorderPoint) > 0 && num(item.stockOnHand) <= num(item.reorderPoint)).length;
+                return (
+                  <div style={{ flex: 1, overflowY: "auto", padding: 16, background: "#f8fafc" }}>
+                    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", background: "#fff", border: "1px solid #dbe3ef", borderRadius: 14, padding: 10, marginBottom: 14, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+                      <Button onClick={() => { resetConsumableForm(); setShowConsumableForm(true); }} style={{ whiteSpace: "nowrap" }}>+ Add Consumable</Button>
+                      <input value={consumableSearch} onChange={(e) => setConsumableSearch(e.target.value)} placeholder="Search consumables…" style={{ flex: "1 1 240px", minWidth: 0, border: "1px solid #dbe3ef", borderRadius: 12, padding: "10px 12px", fontSize: 14, fontFamily: "inherit", background: "#f8fafc" }} />
+                    </div>
+
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 10, marginBottom: 14 }}>
+                      <div style={{ background: "#fff", border: "1px solid #dbe3ef", borderRadius: 12, padding: 14 }}><div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase" }}>Tracked Items</div><div style={{ fontSize: 24, fontWeight: 950, color: "#0f172a" }}>{consumables.length}</div></div>
+                      <div style={{ background: "#fff", border: "1px solid #dbe3ef", borderRadius: 12, padding: 14 }}><div style={{ fontSize: 11, fontWeight: 900, color: "#64748b", textTransform: "uppercase" }}>Low / Reorder</div><div style={{ fontSize: 24, fontWeight: 950, color: lowStockCount ? "#dc2626" : "#15803d" }}>{lowStockCount}</div></div>
+                      <div style={{ background: "#ecfdf5", border: "1px solid #99f6e4", borderRadius: 12, padding: 14 }}><div style={{ fontSize: 11, fontWeight: 900, color: "#0f766e", textTransform: "uppercase" }}>Best Cost / Measure</div><div style={{ fontSize: 24, fontWeight: 950, color: "#0f766e" }}>{bestByMeasure ? money(bestByMeasure.cost, 3) : "—"}</div></div>
+                    </div>
+
+                    {showConsumableForm && <div style={{ background: "#fff", border: "1px solid #dbe3ef", borderRadius: 14, padding: 14, marginBottom: 14, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                        <div><div style={{ fontSize: 16, fontWeight: 950, color: "#0f172a" }}>{consumableEditing ? "Edit consumable" : "Add consumable"}</div><div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>Purchasing math lives here: link, pack cost, unit cost, usable-measure cost, stock and reorder point.</div></div>
+                        <button onClick={resetConsumableForm} style={{ border: "1px solid #e2e8f0", background: "#f8fafc", borderRadius: 999, padding: "7px 11px", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>{consumableEditing ? "Cancel edit" : "Cancel"}</button>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10 }}>
+                        {fields.map(([key, label, placeholder]) => (
+                          <label key={key} style={{ display: "block" }}>
+                            <span style={{ display: "block", fontSize: 11, fontWeight: 850, color: "#64748b", marginBottom: 4 }}>{label}</span>
+                            <input value={consumableForm[key]} placeholder={placeholder} onChange={(e) => setConsumableForm(f => ({ ...f, [key]: e.target.value }))} style={{ width: "100%", boxSizing: "border-box", border: "1px solid #dbe3ef", borderRadius: 10, padding: "9px 10px", fontSize: 13, fontFamily: "inherit", color: "#0f172a", background: "#f8fafc" }} />
+                          </label>
+                        ))}
+                      </div>
+                      <label style={{ display: "block", marginTop: 10 }}><span style={{ display: "block", fontSize: 11, fontWeight: 850, color: "#64748b", marginBottom: 4 }}>Notes</span><textarea value={consumableForm.notes} placeholder="Good tape, tears easy, use for prep only…" onChange={(e) => setConsumableForm(f => ({ ...f, notes: e.target.value }))} rows={2} style={{ width: "100%", boxSizing: "border-box", border: "1px solid #dbe3ef", borderRadius: 10, padding: "9px 10px", fontSize: 13, fontFamily: "inherit", color: "#0f172a", background: "#f8fafc", resize: "vertical" }} /></label>
+                      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 12 }}>
+                        <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, fontWeight: 800, color: "#0f172a" }}><input type="checkbox" checked={consumableForm.preferred} onChange={(e) => setConsumableForm(f => ({ ...f, preferred: e.target.checked }))} /> Preferred buy</label>
+                        <span style={{ fontSize: 12, fontWeight: 850, color: "#0f766e", background: "#ecfdf5", border: "1px solid #99f6e4", borderRadius: 999, padding: "5px 9px" }}>Per {consumableForm.unitLabel || "unit"}: {money(currentCalc.costPerUnit, 2)}</span>
+                        <span style={{ fontSize: 12, fontWeight: 850, color: "#0f766e", background: "#ecfdf5", border: "1px solid #99f6e4", borderRadius: 999, padding: "5px 9px" }}>Per {consumableForm.measureLabel || "measure"}: {money(currentCalc.costPerMeasure, 3)}</span>
+                        <Button onClick={saveConsumable} disabled={!consumableForm.name.trim()} style={{ marginLeft: "auto" }}>{consumableEditing ? "Save Changes" : "Add Consumable"}</Button>
+                      </div>
+                    </div>}
+
+                    {filteredConsumables.length === 0 ? <EmptyState text="No consumables tracked yet." sub="Tap '+ Add Consumable' to add tape, plastic, blades, PPE, or any repeat-buy item." /> : (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 12 }}>
+                        {filteredConsumables.map((item) => {
+                          const c = calc(item);
+                          const low = num(item.reorderPoint) > 0 && num(item.stockOnHand) <= num(item.reorderPoint);
+                          return (
+                            <div key={item.id} style={{ background: "#fff", border: "1px solid " + (low ? "#fecaca" : item.preferred ? "#99f6e4" : "#dbe3ef"), borderRadius: 14, padding: 14, boxShadow: "0 1px 2px rgba(15,23,42,0.04)" }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                                <div style={{ minWidth: 0 }}><div style={{ fontSize: 15, fontWeight: 950, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.name}</div><div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{[item.vendor, item.category].filter(Boolean).join(" · ") || "No vendor set"}</div></div>
+                                <div style={{ display: "flex", gap: 5, flexWrap: "wrap", justifyContent: "flex-end" }}>{item.preferred && <Badge color="#0f766e" bg="#ccfbf1">Best buy</Badge>}{bestByMeasure?.id === item.id && <Badge color="#15803d" bg="#dcfce7">Lowest</Badge>}{low && <Badge color="#b91c1c" bg="#fee2e2">Reorder</Badge>}</div>
+                              </div>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0,1fr))", gap: 8, marginTop: 12 }}>
+                                {[[`/${item.unitLabel || "unit"}`, money(c.costPerUnit, 2)], [`/${item.measureLabel || "measure"}`, money(c.costPerMeasure, 3)], ["Pack", `${item.packQty || 0} ${item.unitLabel || "units"}`], ["Total", money(num(item.totalCost), 2)]].map(([label, value]) => <div key={label} style={{ background: "#f8fafc", border: "1px solid #edf2f7", borderRadius: 10, padding: 9 }}><div style={{ fontSize: 10, fontWeight: 900, color: "#64748b", textTransform: "uppercase" }}>{label}</div><div style={{ fontSize: 15, fontWeight: 950, color: "#0f172a", marginTop: 2 }}>{value}</div></div>)}
+                              </div>
+                              <div style={{ fontSize: 12, color: "#475569", marginTop: 10 }}>Stock: <strong>{item.stockOnHand || 0}</strong>{item.reorderPoint ? ` · Reorder at ${item.reorderPoint}` : ""}{item.leadTimeDays ? ` · ${item.leadTimeDays} day lead` : ""}</div>
+                              {item.notes && <div style={{ fontSize: 12, color: "#64748b", marginTop: 8, lineHeight: 1.4 }}>{item.notes}</div>}
+                              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                                {item.buyLink ? <a href={item.buyLink} target="_blank" rel="noreferrer" style={{ flex: 1, textAlign: "center", textDecoration: "none", background: "#0f766e", color: "#fff", borderRadius: 10, padding: "9px 10px", fontSize: 13, fontWeight: 900 }}>Buy Link</a> : <div style={{ flex: 1, textAlign: "center", background: "#f1f5f9", color: "#94a3b8", borderRadius: 10, padding: "9px 10px", fontSize: 13, fontWeight: 900 }}>No link</div>}
+                                <button onClick={() => editConsumable(item)} style={{ border: "1px solid #dbe3ef", background: "#fff", borderRadius: 10, padding: "9px 10px", fontSize: 13, fontWeight: 850, cursor: "pointer", fontFamily: "inherit" }}>Edit</button>
+                                <button onClick={() => { if (window.confirm(`Delete ${item.name}?`)) onDeleteConsumable?.(item.id); }} style={{ border: "1px solid #fecaca", background: "#fff1f2", color: "#b91c1c", borderRadius: 10, padding: "9px 10px", fontSize: 13, fontWeight: 850, cursor: "pointer", fontFamily: "inherit" }}>Delete</button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {invTab === "shortages" && (() => {
                 const renderShortageTicket = (ticket, resolved = false) => {
@@ -9022,7 +9617,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       const loadedItems = getTruckInventoryDisplayRows(ti);
                       const secondaryLoadedItems = getTruckInventoryDisplayRows(tsi);
                       const formatTruckRowQty = (item) => {
-                        if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(item.id)) {
+                        if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(item.id)) {
                           const gallonsPerBbl = ["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48;
                           return `${Math.round((item.qty || 0) * gallonsPerBbl)} gal`;
                         }
@@ -9073,7 +9668,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               {/* ── Value Summary tab ── */}
               {invTab === "admin" && invAdminTab === "summary" && (() => {
                 const getQty = (itemId) => (inventory || []).find(r => r.itemId === itemId)?.qty || 0;
-                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
                 const getManufacturer = (item) => {
                   const cat = item.category || "";
                   if (item.unit === "bbl") return "Foam";
@@ -9357,8 +9952,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 Retro
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "14px", color: t.text }}>
-                <input type="checkbox" checked={jobForm.jobCategory === "New Construction"} onChange={() => setJobForm({ ...jobForm, jobCategory: jobForm.jobCategory === "New Construction" ? "" : "New Construction" })} style={{ width: "18px", height: "18px", accentColor: "#dc2626", cursor: "pointer" }} />
-                New Construction
+                <input type="checkbox" checked={jobForm.jobCategory === "New Construction"} onChange={() => setJobForm({ ...jobForm, jobCategory: jobForm.jobCategory === "New Construction" ? "" : "New Construction" })} style={{ width: "18px", height: "18px", accentColor: "#16a34a", cursor: "pointer" }} />
+                NEW
               </label>
             </div>
           </div>
@@ -9388,7 +9983,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         const { truck: hTruck, calMonth, calYear, selectedDate } = truckHistoryView;
         const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
         const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
         const fmtQty = (itemId, qty) => isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + (INVENTORY_ITEMS.find(i => i.id === itemId)?.unit || "");
         const toCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }); // returns YYYY-MM-DD in CST
 
@@ -9647,8 +10242,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 Retro
               </label>
               <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "14px", color: t.text }}>
-                <input type="checkbox" checked={editForm.jobCategory === "New Construction"} onChange={() => setEditForm({ ...editForm, jobCategory: editForm.jobCategory === "New Construction" ? "" : "New Construction" })} style={{ width: "18px", height: "18px", accentColor: "#dc2626", cursor: "pointer" }} />
-                New Construction
+                <input type="checkbox" checked={editForm.jobCategory === "New Construction"} onChange={() => setEditForm({ ...editForm, jobCategory: editForm.jobCategory === "New Construction" ? "" : "New Construction" })} style={{ width: "18px", height: "18px", accentColor: "#16a34a", cursor: "pointer" }} />
+                NEW
               </label>
             </div>
           </div>
@@ -9829,9 +10424,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
       {calDayView && (() => {
         const typeConfig = {
-          "Foam":       { color: "#f97316", bg: "#fff7ed", border: "#fed7aa", emoji: "" },
+          "Foam":       { color: "#16a34a", bg: "#dcfce7", border: "#86efac", emoji: "" },
           "Fiberglass": { color: "#3b82f6", bg: "#eff6ff", border: "#bfdbfe", emoji: "" },
-          "Removal":    { color: "#8b5cf6", bg: "#f5f3ff", border: "#ddd6fe", emoji: "" },
+          "Removal":    { color: "#dc2626", bg: "#fee2e2", border: "#fecaca", emoji: "" },
         };
         const grouped = {};
         calDayView.jobs.forEach(j => {
@@ -9872,7 +10467,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             {truck && <div style={{ fontSize: "10px", color: t.textMuted }}>{truck.members || truck.name}</div>}
                           </div>
                           <div style={{ flexShrink: 0, textAlign: "right" }}>
-                            {j.jobCategory && <div style={{ fontSize: "10px", fontWeight: 700, color: j.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{j.jobCategory}</div>}
+                            {j.jobCategory && <div style={categoryLabelStyle(j, { fontSize: "10px", fontWeight: 700 })}>{categoryDisplayLabel(j)}</div>}
                             <div style={{ fontSize: "11px", fontWeight: 600, color: statusObj?.color || t.textMuted }}>{statusObj?.label || "Not Started"}</div>
                             <div style={{ fontSize: "10px", color: t.textMuted }}>AM: {j.jobCheckedAM || "No"} · PM: {j.jobCheckedPM || "No"}</div>
                           </div>
@@ -9909,7 +10504,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <div style={{ display: "flex", gap: "8px", alignItems: "center", marginTop: "8px", flexWrap: "wrap" }}>
                 <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
                 <span style={{ fontSize: "12.5px", color: t.textMuted }}>{normalizeInsulationJobType(calViewJob.type)}</span>
-                {calViewJob.jobCategory && <span style={{ fontSize: "12.5px", fontWeight: 600, color: calViewJob.jobCategory === "Retro" ? "#15803d" : "#dc2626" }}>{calViewJob.jobCategory}</span>}
+                {calViewJob.jobCategory && <span style={categoryLabelStyle(calViewJob, { fontSize: "12.5px", fontWeight: 700 })}>{categoryDisplayLabel(calViewJob)}</span>}
                 <span style={{ fontSize: "12.5px", color: t.textMuted }}>{new Date(calViewJob.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
               </div>
               {(() => {
@@ -10030,7 +10625,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       {Object.entries(calViewJob.materialsUsed || {}).map(([itemId, qty]) => {
                         const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                         if (!item) return null;
-                        const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(itemId);
+                        const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(itemId);
                         const display = isFoamId ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                         return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6, fontWeight: 600 }}>{item.name}: {display}</span>;
                       })}
@@ -10038,7 +10633,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   </div>
                 )}
                 {(calViewJob.dailyMaterialLogs || []).map((log, idx) => {
-                  const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b"].includes(id);
+                  const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
                   const bblToGal = (qty, id) => Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
                   const isEditing = editMatLogIdx === idx;
                   return (
@@ -12691,6 +13286,7 @@ export default function App() {
   const [toolCheckouts, setToolCheckouts] = useState([]);
   const [employeeFlags, setEmployeeFlags] = useState([]);
   const [truckDailyLogs, setTruckDailyLogs] = useState([]);
+  const [consumables, setConsumables] = useState([]);
 
   useEffect(() => {
     const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
@@ -12728,7 +13324,8 @@ export default function App() {
     const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
     const unsubTruckDailyLogs = onSnapshot(collection(db, "truckDailyLogs"), (snap) => { setTruckDailyLogs(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckSecondaryInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); unsubTruckDailyLogs(); };
+    const unsubConsumables = onSnapshot(collection(db, "consumables"), (snap) => { setConsumables(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
+    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubTruckInv(); unsubTruckSecondaryInv(); unsubTruckToolInv(); unsubReturnLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); unsubTruckDailyLogs(); unsubConsumables(); };
   }, []);
 
   const derivedTruckInventory = useMemo(
@@ -12832,6 +13429,12 @@ export default function App() {
   const handleDeleteTruck = async (id) => { await deleteDoc(doc(db, "trucks", id)); };
   const handleReorderTruck = async (id, newOrder) => { await updateDoc(doc(db, "trucks", id), { order: newOrder }); };
   const handleUpdateTruck = async (id, fields) => { await updateDoc(doc(db, "trucks", id), fields); };
+  const handleSaveConsumable = async (id, data) => {
+    const payload = { ...data, updatedAt: serverTimestamp() };
+    if (id) await setDoc(doc(db, "consumables", id), payload, { merge: true });
+    else await addDoc(collection(db, "consumables"), { ...payload, createdAt: serverTimestamp() });
+  };
+  const handleDeleteConsumable = async (id) => { if (id) await deleteDoc(doc(db, "consumables", id)); };
   const getInventoryEventItemMeta = (itemId) => {
     if (!itemId) return { itemId: null, itemName: null, unit: null, category: null };
     const customName = itemId.startsWith("custom_") ? itemId.slice(7) : null;
@@ -12929,57 +13532,158 @@ export default function App() {
     metadata,
     legacy,
   });
-  const handleAdminSetLoadout = async (truckId, newState, type = "adjusted", notes = "") => {
+  const buildWarehouseAdjustmentSnapshotEvent = ({ itemId, afterQty, occurredAt, actor, notes = null, correlationKey = null, metadata = {}, legacy = {} }) => buildInventorySnapshotEvents({
+    eventType: INVENTORY_EVENT_TYPES.warehouseSnapshot,
+    occurredAt,
+    actor,
+    location: { warehouseId: "main" },
+    items: [{
+      ...getInventoryEventItemMeta(itemId),
+      qty: roundInventoryQty(afterQty),
+    }],
+    refs: {
+      legacyCollection: "inventory",
+      legacyDocId: itemId,
+      snapshotKey: ["warehouse-adjustment", itemId, correlationKey || occurredAt].join("::"),
+      correlationKey,
+    },
+    notes,
+    metadata: {
+      snapshotReason: "warehouse_manual_reanchor",
+      ...metadata,
+    },
+    legacy,
+  })[0];
+  const getInventoryRowForItemId = (itemId) => inventory.find((row) => row?.itemId === itemId || row?.id === itemId);
+  const getInventoryRefForItemId = (itemId) => {
+    const existing = getInventoryRowForItemId(itemId);
+    return doc(db, "inventory", existing?.id || itemId);
+  };
+  const sanitizeTruckInventoryState = (state = {}) => Object.fromEntries(
+    Object.entries(state || {})
+      .filter(([key]) => key !== "_custom")
+      .map(([key, qty]) => [normalizeInventoryItemId(key), roundInventoryQty(qty)])
+      .filter(([itemId, qty]) => itemId && qty > 0),
+  );
+  const runTruckLoadoutTransferTransaction = async ({ truckId, requestedTruckState, occurredAt }) => {
     const truckRef = doc(db, "truckInventory", truckId);
+    const requestedState = sanitizeTruckInventoryState(requestedTruckState);
+    let result = null;
+
+    await runTransaction(db, async (tx) => {
+      const truckSnap = await tx.get(truckRef);
+      const currentTruckState = truckSnap.exists() ? truckSnap.data() : {};
+      const itemIds = [...new Set([
+        ...Object.keys(currentTruckState || {}).filter((key) => key !== "_custom").map((key) => normalizeInventoryItemId(key)),
+        ...Object.keys(requestedState || {}).map((key) => normalizeInventoryItemId(key)),
+      ].filter(Boolean))];
+      const inventoryRefs = itemIds.map((itemId) => ({ itemId, ref: getInventoryRefForItemId(itemId) }));
+      const inventorySnaps = [];
+      for (const entry of inventoryRefs) inventorySnaps.push({ ...entry, snap: await tx.get(entry.ref) });
+      const warehouseInventoryByItemId = Object.fromEntries(
+        inventorySnaps.map(({ itemId, snap }) => [itemId, roundInventoryQty(snap.exists() ? snap.data()?.qty : 0)]),
+      );
+      const plan = planTruckLoadoutTransfer({
+        currentTruckState,
+        requestedTruckState: requestedState,
+        warehouseInventoryByItemId,
+      });
+      const nextTruckState = { ...plan.nextTruckState };
+      if (Array.isArray(requestedTruckState?._custom)) nextTruckState._custom = requestedTruckState._custom;
+      else if (Array.isArray(currentTruckState?._custom)) nextTruckState._custom = currentTruckState._custom;
+
+      for (const change of plan.changes) {
+        if (change.delta > change.beforeWarehouseQty + 1e-9) {
+          const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === change.itemId);
+          throw new Error(`${inventoryItem?.name || change.itemId} exceeds warehouse inventory.`);
+        }
+      }
+
+      tx.set(truckRef, nextTruckState);
+      for (const { itemId, ref, snap } of inventorySnaps) {
+        const change = plan.changes.find((entry) => entry.itemId === itemId);
+        if (!change) continue;
+        tx.set(ref, {
+          ...(snap.exists() ? snap.data() : {}),
+          itemId,
+          qty: change.afterWarehouseQty,
+          updatedAt: occurredAt,
+        }, { merge: true });
+      }
+      result = { nextTruckState, changes: plan.changes };
+    });
+
+    return result || { nextTruckState: requestedState, changes: [] };
+  };
+  const runTruckReturnTransaction = async ({ truckId, materials, occurredAt }) => {
+    const truckRef = doc(db, "truckInventory", truckId);
+    const requestedReturns = (materials || [])
+      .map((item) => ({ ...item, itemId: item.isCustom ? `custom_${item.name}` : normalizeInventoryItemId(item.itemId || item.key), qty: roundInventoryQty(item.stillHave ?? item.qty ?? 0) }))
+      .filter((item) => item.itemId && item.qty > 0);
+    let result = null;
+
+    await runTransaction(db, async (tx) => {
+      const truckSnap = await tx.get(truckRef);
+      const state = truckSnap.exists() ? { ...truckSnap.data() } : {};
+      const inventoryRefs = requestedReturns.map((item) => ({ item, ref: getInventoryRefForItemId(item.itemId) }));
+      const inventorySnaps = [];
+      for (const entry of inventoryRefs) inventorySnaps.push({ ...entry, snap: await tx.get(entry.ref) });
+      const logItems = {};
+      const returnedItems = [];
+
+      for (const { item, ref, snap } of inventorySnaps) {
+        const qty = item.qty;
+        if (item.isCustom) {
+          state._custom = (state._custom || []).map((custom) => (
+            custom.name === item.name ? { ...custom, qty: Math.max(0, roundInventoryQty((custom.qty || 0) - qty)) } : custom
+          )).filter((custom) => custom.qty > 0);
+        } else {
+          const currentTruckQty = roundInventoryQty(state[item.itemId] || 0);
+          const inventoryItem = INVENTORY_ITEMS.find((entry) => entry.id === item.itemId);
+          if (qty > currentTruckQty + 1e-9) throw new Error(`${inventoryItem?.name || item.itemId} exceeds truck inventory.`);
+          const nextTruckQty = roundInventoryQty(currentTruckQty - qty);
+          if (nextTruckQty > 0) state[item.itemId] = nextTruckQty;
+          else delete state[item.itemId];
+        }
+        const beforeWarehouseQty = roundInventoryQty(snap.exists() ? snap.data()?.qty : 0);
+        const afterWarehouseQty = roundInventoryQty(beforeWarehouseQty + qty);
+        tx.set(ref, {
+          ...(snap.exists() ? snap.data() : {}),
+          itemId: item.itemId,
+          qty: afterWarehouseQty,
+          updatedAt: occurredAt,
+        }, { merge: true });
+        logItems[item.itemId] = qty;
+        returnedItems.push({ ...getInventoryEventItemMeta(item.itemId), stillHave: qty });
+      }
+
+      tx.set(truckRef, state);
+      result = { state, logItems, returnedItems };
+    });
+
+    return result || { state: {}, logItems: {}, returnedItems: [] };
+  };
+  const handleAdminSetLoadout = async (truckId, newState, type = "adjusted", notes = "") => {
     const occurredAt = new Date().toISOString();
     const truck = trucks.find(tr => tr.id === truckId);
     const truckName = truck?.vehicleName || truck?.members || truck?.name || null;
     const actor = { actorName: adminName || null, actorRole: "admin", source: "admin-dashboard" };
     const correlationKey = ["admin-set-loadout", truckId || "truck", occurredAt].join("::");
-    const snap = await getDoc(truckRef);
-    const oldState = snap.exists() ? snap.data() : {};
-    const allKeys = new Set([
-      ...Object.keys(oldState).filter(k => k !== "_custom"),
-      ...Object.keys(newState).filter(k => k !== "_custom"),
-    ]);
+    const { nextTruckState, changes } = await runTruckLoadoutTransferTransaction({ truckId, requestedTruckState: newState, occurredAt });
     const loadLogItems = {};
     const returnLogItems = {};
     const loadItems = [];
     const returnItems = [];
-    for (const key of allKeys) {
-      const oldQty = typeof oldState[key] === "number" ? oldState[key] : 0;
-      const newQty = typeof newState[key] === "number" ? newState[key] : 0;
-      const delta = Math.round((newQty - oldQty) * 100) / 100;
-      if (delta === 0) continue;
-      const rec = inventory.find(r => r.itemId === key);
-      const warehouseQty = rec?.qty || 0;
-      if (delta > 0) {
-        await handleUpdateInventory(key, Math.max(0, Math.round((warehouseQty - delta) * 100) / 100), {
-          actor,
-          occurredAt,
-          notes,
-          correlationKey,
-          metadata: { eventKind: "admin_set_loadout", type },
-          legacy: { truckId, type, notes },
-          skipEventWrite: true,
-        });
-        loadLogItems[key] = delta;
-        loadItems.push({ ...getInventoryEventItemMeta(key), qty: delta });
+
+    for (const change of changes) {
+      if (change.delta > 0) {
+        loadLogItems[change.itemId] = change.transferQty;
+        loadItems.push({ ...getInventoryEventItemMeta(change.itemId), qty: change.transferQty });
       } else {
-        await handleUpdateInventory(key, Math.round((warehouseQty + Math.abs(delta)) * 100) / 100, {
-          actor,
-          occurredAt,
-          notes,
-          correlationKey,
-          metadata: { eventKind: "admin_set_loadout", type },
-          legacy: { truckId, type, notes },
-          skipEventWrite: true,
-        });
-        returnLogItems[key] = Math.abs(delta);
-        returnItems.push({ ...getInventoryEventItemMeta(key), qty: Math.abs(delta) });
+        returnLogItems[change.itemId] = change.transferQty;
+        returnItems.push({ ...getInventoryEventItemMeta(change.itemId), qty: change.transferQty });
       }
     }
-    await setDoc(truckRef, newState);
     if (Object.keys(loadLogItems).length > 0) {
       await addDoc(collection(db, "loadLog"), { truckId, items: loadLogItems, notes, type, timestamp: occurredAt });
     }
@@ -13013,7 +13717,7 @@ export default function App() {
     const snapshotEvents = adaptLegacyTruckInventoryToSnapshotEvents({
       truckId,
       truckName,
-      truckInventory: newState,
+      truckInventory: nextTruckState,
       occurredAt,
       actor,
       legacyDocId: truckId,
@@ -13027,58 +13731,18 @@ export default function App() {
     await writeInventoryEventsBestEffort([...transferEvents, ...snapshotEvents], "admin-set-loadout-dual-write", { truckId, type });
   };
   const handleAdminUnload = async (truckId, itemsToUnload, unloadQtys, notes = "") => {
-    const truckRef = doc(db, "truckInventory", truckId);
     const occurredAt = new Date().toISOString();
     const truck = trucks.find(tr => tr.id === truckId);
     const truckName = truck?.vehicleName || truck?.members || truck?.name || null;
     const actor = { actorName: adminName || null, actorRole: "admin", source: "admin-dashboard" };
     const correlationKey = ["admin-unload", truckId || "truck", occurredAt].join("::");
-    const snap = await getDoc(truckRef);
-    const state = snap.exists() ? { ...snap.data() } : {};
-    const logItems = {};
-    const returnedItems = [];
-    for (const item of itemsToUnload) {
-      const qty = parseFloat(unloadQtys[item.key]) || 0;
-      if (qty <= 0) continue;
-      if (item.isCustom) {
-        const custom = (state._custom || []).map(c => {
-          if (c.name === item.name) return { ...c, qty: Math.max(0, c.qty - qty) };
-          return c;
-        }).filter(c => c.qty > 0);
-        state._custom = custom;
-        logItems["custom_" + item.name] = qty;
-        const existingInv = inventory.find(r => r.itemId === "custom_" + item.name);
-        const curQty = existingInv?.qty || 0;
-        await handleUpdateInventory("custom_" + item.name, curQty + qty, {
-          actor,
-          occurredAt,
-          notes,
-          correlationKey,
-          metadata: { eventKind: "admin_unload", customItem: true },
-          legacy: { truckId, notes },
-          skipEventWrite: true,
-        });
-        returnedItems.push({ ...getInventoryEventItemMeta("custom_" + item.name), stillHave: qty });
-      } else {
-        const cur = state[item.key] || 0;
-        const newQty = Math.max(0, Math.round((cur - qty) * 100) / 100);
-        if (newQty > 0) state[item.key] = newQty; else delete state[item.key];
-        logItems[item.key] = qty;
-        const existingInv = inventory.find(r => r.itemId === item.key);
-        const curQty = existingInv?.qty || 0;
-        await handleUpdateInventory(item.key, Math.round((curQty + qty) * 100) / 100, {
-          actor,
-          occurredAt,
-          notes,
-          correlationKey,
-          metadata: { eventKind: "admin_unload" },
-          legacy: { truckId, notes },
-          skipEventWrite: true,
-        });
-        returnedItems.push({ ...getInventoryEventItemMeta(item.key), stillHave: qty });
-      }
-    }
-    await setDoc(truckRef, state);
+    const materials = (itemsToUnload || []).map((item) => ({
+      ...item,
+      itemId: item.itemId || item.key,
+      qty: parseFloat(unloadQtys[item.key]) || 0,
+    }));
+    const { logItems, returnedItems } = await runTruckReturnTransaction({ truckId, materials, occurredAt });
+
     if (Object.keys(logItems).length > 0) {
       await addDoc(collection(db, "returnLog"), { truckId, items: logItems, notes, timestamp: occurredAt });
       const events = adaptTruckTransferToEvents({
@@ -13172,9 +13836,12 @@ export default function App() {
     if (existing) { await updateDoc(doc(db, "inventory", existing.id), { qty }); }
     else { await addDoc(collection(db, "inventory"), { itemId, qty, updatedAt: occurredAt }); }
     if (skipEventWrite || beforeQty === afterQty) return;
+    const eventGroupId = metadata?.eventGroupId || correlationKey || ["warehouse-adjustment", itemId, occurredAt].join("::");
+    const groupedMetadata = { ...metadata, eventGroupId };
     await writeInventoryEventsBestEffort([
-      buildWarehouseAdjustmentEvent({ itemId, beforeQty, afterQty, occurredAt, actor, notes, correlationKey, metadata, legacy }),
-    ], "warehouse-adjustment-dual-write", { itemId, correlationKey });
+      buildWarehouseAdjustmentEvent({ itemId, beforeQty, afterQty, occurredAt, actor, notes, correlationKey, metadata: groupedMetadata, legacy }),
+      buildWarehouseAdjustmentSnapshotEvent({ itemId, afterQty, occurredAt, actor, notes, correlationKey, metadata: groupedMetadata, legacy }),
+    ].filter(Boolean), "warehouse-adjustment-dual-write", { itemId, correlationKey });
   };
 
   const [builders, setBuilders] = React.useState([]);
@@ -13520,68 +14187,17 @@ export default function App() {
   };
   const handleReturnMaterial = async (materials, truckId, returnMode = "unload") => {
     if (!truckId) return;
-    const truckRef = doc(db, "truckInventory", truckId);
     const occurredAt = new Date().toISOString();
     const truckName = trucks.find((truck) => truck.id === truckId)?.name || null;
-    // Read current truck state
-    const snap = await getDoc(truckRef);
-    const state = snap.exists() ? { ...snap.data() } : {};
-    const logItems = {};
-    const canonicalItems = [];
-    for (const m of materials) {
-      const stillHave = m.stillHave || 0;
-      if (stillHave > 0) {
-        // Add back to warehouse
-        const rec = inventory.find(r => r.itemId === m.itemId);
-        const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
-        const current = rec?.qty || 0;
-        const currentTruckQty = parseFloat(state[m.itemId]) || 0;
-        if (stillHave > currentTruckQty + 1e-9) throw new Error(`${inventoryItem?.name || m.itemId} exceeds truck inventory.`);
-        await handleUpdateInventory(m.itemId, Math.round((current + stillHave) * 100) / 100, {
-          actor: {
-            actorId: crewSession?.memberId || null,
-            actorName: crewSession?.crewName || null,
-            actorRole: "crew",
-            source: "crew-dashboard",
-          },
-          occurredAt,
-          notes: returnMode,
-          correlationKey: [truckId, returnMode || "return", occurredAt].join("::"),
-          metadata: {
-            returnMode,
-            eventKind: "truck_transfer_warehouse_adjustment",
-          },
-          legacy: {
-            items: logItems,
-            truckInventoryState: state,
-          },
-          skipEventWrite: true,
-        });
-        logItems[m.itemId] = stillHave;
-        canonicalItems.push({
-          itemId: m.itemId,
-          itemName: inventoryItem?.name || rec?.itemName || null,
-          unit: inventoryItem?.unit || rec?.unit || null,
-          category: inventoryItem?.category || null,
-          qty: stillHave,
-        });
-        // Remove only the returned quantity from truck state
-        const nextTruckQty = Math.round((currentTruckQty - stillHave) * 1000) / 1000;
-        if (nextTruckQty > 0) {
-          state[m.itemId] = nextTruckQty;
-        } else {
-          delete state[m.itemId];
-        }
-      }
-    }
+    const correlationKey = [truckId, returnMode || "return", occurredAt].join("::");
+    const { state, logItems, returnedItems } = await runTruckReturnTransaction({ truckId, materials, occurredAt });
+
     if (Object.keys(logItems).length > 0) {
       await addDoc(collection(db, "returnLog"), { truckId, items: logItems, timestamp: occurredAt, crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
     }
-    // Write back with only returned items removed
-    await setDoc(truckRef, state);
-    if (canonicalItems.length > 0) {
+    if (returnedItems.length > 0) {
       const inventoryEvents = adaptTruckTransferToEvents({
-        items: canonicalItems,
+        items: returnedItems,
         truckId,
         truckName,
         direction: "return",
@@ -13596,7 +14212,7 @@ export default function App() {
         refs: {
           legacyCollection: "returnLog",
           legacyLogType: returnMode,
-          correlationKey: [truckId, returnMode || "return", occurredAt].join("::"),
+          correlationKey,
         },
         metadata: {
           returnMode,
@@ -13789,81 +14405,41 @@ export default function App() {
     }, normalizeMaterialLogTruckId(entry?.truckId));
   };
   const handleLoadTruck = async (itemsLoaded, truckId) => {
-    const truckRef = doc(db, "truckInventory", truckId);
     const occurredAt = new Date().toISOString();
     const truckName = trucks.find((truck) => truck.id === truckId)?.name || null;
     const correlationKey = [truckId, "load", occurredAt].join("::");
-    const snap = await getDoc(truckRef);
-    const currentTruck = snap.exists() ? snap.data() : {};
-    const updatedTruck = {};
-    const logItems = {};
-    const canonicalItems = [];
-    const warehouseUpdates = [];
-    for (const m of itemsLoaded) {
-      const nextQty = Math.max(0, Math.round((parseFloat(m.qty) || 0) * 1000) / 1000);
-      const priorQty = typeof currentTruck[m.itemId] === "number" ? currentTruck[m.itemId] : 0;
-      const delta = Math.round((nextQty - priorQty) * 1000) / 1000;
-      const warehouseRec = inventory.find(r => r.itemId === m.itemId);
-      const inventoryItem = INVENTORY_ITEMS.find((item) => item.id === m.itemId);
-      const warehouseQty = warehouseRec?.qty || 0;
+    const requestedTruckState = Object.fromEntries((itemsLoaded || []).map((m) => [m.itemId, Math.max(0, Math.round((parseFloat(m.qty) || 0) * 1000) / 1000)]));
+    const { nextTruckState: updatedTruck, changes } = await runTruckLoadoutTransferTransaction({ truckId, requestedTruckState, occurredAt });
+    const loadLogItems = {};
+    const returnLogItems = {};
+    const loadItems = [];
+    const returnItems = [];
 
-      if (delta > warehouseQty + 1e-9) throw new Error(`${inventoryItem?.name || m.itemId} exceeds warehouse inventory.`);
-      if (nextQty > 0) updatedTruck[m.itemId] = nextQty;
-      if (delta !== 0) {
-        logItems[m.itemId] = delta;
-        canonicalItems.push({
-          itemId: m.itemId,
-          itemName: inventoryItem?.name || warehouseRec?.itemName || null,
-          unit: inventoryItem?.unit || warehouseRec?.unit || null,
-          category: inventoryItem?.category || null,
-          qty: delta,
-        });
-        warehouseUpdates.push({
-          itemId: m.itemId,
-          nextQty: delta > 0
-            ? Math.max(0, Math.round((warehouseQty - delta) * 1000) / 1000)
-            : Math.round((warehouseQty + Math.abs(delta)) * 1000) / 1000,
-          notes: delta > 0 ? "load" : "loadout-recount-return",
-        });
+    for (const change of changes) {
+      if (change.delta > 0) {
+        loadLogItems[change.itemId] = change.transferQty;
+        loadItems.push({ ...getInventoryEventItemMeta(change.itemId), qty: change.transferQty });
+      } else {
+        returnLogItems[change.itemId] = change.transferQty;
+        returnItems.push({ ...getInventoryEventItemMeta(change.itemId), qty: change.transferQty });
       }
     }
-
-    await setDoc(truckRef, updatedTruck);
-
-    for (const update of warehouseUpdates) {
-      await handleUpdateInventory(update.itemId, update.nextQty, {
-        actor: {
-          actorId: crewSession?.memberId || null,
-          actorName: crewSession?.crewName || null,
-          actorRole: "crew",
-          source: "crew-dashboard",
-        },
-        occurredAt,
-        notes: update.notes,
-        correlationKey,
-        metadata: {
-          eventKind: "truck_transfer_warehouse_adjustment",
-        },
-        legacy: {
-          items: logItems,
-          truckInventoryState: updatedTruck,
-        },
-        skipEventWrite: true,
-      });
+    if (Object.keys(loadLogItems).length > 0) {
+      await addDoc(collection(db, "loadLog"), { truckId, items: loadLogItems, timestamp: occurredAt, crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
     }
-    if (Object.keys(logItems).length > 0) {
-      await addDoc(collection(db, "loadLog"), { truckId, items: logItems, timestamp: occurredAt, crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null });
+    if (Object.keys(returnLogItems).length > 0) {
+      await addDoc(collection(db, "returnLog"), { truckId, items: returnLogItems, timestamp: occurredAt, crewMemberId: crewSession?.memberId || null, crewName: crewSession?.crewName || null, type: "loadout-recount-return" });
     }
-    if (canonicalItems.length > 0) {
+    if (loadItems.length > 0 || returnItems.length > 0) {
       const inventoryEvents = [
         ...adaptTruckTransferToEvents({
-          items: canonicalItems.filter(item => item.qty > 0),
+          items: loadItems,
           truckId,
           truckName,
           direction: "load",
         }).filter(Boolean),
         ...adaptTruckTransferToEvents({
-          items: canonicalItems.filter(item => item.qty < 0).map(item => ({ ...item, qty: Math.abs(item.qty) })),
+          items: returnItems,
           truckId,
           truckName,
           direction: "return",
@@ -13882,12 +14458,12 @@ export default function App() {
           },
           refs: {
             ...(event.refs || {}),
-            legacyCollection: "loadLog",
+            legacyCollection: event.metadata?.transferDirection === "return" ? "returnLog" : "loadLog",
             correlationKey,
           },
           legacy: {
             ...(event.legacy || {}),
-            items: logItems,
+            items: event.metadata?.transferDirection === "return" ? returnLogItems : loadLogItems,
             truckInventoryState: updatedTruck,
           },
         }));
@@ -14012,6 +14588,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} onSaveTruckToolInventory={handleSaveTruckToolInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} consumables={consumables} onSaveConsumable={handleSaveConsumable} onDeleteConsumable={handleDeleteConsumable} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} onSaveTruckToolInventory={handleSaveTruckToolInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   return null;
 }
