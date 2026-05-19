@@ -46,6 +46,10 @@ import {
   getWarehouseInventoryParityReport,
 } from "./inventoryEvents.js";
 import { writeInventoryEvents } from "./inventoryEventWrites.js";
+import {
+  buildEditableMaterialItems,
+  resolveMaterialLogTruckIdForEdit,
+} from "./materialLogHelpers.js";
 
 // ─── Constants ───
 const INSULATION_JOB_TYPES = ["Foam","Fiberglass","Removal"];
@@ -10636,15 +10640,30 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
                   const bblToGal = (qty, id) => Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
                   const isEditing = editMatLogIdx === idx;
+                  const editTruckId = resolveMaterialLogTruckIdForEdit({
+                    log,
+                    job: calViewJob,
+                    updates,
+                    fallbackTruckId: getAuthoritativeTruckIdForJob(calViewJob),
+                  });
+                  const editTruck = trucks.find(tr => tr.id === editTruckId);
+                  const editTruckLabel = editTruck ? (editTruck.members || editTruck.name) : (editTruckId || "No Truck");
+                  const editTruckInventory = truckInventory?.[editTruckId] || {};
+                  const editableMaterialItems = buildEditableMaterialItems({
+                    inventoryItems: INVENTORY_ITEMS,
+                    existingMaterials: log.materials || {},
+                    truckInventory: editTruckInventory,
+                  });
                   return (
                     <div key={idx} style={{ marginBottom: 10, paddingBottom: 10, borderBottom: idx < calViewJob.dailyMaterialLogs.length - 1 ? "1px solid " + t.borderLight : "none" }}>
                       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{log.date} — <span style={{ fontWeight: 400, color: t.textMuted }}>{log.loggedBy}</span></div>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: t.text }}>{log.date} — <span style={{ fontWeight: 400, color: t.textMuted }}>{log.loggedBy}</span><div style={{ fontSize: 11, fontWeight: 500, color: t.textMuted, marginTop: 2 }}>Truck inventory: {editTruckLabel}</div></div>
                         <button onClick={() => { if (isEditing) { setEditMatLogIdx(null); setEditMatLogQtys({}); } else { const init = {}; Object.entries(log.materials||{}).forEach(([id,qty]) => { init[id] = isFoamId(id) ? String(bblToGal(qty,id)) : String(qty); }); setEditMatLogQtys(init); setEditMatLogIdx(idx); } }} style={{ fontSize: 11, padding: "3px 10px", borderRadius: 6, border: "1px solid " + t.border, background: isEditing ? "#fef2f2" : t.surface, color: isEditing ? "#dc2626" : t.textMuted, cursor: "pointer", fontFamily: "inherit" }}>{isEditing ? "Cancel" : "Edit"}</button>
                       </div>
                       {isEditing ? (
                         <div>
-                          {INVENTORY_ITEMS.filter(i => !i.isPieces && (editMatLogQtys[i.id] !== undefined || (log.materials||{})[i.id])).map(item => (
+                          <div style={{ fontSize: 11, color: t.textMuted, marginBottom: 8 }}>Increasing a quantity deducts the difference from {editTruckLabel}. Decreasing it returns the difference to that same active truck inventory.</div>
+                          {editableMaterialItems.map(item => (
                             <div key={item.id} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
                               <label style={{ fontSize: 12, flex: 1, color: t.text }}>{item.name}</label>
                               <input type="number" min="0" value={editMatLogQtys[item.id] || ""} onChange={e => setEditMatLogQtys(q => ({...q, [item.id]: e.target.value}))} placeholder={isFoamId(item.id) ? "gal" : item.unit} style={{ width: 80, padding: "5px 8px", borderRadius: 6, border: "1px solid " + t.border, fontSize: 12, fontFamily: "inherit" }} />
@@ -10659,14 +10678,13 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                                 newMats[id] = isFoamId(id) ? Math.round(qty / (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 10000) / 10000 : qty;
                               }
                             });
-                            const preservedTruckId = normalizeMaterialLogTruckId(log.truckId ?? null);
                             await onSaveJobMaterials(calViewJob.id, {
                               ...log,
                               date: log.date,
-                              truckId: preservedTruckId,
-                              sourceTruckId: preservedTruckId,
+                              truckId: editTruckId,
+                              sourceTruckId: normalizeMaterialLogTruckId(log.truckId ?? null),
                               materials: newMats,
-                            }, preservedTruckId);
+                            }, editTruckId);
                             setEditMatLogIdx(null); setEditMatLogQtys({});
                           }} style={{ marginTop: 6, width: "100%" }}>Save Changes</Button>
                         </div>
@@ -14345,6 +14363,7 @@ export default function App() {
         ? explicitTruckId
         : normalizeMaterialLogTruckId(explicitTruckId ?? getCloseoutAttributionTruckId(jobData));
       const priorTruckId = normalizeMaterialLogTruckId(priorEntry?.truckId ?? lookupTruckId ?? null);
+      const oldForEffectiveTruck = priorEntry && !priorTruckId && effectiveTruckId ? priorMaterials : {};
       const nextEntry = { ...priorEntry, ...payload, truckId: effectiveTruckId };
       eventWriteContext = { jobData, priorEntry, nextEntry };
       if (priorTruckId && priorTruckId !== effectiveTruckId) {
@@ -14357,7 +14376,7 @@ export default function App() {
         const effectiveTruckRef = doc(db, "truckInventory", effectiveTruckId);
         const effectiveTruckSnap = await tx.get(effectiveTruckRef);
         const effectiveTruckState = effectiveTruckSnap.exists() ? effectiveTruckSnap.data() : {};
-        const oldForTargetTruck = priorTruckId === effectiveTruckId ? priorMaterials : {};
+        const oldForTargetTruck = priorTruckId === effectiveTruckId ? priorMaterials : oldForEffectiveTruck;
         tx.set(effectiveTruckRef, applyTruckUsageDelta(effectiveTruckState, oldForTargetTruck, nextEntry.materials || {}));
       }
       const { sourceTruckId, ...jobEntry } = nextEntry;

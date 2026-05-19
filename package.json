@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "test:inventory-events": "node scripts/test-inventory-events.mjs",
+    "test:material-logs": "node scripts/test-material-log-helpers.mjs",
     "backfill:warehouse-inventory": "node scripts/backfill-warehouse-inventory.mjs",
     "backfill:truck-inventory-events": "node scripts/backfill-truck-inventory-events.mjs",
     "backfill:job-usage-history": "node scripts/backfill-job-usage-history.mjs"
