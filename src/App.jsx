@@ -33,6 +33,7 @@ import {
   buildInventoryCatalogSavePayloads,
   normalizeInventoryCatalogOverride,
 } from "./inventoryCatalog.js";
+import { shortInventoryItemName } from "./inventoryDisplay.js";
 import {
   INVENTORY_EVENT_TYPES,
   adaptCloseoutMaterialsUsedDeltaToEvents,
@@ -198,10 +199,10 @@ const BASE_INVENTORY_ITEMS = [
   { id: "oc_r13_15_8_pcs", name: "Owens Corning R13 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_8_t", cost: pcsCost(125.94, MAT_RATE.r13, 13) },
 
   // Owens Corning R19 ($0.38/sqft)
-  { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\" (8ft)", pcsPerTube: 9, sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: tubeCost(87.19, MAT_RATE.r19) },
-  { id: "oc_r19_15_8_pcs", name: "Owens Corning R19 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R19", isPieces: true, parentId: "oc_r19_15_8_t", cost: pcsCost(87.19, MAT_RATE.r19, 9) },
-  { id: "oc_r19_23_8_t",   name: "Owens Corning R19 x 23\" x 93\" (8ft)", pcsPerTube: 6, sqftPerTube: 89.13, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: tubeCost(89.13, MAT_RATE.r19) },
-  { id: "oc_r19_23_8_pcs", name: "Owens Corning R19 x 23\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R19", isPieces: true, parentId: "oc_r19_23_8_t", cost: pcsCost(89.13, MAT_RATE.r19, 6) },
+  { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\"", pcsPerTube: 9, sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: tubeCost(87.19, MAT_RATE.r19) },
+  { id: "oc_r19_15_8_pcs", name: "Owens Corning R19 x 15\" x 93\"", unit: "pcs",   category: "Owens Corning R19", isPieces: true, parentId: "oc_r19_15_8_t", cost: pcsCost(87.19, MAT_RATE.r19, 9) },
+  { id: "oc_r19_23_8_t",   name: "Owens Corning R19 x 23\" x 93\"", pcsPerTube: 6, sqftPerTube: 89.13, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: tubeCost(89.13, MAT_RATE.r19) },
+  { id: "oc_r19_23_8_pcs", name: "Owens Corning R19 x 23\" x 93\"", unit: "pcs",   category: "Owens Corning R19", isPieces: true, parentId: "oc_r19_23_8_t", cost: pcsCost(89.13, MAT_RATE.r19, 6) },
   { id: "r13_15_9_t",     name: 'R13 x 15" x 105" (9ft)', pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: tubeCost(142.19, MAT_RATE.r13) },
   { id: "r13_15_9_pcs",   name: 'R13 x 15" x 105" (9ft)', unit: "pcs",   category: "Certainteed R13", isPieces: true, parentId: "r13_15_9_t", cost: pcsCost(142.19, MAT_RATE.r13, 13) },
   { id: "r13_24_8_t",     name: 'R13 x 24" x 96"',         pcsPerTube: 11, sqftPerTube: 176,    unit: "tubes", category: "Certainteed R13", hasPieces: true, cost: tubeCost(176, MAT_RATE.r13) },
@@ -9203,32 +9204,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               if (hay.includes("r30") || hay.includes("r38")) return "R30+";
               return "Other";
             };
-            const shortName = (item) => {
-              const cat = item.category || "";
-              const raw = item.name || "";
-              const brand = cat.includes("Certainteed") ? "CT" : cat.includes("Owens Corning") ? "OC" : cat.includes("Johns Manville") ? "JM" : cat.includes("Orkin") ? "Orkin" : "";
-              if (item.unit === "bbl") return raw;
-              if (cat === "Rockwool" || cat === "Lambswool") return raw;
-              if (cat === "Blown") {
-                return raw
-                  .replace(/Certainteed Blown Fiberglass/i, "CT Blown FG")
-                  .replace(/JM Blown Fiberglass/i, "JM Blown FG")
-                  .replace(/Blown Cellulose/i, "Cellulose");
-              }
-              const r = raw.match(/R\d+/i)?.[0] || cat.match(/R\d+/i)?.[0] || "";
-              const dims = raw.match(/x\s*([\d.]+\")\s*x\s*([\d.]+\")/i);
-              const length = raw.match(/\((\d+)ft\)/i)?.[1];
-              if (r && dims) return `${brand ? brand + " " : ""}${r} ${dims[1]}×${length ? length + "'" : dims[2]}`;
-              return raw
-                .replace(/Fiberglass/gi, "FG")
-                .replace(/Certainteed/gi, "CT")
-                .replace(/Owens Corning/gi, "OC")
-                .replace(/Johns Manville/gi, "JM")
-                .replace(/Rockwool/gi, "RW")
-                .replace(/Lambswool/gi, "LW")
-                .replace(/\s+/g, " ")
-                .trim();
-            };
+            const shortName = shortInventoryItemName;
             const GROUPS = ["Foam", "Blown/Other", "R11", "R13/R15", "R19+", "R30+", "Other"];
             const allVisible = sortAllItems(
               INVENTORY_ITEMS
