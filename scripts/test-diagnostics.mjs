@@ -5,6 +5,7 @@ import {
   createDebugSnapshotPayload,
   getBuildMetadata,
   normalizeClientError,
+  summarizeConfigHealth,
   summarizeCollectionCounts,
   summarizeListenerFreshness,
   summarizeParity,
@@ -33,6 +34,21 @@ assert.deepEqual(build, {
 });
 assert.equal(getBuildMetadata().mode, null, 'build metadata should be safe without import.meta.env');
 
+const configHealth = summarizeConfigHealth({
+  MODE: 'test',
+  VITE_FB_API_KEY: 'secret-api-key',
+  VITE_FB_AUTH_DOMAIN: 'example.firebaseapp.com',
+});
+assert.equal(configHealth.ok, false);
+assert.deepEqual(configHealth.firebase.present, ['VITE_FB_API_KEY', 'VITE_FB_AUTH_DOMAIN']);
+assert.deepEqual(configHealth.firebase.missing, [
+  'VITE_FB_PROJECT_ID',
+  'VITE_FB_STORAGE_BUCKET',
+  'VITE_FB_MESSAGING_ID',
+  'VITE_FB_APP_ID',
+]);
+assert.equal(JSON.stringify(configHealth).includes('secret-api-key'), false);
+
 const collectionCounts = summarizeCollectionCounts({
   jobs: [{ id: 'j1' }, { id: 'j2' }],
   customersById: { c1: {}, c2: {}, c3: {} },
@@ -49,7 +65,7 @@ assert.deepEqual(collectionCounts.collections.unloaded, { count: 0, type: 'missi
 
 const freshness = summarizeListenerFreshness(
   {
-    jobs: { lastSnapshotAt: '2026-05-20T11:58:00.000Z', active: true },
+    jobs: { lastSnapshotAt: '2026-05-20T11:58:00.000Z', active: true, docCount: 12, snapshotCount: 3, totalDocsReceived: 32, averageDocsPerSnapshot: 10.67, subscribedAt: '2026-05-20T11:50:00.000Z' },
     customers: { lastSnapshotAt: '2026-05-20T11:40:00.000Z' },
     inventory: {},
     jobsUsage: { lastSnapshotAt: '2026-05-20T11:59:00.000Z', error: new Error('permission denied') },
@@ -63,6 +79,11 @@ assert.equal(freshness.never, 1);
 assert.equal(freshness.errors, 1);
 assert.equal(freshness.listeners.jobs.status, 'fresh');
 assert.equal(freshness.listeners.jobs.ageMinutes, 2);
+assert.equal(freshness.listeners.jobs.docCount, 12);
+assert.equal(freshness.listeners.jobs.snapshotCount, 3);
+assert.equal(freshness.listeners.jobs.totalDocsReceived, 32);
+assert.equal(freshness.listeners.jobs.averageDocsPerSnapshot, 10.67);
+assert.equal(freshness.listeners.jobs.subscribedAt, '2026-05-20T11:50:00.000Z');
 assert.equal(freshness.listeners.customers.status, 'stale');
 assert.equal(freshness.listeners.inventory.status, 'never');
 assert.equal(freshness.listeners.jobsUsage.status, 'error');
@@ -128,6 +149,7 @@ const snapshot = createDebugSnapshotPayload(
 assert.equal(snapshot.schemaVersion, 1);
 assert.equal(snapshot.generatedAt, fixedNow);
 assert.equal(snapshot.build.branch, 'feature/diagnostics');
+assert.equal(snapshot.config.firebase.missingCount, 6);
 assert.equal(snapshot.collections.collections.jobs.count, 1);
 assert.equal(snapshot.listeners.listeners.jobs.status, 'fresh');
 assert.equal(snapshot.parity.ok, true);

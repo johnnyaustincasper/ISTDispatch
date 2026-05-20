@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { Suspense, useState, useEffect, useRef, useCallback, useMemo } from "react";
 import ReactDOM from "react-dom";
 
 import { db, storage } from "./firebase.js";
@@ -34,7 +34,11 @@ import {
   normalizeInventoryCatalogOverride,
 } from "./inventoryCatalog.js";
 import MaterialsGrid from "./features/inventory/MaterialsGrid.jsx";
-import AdminDiagnosticsView from "./features/diagnostics/AdminDiagnosticsView.jsx";
+import {
+  buildOfficeNavItems,
+  shouldClearTruckFilterForNav,
+} from "./features/admin/adminNavigation.js";
+import { getFeatureFlags } from "./config/featureFlags.js";
 import {
   createInitialListenerDiagnostics,
   listenToCollection,
@@ -63,6 +67,8 @@ import {
   buildEditableMaterialItems,
   resolveMaterialLogTruckIdForEdit,
 } from "./materialLogHelpers.js";
+
+const AdminDiagnosticsView = React.lazy(() => import("./features/diagnostics/AdminDiagnosticsView.jsx"));
 
 // ─── Constants ───
 const INSULATION_JOB_TYPES = ["Foam","Fiberglass","Removal"];
@@ -7934,15 +7940,8 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
     foamPricing: <span style={{ fontSize: 20, lineHeight: 1 }}>💵</span>,
   };
-  const NAV_ITEMS = [
-    { key: "schedule", label: "Schedule" },
-    { key: "calendar", label: "Calendar" },
-    { key: "inventory", label: "Inventory", badge: openChecklistShortageCount },
-    { key: "foamPricing", label: "Pricing" },
-    { key: "tickets", label: "Tickets", badge: openTicketCount },
-    { key: "trucks", label: "Trucks" },
-    { key: "roster", label: "Roster" },
-  ];
+  const featureFlags = useMemo(() => getFeatureFlags(import.meta.env), []);
+  const NAV_ITEMS = useMemo(() => buildOfficeNavItems({ openChecklistShortageCount, openTicketCount }), [openChecklistShortageCount, openTicketCount]);
 
   return (
     <div className={`office-app-shell ${view === "schedule" && scheduleTvMode ? "office-tv-mode" : ""}`} style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
@@ -7967,24 +7966,26 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </div>
           <div className="office-session-actions" style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
             <span style={{ fontSize: "12px", color: "#0f172a", padding: "7px 10px", borderRadius: 999, background: "rgba(255,255,255,0.52)", border: "1px solid rgba(15,23,42,0.10)" }}>{adminName}</span>
-            <Button
-              variant="ghost"
-              onClick={() => setView("diagnostics")}
-              style={{
-                fontSize: "12px",
-                color: view === "diagnostics" ? "#fff" : "#0f172a",
-                background: view === "diagnostics" ? "linear-gradient(135deg,#2563eb,#0f172a)" : "rgba(255,255,255,0.62)",
-                border: view === "diagnostics" ? "1px solid rgba(37,99,235,0.45)" : "1px solid rgba(15,23,42,0.10)",
-                borderRadius: 999,
-                whiteSpace: "nowrap",
-                position: "relative",
-              }}
-            >
-              Admin
-              {(diagnosticsState?.errors?.length || 0) > 0 && (
-                <span style={{ marginLeft: 6, background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 5px", minWidth: "15px", height: "15px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{diagnosticsState.errors.length}</span>
-              )}
-            </Button>
+            {featureFlags.diagnostics && (
+              <Button
+                variant="ghost"
+                onClick={() => setView("diagnostics")}
+                style={{
+                  fontSize: "12px",
+                  color: view === "diagnostics" ? "#fff" : "#0f172a",
+                  background: view === "diagnostics" ? "linear-gradient(135deg,#2563eb,#0f172a)" : "rgba(255,255,255,0.62)",
+                  border: view === "diagnostics" ? "1px solid rgba(37,99,235,0.45)" : "1px solid rgba(15,23,42,0.10)",
+                  borderRadius: 999,
+                  whiteSpace: "nowrap",
+                  position: "relative",
+                }}
+              >
+                Admin
+                {(diagnosticsState?.errors?.length || 0) > 0 && (
+                  <span style={{ marginLeft: 6, background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 5px", minWidth: "15px", height: "15px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{diagnosticsState.errors.length}</span>
+                )}
+              </Button>
+            )}
             <Button className="crew-portal-logout" variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999, whiteSpace: "nowrap" }}>Log Out</Button>
           </div>
         </div>
@@ -7998,7 +7999,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <button key={item.key}
               className="nav-tab-btn"
               title={item.label}
-              onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }}
+              onClick={() => { if (shouldClearTruckFilterForNav(item.key)) setTruckFilter(null); setView(item.key); }}
               style={{
                 width: "100%",
                 flex: 1,
@@ -8033,7 +8034,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
             <button key={item.key}
               className="nav-tab-btn office-mobile-nav-btn"
               title={item.label}
-              onClick={() => { if (item.key === "schedule" || item.key === "tickets") setTruckFilter(null); setView(item.key); }}
+              onClick={() => { if (shouldClearTruckFilterForNav(item.key)) setTruckFilter(null); setView(item.key); }}
               style={{
                 width: "100%",
                 display: "flex",
@@ -8801,20 +8802,22 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
         {view === "foamPricing" && <FoamPricingCalculatorView />}
 
-        {view === "diagnostics" && (
-          <AdminDiagnosticsView
-            collections={diagnosticsState.collections}
-            listeners={diagnosticsState.listeners}
-            parity={diagnosticsState.parity}
-            errors={diagnosticsState.errors || []}
-            context={{
-              adminName,
-              view,
-              scheduleView,
-              inventoryItemCount: inventoryItems.length,
-              generatedFrom: "AdminDashboard",
-            }}
-          />
+        {featureFlags.diagnostics && view === "diagnostics" && (
+          <Suspense fallback={<div style={{ padding: 18, color: t.textMuted, fontWeight: 800 }}>Loading admin diagnostics…</div>}>
+            <AdminDiagnosticsView
+              collections={diagnosticsState.collections}
+              listeners={diagnosticsState.listeners}
+              parity={diagnosticsState.parity}
+              errors={diagnosticsState.errors || []}
+              context={{
+                adminName,
+                view,
+                scheduleView,
+                inventoryItemCount: inventoryItems.length,
+                generatedFrom: "AdminDashboard",
+              }}
+            />
+          </Suspense>
         )}
 
         {view === "tickets" && (

@@ -9,6 +9,12 @@ Use this checklist when IST Dispatch behavior differs between local, CI, and pro
 - Run `npm test` to exercise inventory display/catalog/event migration/projection, material-log helper behavior, diagnostics summaries, and Firestore listener wrappers.
 - Run `npm run build` to catch Vite/React compile issues.
 - For production incidents, verify the active Vercel alias points to the deployment you are debugging. Do not assume the latest deployment is receiving traffic.
+- Run the read-only production smoke check after deployment or when investigating a production mismatch:
+  - Default: `npm run verify:prod`
+  - Host guard: `EXPECTED_DEPLOYMENT_HOST=www.istdispatch.com npm run verify:prod`
+  - Release/content guard: `EXPECTED_ASSET_MARKER='known deployed marker' npm run verify:prod`
+- The production verifier fetches `https://www.istdispatch.com`, follows redirects, requires a final `200`, checks JavaScript assets, and verifies non-secret content markers such as `IST Dispatch`. It reports optional Admin/diagnostics/config-health markers when present.
+- Do not paste Firebase keys, cookies, tokens, Vercel secrets, or private config values into verifier environment variables. `EXPECTED_ASSET_MARKER` should be a harmless public bundle string, commit marker, or UI label only.
 
 ## 2. Check environment and Firebase config
 

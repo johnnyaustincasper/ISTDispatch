@@ -17,6 +17,9 @@ export const createInitialListenerDiagnostics = (collectionNames = []) => Object
     active: false,
     status: "never",
     docCount: 0,
+    snapshotCount: 0,
+    totalDocsReceived: 0,
+    subscribedAt: null,
     lastSnapshotAt: null,
     lastError: null,
   }]),
@@ -32,7 +35,7 @@ export const buildListenerStatus = (name, snap, extra = {}) => ({
   ...extra,
 });
 
-export const buildListenerErrorStatus = (name, error) => ({
+export const buildListenerErrorStatus = (name, error, extra = {}) => ({
   name,
   active: false,
   status: "error",
@@ -43,6 +46,7 @@ export const buildListenerErrorStatus = (name, error) => ({
     message: error?.message || String(error || "Unknown listener error"),
     code: error?.code || null,
   },
+  ...extra,
 });
 
 export function listenToQuery(queryRef, name, options = {}) {
@@ -53,11 +57,41 @@ export function listenToQuery(queryRef, name, options = {}) {
     onStatus,
     onError,
   } = options;
+  const subscribedAt = new Date().toISOString();
+  let snapshotCount = 0;
+  let totalDocsReceived = 0;
+
+  const metricExtra = (snap = null) => {
+    const docCount = snap?.size ?? snap?.docs?.length ?? 0;
+    return {
+      subscribedAt,
+      snapshotCount,
+      totalDocsReceived,
+      averageDocsPerSnapshot: snapshotCount > 0 ? Math.round((totalDocsReceived / snapshotCount) * 100) / 100 : 0,
+      lastDocCount: docCount,
+    };
+  };
+
+  onStatus?.({
+    name,
+    active: true,
+    status: "subscribed",
+    docCount: 0,
+    subscribedAt,
+    snapshotCount,
+    totalDocsReceived,
+    averageDocsPerSnapshot: 0,
+    lastSnapshotAt: null,
+    lastError: null,
+  });
 
   return onSnapshot(
     queryRef,
     (snap) => {
-      const status = buildListenerStatus(name, snap);
+      const docCount = snap?.size ?? snap?.docs?.length ?? 0;
+      snapshotCount += 1;
+      totalDocsReceived += docCount;
+      const status = buildListenerStatus(name, snap, metricExtra(snap));
       onStatus?.(status);
       try {
         const data = mapSnapshot(snap, mapDoc);
@@ -73,7 +107,7 @@ export function listenToQuery(queryRef, name, options = {}) {
       }
     },
     (error) => {
-      const status = buildListenerErrorStatus(name, error);
+      const status = buildListenerErrorStatus(name, error, metricExtra());
       onStatus?.(status);
       onError?.(error, status);
     },

@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 
 import {
   createDebugSnapshotPayload,
+  summarizeConfigHealth,
   summarizeCollectionCounts,
   summarizeListenerFreshness,
   summarizeParity,
@@ -24,6 +25,7 @@ const StatusPill = ({ status, children }) => {
     error: ["#b91c1c", "#fee2e2"],
     ok: ["#15803d", "#dcfce7"],
     bad: ["#b91c1c", "#fee2e2"],
+    warn: ["#b45309", "#fef3c7"],
   };
   const [color, bg] = palette[status] || palette.never;
   return <span style={{ display: "inline-flex", alignItems: "center", borderRadius: 999, padding: "4px 8px", fontSize: 11, fontWeight: 900, color, background: bg }}>{children || status}</span>;
@@ -33,6 +35,7 @@ export default function AdminDiagnosticsView({ collections = {}, listeners = {},
   const collectionSummary = useMemo(() => summarizeCollectionCounts(collections), [collections]);
   const freshness = useMemo(() => summarizeListenerFreshness(listeners, { staleAfterMinutes: 5 }), [listeners]);
   const paritySummary = useMemo(() => summarizeParity(parity), [parity]);
+  const configHealth = useMemo(() => summarizeConfigHealth(), []);
   const payload = useMemo(() => createDebugSnapshotPayload({ collections, listeners, errors, context, ...parity }, { staleAfterMinutes: 5 }), [collections, listeners, errors, context, parity]);
 
   const exportJson = () => {
@@ -57,6 +60,8 @@ export default function AdminDiagnosticsView({ collections = {}, listeners = {},
   const listenerRows = Object.entries(freshness.listeners || {}).sort(([a], [b]) => a.localeCompare(b));
   const collectionRows = Object.entries(collectionSummary.collections || {}).sort(([a], [b]) => a.localeCompare(b));
   const truckParityRows = Object.entries(paritySummary.truckInventoryParity || {}).sort(([a], [b]) => a.localeCompare(b));
+  const featureFlagRows = Object.entries(configHealth.featureFlags?.flags || {}).sort(([a], [b]) => a.localeCompare(b));
+  const debugExportsEnabled = configHealth.featureFlags?.flags?.debugExports?.enabled ?? true;
 
   return (
     <div style={{ display: "grid", gap: 16 }}>
@@ -66,18 +71,35 @@ export default function AdminDiagnosticsView({ collections = {}, listeners = {},
           <h1 style={{ margin: "4px 0 0", color: "#0f172a", fontSize: "clamp(26px,4vw,42px)", letterSpacing: "-1.4px" }}>Live app health</h1>
           <div style={{ color: "#64748b", fontSize: 13, marginTop: 6 }}>Firestore counts, listener freshness, inventory parity, and client-side error export.</div>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={copyJson} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 12, padding: "10px 12px", fontWeight: 900, cursor: "pointer", fontFamily: "inherit" }}>Copy JSON</button>
-          <button onClick={exportJson} style={{ border: "1px solid #0f172a", background: "#0f172a", color: "#fff", borderRadius: 12, padding: "10px 12px", fontWeight: 900, cursor: "pointer", fontFamily: "inherit" }}>Export Debug Snapshot</button>
-        </div>
+        {debugExportsEnabled && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <button onClick={copyJson} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 12, padding: "10px 12px", fontWeight: 900, cursor: "pointer", fontFamily: "inherit" }}>Copy JSON</button>
+            <button onClick={exportJson} style={{ border: "1px solid #0f172a", background: "#0f172a", color: "#fff", borderRadius: 12, padding: "10px 12px", fontWeight: 900, cursor: "pointer", fontFamily: "inherit" }}>Export Debug Snapshot</button>
+          </div>
+        )}
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12 }}>
         <div style={cardStyle("#2563eb")}><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Documents loaded</div><div style={{ fontSize: 30, fontWeight: 950, color: "#0f172a" }}>{collectionSummary.totalDocuments}</div><div style={{ fontSize: 12, color: "#64748b" }}>{collectionSummary.loadedCollections}/{collectionSummary.totalCollections} collections</div></div>
         <div style={cardStyle(freshness.errors ? "#dc2626" : freshness.stale ? "#f59e0b" : "#16a34a")}><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Listeners</div><div style={{ fontSize: 30, fontWeight: 950, color: "#0f172a" }}>{freshness.fresh}/{freshness.total}</div><div style={{ fontSize: 12, color: "#64748b" }}>{freshness.errors} errors · {freshness.stale} stale · {freshness.never} never</div></div>
+        <div style={cardStyle(configHealth.ok ? "#16a34a" : "#dc2626")}><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Runtime config</div><div style={{ fontSize: 30, fontWeight: 950, color: "#0f172a" }}>{configHealth.firebase.presentCount}/{configHealth.firebase.required.length}</div><div style={{ fontSize: 12, color: "#64748b" }}>{configHealth.environment} · {configHealth.firebase.missingCount} missing</div></div>
         <div style={cardStyle(paritySummary.ok === false ? "#dc2626" : "#16a34a")}><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Parity checks</div><div style={{ fontSize: 30, fontWeight: 950, color: "#0f172a" }}>{paritySummary.passed}/{paritySummary.totalChecks}</div><div style={{ fontSize: 12, color: "#64748b" }}>{paritySummary.failed} failing</div></div>
         <div style={cardStyle(errors.length ? "#dc2626" : "#94a3b8")}><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900, textTransform: "uppercase" }}>Client errors</div><div style={{ fontSize: 30, fontWeight: 950, color: "#0f172a" }}>{errors.length}</div><div style={{ fontSize: 12, color: "#64748b" }}>Captured this browser session</div></div>
       </div>
+
+      <section style={cardStyle(configHealth.ok ? "#16a34a" : "#dc2626")}>
+        <h2 style={{ margin: "0 0 10px", fontSize: 16, color: "#0f172a" }}>Runtime config health</h2>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 10 }}>
+          <div><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900 }}>Environment</div><div style={{ color: "#0f172a", fontWeight: 900 }}>{configHealth.environment}</div></div>
+          <div><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900 }}>Firebase env</div><StatusPill status={configHealth.ok ? "ok" : "bad"}>{configHealth.firebase.presentCount}/{configHealth.firebase.required.length} present</StatusPill></div>
+          <div><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900 }}>Feature flags</div><StatusPill status="ok">{configHealth.featureFlags.enabled}/{configHealth.featureFlags.total} enabled</StatusPill></div>
+          <div><div style={{ fontSize: 11, color: "#64748b", fontWeight: 900 }}>Build</div><div style={{ color: "#64748b", fontSize: 12 }}>{configHealth.build.version || "unknown version"}{configHealth.build.commit ? ` · ${configHealth.build.commit}` : ""}</div></div>
+        </div>
+        {configHealth.firebase.missing.length > 0 && <div style={{ marginTop: 10, color: "#b91c1c", fontSize: 12, fontWeight: 800 }}>Missing Firebase env vars: {configHealth.firebase.missing.join(", ")}</div>}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 8, marginTop: 12 }}>
+          {featureFlagRows.map(([name, flag]) => <div key={name} style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", borderBottom: "1px solid #edf2f7", paddingBottom: 6, fontSize: 12 }}><span style={{ fontWeight: 800, color: "#0f172a" }}>{name}</span><StatusPill status={flag.enabled ? "ok" : "warn"}>{flag.enabled ? "on" : "off"}</StatusPill></div>)}
+        </div>
+      </section>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(320px,1fr))", gap: 14 }}>
         <section style={cardStyle("#2563eb")}>
@@ -90,7 +112,20 @@ export default function AdminDiagnosticsView({ collections = {}, listeners = {},
         <section style={cardStyle(freshness.errors ? "#dc2626" : "#16a34a")}>
           <h2 style={{ margin: "0 0 10px", fontSize: 16, color: "#0f172a" }}>Listener freshness</h2>
           <div style={{ display: "grid", gap: 7 }}>
-            {listenerRows.map(([name, row]) => <div key={name} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "center", fontSize: 13, borderBottom: "1px solid #edf2f7", paddingBottom: 6 }}><div style={{ minWidth: 0 }}><div style={{ fontWeight: 800, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div><div style={{ color: "#64748b", fontSize: 11 }}>{row.lastSnapshotAt ? `${row.ageMinutes ?? 0} min ago` : "No snapshot"}{listeners[name]?.docCount != null ? ` · ${listeners[name].docCount} docs` : ""}</div>{row.error && <div style={{ color: "#b91c1c", fontSize: 11 }}>{row.error.message}</div>}</div><StatusPill status={row.status}>{row.status}</StatusPill></div>)}
+            {listenerRows.map(([name, row]) => (
+              <div key={name} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", gap: 10, alignItems: "center", fontSize: 13, borderBottom: "1px solid #edf2f7", paddingBottom: 6 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontWeight: 800, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{name}</div>
+                  <div style={{ color: "#64748b", fontSize: 11 }}>
+                    {row.lastSnapshotAt ? `${row.ageMinutes ?? 0} min ago` : row.subscribedAt ? `subscribed ${row.subscribedAt}` : "No snapshot"}
+                    {row.docCount != null ? ` · ${row.docCount} docs` : ""}
+                    {row.snapshotCount != null ? ` · ${row.snapshotCount} snapshots` : ""}
+                  </div>
+                  {row.error && <div style={{ color: "#b91c1c", fontSize: 11 }}>{row.error.message}</div>}
+                </div>
+                <StatusPill status={row.status}>{row.status}</StatusPill>
+              </div>
+            ))}
           </div>
         </section>
       </div>

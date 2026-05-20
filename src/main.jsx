@@ -1,7 +1,8 @@
-import React from 'react'
+import React, { Suspense } from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.jsx'
-import DispatchRedesignMocks from './DispatchRedesignMocks.jsx'
+
+const DispatchRedesignMocks = React.lazy(() => import('./DispatchRedesignMocks.jsx'))
 
 const params = new URLSearchParams(window.location.search)
 const showRedesignMocks = window.location.pathname === '/redesign-mocks' || params.get('mock') === 'redesign'
@@ -9,6 +10,8 @@ const Root = showRedesignMocks ? DispatchRedesignMocks : App
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <Root />
+    <Suspense fallback={<div style={{ padding: 24, fontFamily: 'system-ui, sans-serif' }}>Loading IST Dispatch…</div>}>
+      <Root />
+    </Suspense>
   </React.StrictMode>
 )

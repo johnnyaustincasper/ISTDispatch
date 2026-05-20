@@ -1,3 +1,5 @@
+import { createConfigHealthSummary, getBuildMetadata as getConfigBuildMetadata } from "./config/appConfig.js";
+
 const DEFAULT_STALE_AFTER_MINUTES = 5;
 const MINUTE_MS = 60 * 1000;
 
@@ -106,20 +108,9 @@ const safeClone = (value, seen = new WeakSet()) => {
   );
 };
 
-export const getBuildMetadata = (envOverride) => {
-  const env = envOverride || import.meta?.env || {};
-  return {
-    mode: env.MODE || env.NODE_ENV || null,
-    dev: Boolean(env.DEV),
-    prod: Boolean(env.PROD),
-    ssr: Boolean(env.SSR),
-    baseUrl: env.BASE_URL || null,
-    version: env.VITE_APP_VERSION || env.VITE_VERSION || env.npm_package_version || null,
-    commit: env.VITE_GIT_SHA || env.VITE_GIT_COMMIT || env.VITE_COMMIT_SHA || null,
-    branch: env.VITE_GIT_BRANCH || null,
-    builtAt: env.VITE_BUILD_TIME || env.VITE_BUILT_AT || null,
-  };
-};
+export const getBuildMetadata = (envOverride) => getConfigBuildMetadata(envOverride);
+
+export const summarizeConfigHealth = (envOverride) => createConfigHealthSummary(envOverride);
 
 export const summarizeCollectionCounts = (collections = {}) => {
   const entries = collections instanceof Map ? [...collections.entries()] : Object.entries(collections || {});
@@ -163,6 +154,11 @@ export const summarizeListenerFreshness = (listeners = {}, options = {}) => {
       lastSnapshotAt: timestamp == null ? null : new Date(timestamp).toISOString(),
       ageMinutes,
       staleAfterMinutes,
+      docCount: record.docCount ?? record.lastDocCount ?? null,
+      snapshotCount: record.snapshotCount ?? null,
+      totalDocsReceived: record.totalDocsReceived ?? null,
+      averageDocsPerSnapshot: record.averageDocsPerSnapshot ?? null,
+      subscribedAt: safeIsoString(record.subscribedAt),
       error: error ? normalizeClientError(error) : null,
     };
   }
@@ -224,6 +220,7 @@ export const createDebugSnapshotPayload = (state = {}, options = {}) => {
     schemaVersion: 1,
     generatedAt,
     build: getBuildMetadata(options.env),
+    config: summarizeConfigHealth(options.env),
     collections: summarizeCollectionCounts(state.collections || {}),
     listeners: summarizeListenerFreshness(state.listeners || {}, { now: options.now, staleAfterMinutes: options.staleAfterMinutes }),
     parity: summarizeParity(state),

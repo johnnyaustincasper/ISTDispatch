@@ -24,6 +24,9 @@ assert.deepEqual(mapSnapshotToObjectById(snap), {
 const initial = createInitialListenerDiagnostics(["jobs", "tickets"]);
 assert.equal(initial.jobs.status, "never");
 assert.equal(initial.tickets.active, false);
+assert.equal(initial.jobs.snapshotCount, 0);
+assert.equal(initial.jobs.totalDocsReceived, 0);
+assert.equal(initial.jobs.subscribedAt, null);
 
 const status = buildListenerStatus("jobs", snap, { source: "test" });
 assert.equal(status.name, "jobs");
