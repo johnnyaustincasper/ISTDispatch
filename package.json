@@ -7,10 +7,13 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "test": "npm run test:inventory-display && npm run test:inventory-catalog && npm run test:inventory-events && npm run test:material-logs && npm run test:diagnostics && npm run test:firestore-listeners",
     "test:inventory-events": "node scripts/test-inventory-events.mjs",
     "test:material-logs": "node scripts/test-material-log-helpers.mjs",
     "test:inventory-catalog": "node scripts/test-inventory-catalog.mjs",
     "test:inventory-display": "node scripts/test-inventory-display.mjs",
+    "test:diagnostics": "node scripts/test-diagnostics.mjs",
+    "test:firestore-listeners": "node scripts/test-firestore-listeners.mjs",
     "backfill:warehouse-inventory": "node scripts/backfill-warehouse-inventory.mjs",
     "backfill:truck-inventory-events": "node scripts/backfill-truck-inventory-events.mjs",
     "backfill:job-usage-history": "node scripts/backfill-job-usage-history.mjs"

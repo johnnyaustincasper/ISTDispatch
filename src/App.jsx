@@ -33,7 +33,15 @@ import {
   buildInventoryCatalogSavePayloads,
   normalizeInventoryCatalogOverride,
 } from "./inventoryCatalog.js";
-import { shortInventoryItemName } from "./inventoryDisplay.js";
+import MaterialsGrid from "./features/inventory/MaterialsGrid.jsx";
+import AdminDiagnosticsView from "./features/diagnostics/AdminDiagnosticsView.jsx";
+import {
+  createInitialListenerDiagnostics,
+  listenToCollection,
+  listenToQuery,
+  mapSnapshotToObjectById,
+} from "./firestoreListeners.js";
+import { normalizeClientError } from "./diagnostics.js";
 import {
   INVENTORY_EVENT_TYPES,
   adaptCloseoutMaterialsUsedDeltaToEvents,
@@ -7327,7 +7335,7 @@ function FoamPricingCalculatorView() {
   );
 }
 
-function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryItems = INVENTORY_ITEMS, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], consumables = [], onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onSaveInventoryItem, onDeleteInventoryItem, onAddJobUpdate, onSubmitUpdate, onCloseOutJob, onUpdateTruck, onSaveTruckToolInventory, onSaveConsumable, onDeleteConsumable, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts, onSuppliesCheckout }) {
+function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryItems = INVENTORY_ITEMS, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], consumables = [], diagnosticsState = {}, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onSaveInventoryItem, onDeleteInventoryItem, onAddJobUpdate, onSubmitUpdate, onCloseOutJob, onUpdateTruck, onSaveTruckToolInventory, onSaveConsumable, onDeleteConsumable, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts, onSuppliesCheckout }) {
   const [view, setView] = useState("schedule");
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [scheduleTvMode, setScheduleTvMode] = useState(false);
@@ -7925,6 +7933,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
     weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
     foamPricing: <span style={{ fontSize: 20, lineHeight: 1 }}>💵</span>,
+    diagnostics: <span style={{ fontSize: 20, lineHeight: 1 }}>🩺</span>,
   };
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
@@ -7934,6 +7943,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
     { key: "roster", label: "Roster" },
+    { key: "diagnostics", label: "Health", badge: diagnosticsState?.errors?.length || 0 },
   ];
 
   return (
@@ -8775,6 +8785,22 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
 
         {view === "foamPricing" && <FoamPricingCalculatorView />}
 
+        {view === "diagnostics" && (
+          <AdminDiagnosticsView
+            collections={diagnosticsState.collections}
+            listeners={diagnosticsState.listeners}
+            parity={diagnosticsState.parity}
+            errors={diagnosticsState.errors || []}
+            context={{
+              adminName,
+              view,
+              scheduleView,
+              inventoryItemCount: inventoryItems.length,
+              generatedFrom: "AdminDashboard",
+            }}
+          />
+        )}
+
         {view === "tickets" && (
           <>
             <SectionHeader title="Tickets" right={<Button onClick={() => setShowAdminTicketForm(true)}>+ New Ticket</Button>} />
@@ -9188,85 +9214,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, display: "inline-block", flexShrink: 0 }} />
                 {label} ({count})
               </button>
-            );
-          };
-
-          // One-screen warehouse board — dense by design so inventory is visible without scrolling
-          const MaterialsGrid = ({ inventory, onUpdateInventory, invStatusFilter, stockStatus, stockColors, isFoam, bblToGals, galsToBbl, sortAllItems, statusFilterFn, searchLower }) => {
-            const getQty = (itemId) => (inventory.find(r => r.itemId === itemId)?.qty || 0);
-            const getGroup = (item) => {
-              const hay = `${item.name || ""} ${item.category || ""}`.toLowerCase();
-              if (item.unit === "bbl" || hay.includes("foam")) return "Foam";
-              if (hay.includes("blown") || hay.includes("cellulose") || hay.includes("rockwool") || hay.includes("lambswool")) return "Blown/Other";
-              if (hay.includes("r11")) return "R11";
-              if (hay.includes("r13") || hay.includes("r15")) return "R13/R15";
-              if (hay.includes("r19") || hay.includes("r22") || hay.includes("r26")) return "R19+";
-              if (hay.includes("r30") || hay.includes("r38")) return "R30+";
-              return "Other";
-            };
-            const shortName = shortInventoryItemName;
-            const GROUPS = ["Foam", "Blown/Other", "R11", "R13/R15", "R19+", "R30+", "Other"];
-            const allVisible = sortAllItems(
-              INVENTORY_ITEMS
-                .filter(i => !i.isPieces)
-                .filter(statusFilterFn)
-                .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || (i.category || "").toLowerCase().includes(searchLower))
-            );
-            const groups = GROUPS.map(group => {
-              const items = allVisible.filter(item => getGroup(item) === group);
-              return { group, items: group === "Blown/Other" ? items : [...items].sort((a, b) => getQty(b.id) - getQty(a.id)) };
-            }).filter(section => section.items.length);
-            const boardColors = { Foam: "#2563eb", "Blown/Other": "#16a34a", R11: "#7c3aed", "R13/R15": "#0f766e", "R19+": "#ea580c", "R30+": "#be123c", Other: "#64748b" };
-            const formatQty = (item, qty) => isFoam(item.id) ? qty.toFixed(2) : String(qty);
-            const formatUnit = (item) => isFoam(item.id) ? "bbl" : item.unit;
-            const formatValue = (item, qty) => `$${((item.cost || 0) * qty).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
-
-            if (!allVisible.length) {
-              return <div style={{ flex: 1, display: "grid", placeItems: "center", color: "#94a3b8", fontSize: 14, background: "#f8fafc" }}>No materials match those filters.</div>;
-            }
-
-            return (
-              <div className="materials-board-wrap" style={{ flex: 1, overflow: "hidden", background: "#f8fafc", padding: 8 }}>
-                <div className="materials-board-grid" style={{ height: "100%", display: "grid", gridTemplateColumns: `repeat(${groups.length}, minmax(0, 1fr))`, gap: 6 }}>
-                  {groups.map(({ group, items }) => (
-                    <section key={group} className="materials-board-section" style={{ minWidth: 0, background: "#ffffff", border: "1px solid #dbe3ef", borderRadius: 10, overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                      <div className="materials-board-header" style={{ flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 7px", background: boardColors[group], color: "#fff" }}>
-                        <span style={{ fontSize: 11, fontWeight: 950, letterSpacing: "0.02em" }}>{group}</span>
-                        <span style={{ fontSize: 10, fontWeight: 900, opacity: 0.9 }}>{items.length}</span>
-                      </div>
-                      <div className="materials-board-rows" style={{ flex: 1, minHeight: 0, display: "grid", gridTemplateRows: `repeat(${Math.max(items.length, 1)}, minmax(0, 1fr))` }}>
-                        {items.map((item, idx) => {
-                          const qty = getQty(item.id);
-                          const status = stockStatus(qty);
-                          const sc = stockColors[status];
-                          const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(i => i.parentId === item.id) : null;
-                          const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
-                          const lineValue = formatValue(item, qty);
-                          return (
-                            <div key={item.id} className="materials-board-row" style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 4, padding: "2px 5px", borderBottom: idx < items.length - 1 ? "1px solid #edf2f7" : "none", background: status === "out" ? "#fff1f2" : status === "low" ? "#fffbeb" : "#fff" }}>
-                              <div style={{ minWidth: 0 }}>
-                                <div className="materials-item-name" title={item.name} style={{ fontSize: 11, fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{shortName(item)}</div>
-                                <div className="materials-item-meta" style={{ display: "flex", gap: 3, alignItems: "center", minWidth: 0, marginTop: 1 }}>
-                                  <span style={{ fontSize: 8.5, fontWeight: 900, color: sc.badgeColor, lineHeight: 1 }}>{sc.label || "OK"}</span>
-                                  <span style={{ fontSize: 8.5, color: "#15803d", fontWeight: 900, lineHeight: 1 }}>{lineValue}</span>
-                                  {pcsItem && pcsQty > 0 && <span style={{ fontSize: 8.5, color: "#4f46e5", fontWeight: 900, lineHeight: 1 }}>+{pcsQty}pc</span>}
-                                </div>
-                              </div>
-                              <div style={{ display: "flex", alignItems: "center", gap: 3 }}>
-                                <div className="materials-qty-stack" style={{ textAlign: "right", minWidth: 26 }}>
-                                  <div style={{ fontSize: 15, fontWeight: 950, color: sc.text, lineHeight: 1, letterSpacing: "-0.5px" }}>{formatQty(item, qty)}</div>
-                                  <div style={{ fontSize: 8.5, color: "#64748b", fontWeight: 800, lineHeight: 1 }}>{formatUnit(item)}</div>
-                                </div>
-                                <InventoryEditCell itemId={item.id} qty={qty} isFoam={isFoam(item.id)} bblToGals={bblToGals} galsToBbl={galsToBbl} pcsItem={pcsItem} pcsQty={pcsQty} onUpdateInventory={onUpdateInventory} />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </section>
-                  ))}
-                </div>
-              </div>
             );
           };
 
@@ -9798,7 +9745,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     <button onClick={() => setShowInventoryItemManager(true)} style={{ padding: "9px 12px", borderRadius: 10, border: "1px solid #e2e8f0", background: "#fff", color: "#475569", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>Manage Items</button>
                   </div>
 
-                  <MaterialsGrid inventory={inventory} onUpdateInventory={onUpdateInventory} invStatusFilter={invStatusFilter} stockStatus={stockStatus} stockColors={stockColors} isFoam={isFoam} bblToGals={bblToGals} galsToBbl={galsToBbl} sortAllItems={sortAllItems} statusFilterFn={statusFilterFn} searchLower={searchLower} />
+                  <MaterialsGrid inventory={inventory} inventoryItems={INVENTORY_ITEMS} onUpdateInventory={onUpdateInventory} stockStatus={stockStatus} stockColors={stockColors} isFoam={isFoam} bblToGals={bblToGals} galsToBbl={galsToBbl} sortAllItems={sortAllItems} statusFilterFn={statusFilterFn} searchLower={searchLower} InventoryEditCellComponent={InventoryEditCell} />
 
                   <div style={{ flexShrink: 0, borderTop: "1px solid #e2e8f0", background: "#fff" }}>
                     <button
@@ -13355,47 +13302,83 @@ export default function App() {
   const [employeeFlags, setEmployeeFlags] = useState([]);
   const [truckDailyLogs, setTruckDailyLogs] = useState([]);
   const [consumables, setConsumables] = useState([]);
+  const [builders, setBuilders] = useState([]);
+  const [foamPartsInventory, setFoamPartsInventory] = useState([]);
+  const [projectToolsInventory, setProjectToolsInventory] = useState([]);
+  const [suppliesCheckouts, setSuppliesCheckouts] = useState([]);
+  const listenerNames = useMemo(() => [
+    "trucks", "jobs", "updates", "tickets", "activityLog", "pmUpdates", "crewMembers",
+    "inventory", "inventoryEvents", "inventoryItems", "truckInventory", "truckSecondaryInventory",
+    "truckToolInventory", "returnLog", "loadLog", "jobUpdates", "tools", "toolCheckouts",
+    "employeeFlags", "truckDailyLogs", "consumables", "foamGunParts", "projectToolsInventory",
+    "builders", "suppliesCheckouts",
+  ], []);
+  const [listenerDiagnostics, setListenerDiagnostics] = useState(() => createInitialListenerDiagnostics(listenerNames));
+  const [clientErrors, setClientErrors] = useState([]);
 
   useEffect(() => {
-    const unsubTrucks = onSnapshot(collection(db, "trucks"), (snap) => { setTrucks(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    const unsubJobs = onSnapshot(collection(db, "jobs"), (snap) => { setJobs(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    const unsubUpdates = onSnapshot(collection(db, "updates"), (snap) => { setUpdates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    const unsubTickets = onSnapshot(collection(db, "tickets"), (snap) => { setTickets(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); setLoading(false); });
-    const unsubLog = onSnapshot(collection(db, "activityLog"), (snap) => { setActivityLog(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    const unsubPm = onSnapshot(collection(db, "pmUpdates"), (snap) => { setPmUpdates(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    const unsubMembers = onSnapshot(collection(db, "crewMembers"), (snap) => { setMembers(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    const unsubInv = onSnapshot(collection(db, "inventory"), (snap) => { setInventory(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    const unsubInventoryEvents = onSnapshot(collection(db, "inventoryEvents"), (snap) => { setInventoryEvents(snap.docs.map((d) => ({ id: d.id, ...d.data() }))); });
-    const unsubInventoryItems = onSnapshot(collection(db, "inventoryItems"), (snap) => { setInventoryItemOverrides(snap.docs.map((d) => ({ firestoreId: d.id, ...d.data(), id: d.data().id || d.id }))); });
-    const unsubTruckInv = onSnapshot(collection(db, "truckInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckInventory(m); });
-    const unsubTruckSecondaryInv = onSnapshot(collection(db, "truckSecondaryInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckSecondaryInventory(m); });
-    const unsubTruckToolInv = onSnapshot(collection(db, "truckToolInventory"), (snap) => { const m = {}; snap.docs.forEach(d => { m[d.id] = d.data(); }); setTruckToolInventory(m); });
-    const unsubReturnLog = onSnapshot(collection(db, "returnLog"), (snap) => { setReturnLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    const unsubLoadLog = onSnapshot(collection(db, "loadLog"), (snap) => { setLoadLog(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    const unsubJobUpdates = onSnapshot(collection(db, "jobUpdates"), (snap) => { setJobUpdates(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    const unsubTools = onSnapshot(collection(db, "tools"), async (snap) => {
-      const existing = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      setTools(existing);
-      // Seed migrated items once — skip if already present by name
-      const seedKey = "ist_tools_seeded_v2";
-      if (!localStorage.getItem(seedKey) && existing.length === 0) {
-        const existingNames = new Set(existing.map(t => t.name?.toLowerCase().trim()));
-        for (const item of MIGRATED_TO_TOOLS) {
-          if (!existingNames.has(item.name.toLowerCase().trim())) {
-            await addDoc(collection(db, "tools"), { name: item.name, category: item.category, quantity: 1, conditionNotes: "", status: "available", createdAt: new Date().toISOString() });
-          }
-        }
-        localStorage.setItem(seedKey, "1");
-      } else {
-        localStorage.setItem("ist_tools_seeded_v2", "1");
-      }
-    });
-    const unsubToolCheckouts = onSnapshot(collection(db, "toolCheckouts"), (snap) => { setToolCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    const unsubEmpFlags = onSnapshot(collection(db, "employeeFlags"), (snap) => { setEmployeeFlags(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    const unsubTruckDailyLogs = onSnapshot(collection(db, "truckDailyLogs"), (snap) => { setTruckDailyLogs(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    const unsubConsumables = onSnapshot(collection(db, "consumables"), (snap) => { setConsumables(snap.docs.map(d => ({ id: d.id, ...d.data() }))); });
-    return () => { unsubTrucks(); unsubJobs(); unsubUpdates(); unsubTickets(); unsubLog(); unsubPm(); unsubMembers(); unsubInv(); unsubInventoryEvents(); unsubInventoryItems(); unsubTruckInv(); unsubTruckSecondaryInv(); unsubTruckToolInv(); unsubReturnLog(); unsubLoadLog(); unsubJobUpdates(); unsubTools(); unsubToolCheckouts(); unsubEmpFlags(); unsubTruckDailyLogs(); unsubConsumables(); };
+    if (typeof window === "undefined") return undefined;
+    const capture = (event) => {
+      const normalized = normalizeClientError(event);
+      setClientErrors((prev) => [...prev.slice(-19), { ...normalized, capturedAt: new Date().toISOString() }]);
+    };
+    window.addEventListener("error", capture);
+    window.addEventListener("unhandledrejection", capture);
+    return () => {
+      window.removeEventListener("error", capture);
+      window.removeEventListener("unhandledrejection", capture);
+    };
   }, []);
+
+  useEffect(() => {
+    const updateListenerStatus = (status) => setListenerDiagnostics((prev) => ({ ...prev, [status.name]: status }));
+    const subscribeArray = (name, setter, options = {}) => listenToCollection(db, name, {
+      ...options,
+      onData: setter,
+      onStatus: updateListenerStatus,
+      onError: (error) => setClientErrors((prev) => [...prev.slice(-19), { ...normalizeClientError(error), source: `firestore:${name}`, capturedAt: new Date().toISOString() }]),
+    });
+    const subscribeObject = (name, setter) => subscribeArray(name, setter, { mapSnapshot: mapSnapshotToObjectById });
+
+    const unsubscribers = [
+      subscribeArray("trucks", setTrucks),
+      subscribeArray("jobs", setJobs),
+      subscribeArray("updates", setUpdates),
+      subscribeArray("tickets", (rows) => { setTickets(rows); setLoading(false); }),
+      subscribeArray("activityLog", setActivityLog),
+      subscribeArray("pmUpdates", setPmUpdates),
+      subscribeArray("crewMembers", setMembers),
+      subscribeArray("inventory", setInventory),
+      subscribeArray("inventoryEvents", setInventoryEvents),
+      subscribeArray("inventoryItems", setInventoryItemOverrides, { mapDoc: (d) => ({ firestoreId: d.id, ...d.data(), id: d.data().id || d.id }) }),
+      subscribeObject("truckInventory", setTruckInventory),
+      subscribeObject("truckSecondaryInventory", setTruckSecondaryInventory),
+      subscribeObject("truckToolInventory", setTruckToolInventory),
+      subscribeArray("returnLog", setReturnLog),
+      subscribeArray("loadLog", setLoadLog),
+      subscribeArray("jobUpdates", setJobUpdates),
+      subscribeArray("tools", async (existing) => {
+        setTools(existing);
+        const seedKey = "ist_tools_seeded_v2";
+        if (!localStorage.getItem(seedKey) && existing.length === 0) {
+          const existingNames = new Set(existing.map(t => t.name?.toLowerCase().trim()));
+          for (const item of MIGRATED_TO_TOOLS) {
+            if (!existingNames.has(item.name.toLowerCase().trim())) {
+              await addDoc(collection(db, "tools"), { name: item.name, category: item.category, quantity: 1, conditionNotes: "", status: "available", createdAt: new Date().toISOString() });
+            }
+          }
+          localStorage.setItem(seedKey, "1");
+        } else {
+          localStorage.setItem(seedKey, "1");
+        }
+      }),
+      subscribeArray("toolCheckouts", setToolCheckouts),
+      subscribeArray("employeeFlags", setEmployeeFlags),
+      subscribeArray("truckDailyLogs", setTruckDailyLogs),
+      subscribeArray("consumables", setConsumables),
+    ];
+    return () => unsubscribers.forEach((unsub) => unsub?.());
+  }, [listenerNames]);
 
   const inventoryCatalog = useMemo(() => buildInventoryCatalog(BASE_INVENTORY_ITEMS, inventoryItemOverrides), [inventoryItemOverrides]);
   INVENTORY_ITEMS = inventoryCatalog;
@@ -13444,6 +13427,18 @@ export default function App() {
       mismatchedJobCount: mismatchedJobs.length,
     };
   }, [jobs, jobUsageParityByJobId]);
+
+  const diagnosticsState = useMemo(() => ({
+    collections: {
+      trucks, jobs, updates, jobUpdates, tickets, activityLog, returnLog, loadLog, pmUpdates, members,
+      inventory, inventoryEvents, inventoryItems: inventoryItemOverrides, truckInventory, truckSecondaryInventory,
+      truckToolInventory, tools, toolCheckouts, employeeFlags, truckDailyLogs, consumables,
+      foamGunParts: foamPartsInventory, projectToolsInventory, builders, suppliesCheckouts,
+    },
+    listeners: listenerDiagnostics,
+    parity: { warehouseInventoryParity, truckInventoryParity, jobUsageParitySummary },
+    errors: clientErrors,
+  }), [trucks, jobs, updates, jobUpdates, tickets, activityLog, returnLog, loadLog, pmUpdates, members, inventory, inventoryEvents, inventoryItemOverrides, truckInventory, truckSecondaryInventory, truckToolInventory, tools, toolCheckouts, employeeFlags, truckDailyLogs, consumables, foamPartsInventory, projectToolsInventory, builders, suppliesCheckouts, listenerDiagnostics, warehouseInventoryParity, truckInventoryParity, jobUsageParitySummary, clientErrors]);
 
   const handleAddTruck = async (data) => { await addDoc(collection(db, "trucks"), data); };
   const handleStartCrewChecklist = async (payload) => {
@@ -13967,25 +13962,18 @@ export default function App() {
     }
   };
 
-  const [builders, setBuilders] = React.useState([]);
-  const [foamPartsInventory, setFoamPartsInventory] = React.useState([]);
-  const [projectToolsInventory, setProjectToolsInventory] = React.useState([]);
-  const [suppliesCheckouts, setSuppliesCheckouts] = React.useState([]);
 
   React.useEffect(() => {
-    const unsub1 = onSnapshot(collection(db, "foamGunParts"), snap => {
-      setFoamPartsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    const unsub2 = onSnapshot(collection(db, "projectToolsInventory"), snap => {
-      setProjectToolsInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    const unsub3 = onSnapshot(collection(db, "builders"), snap => {
-      setBuilders(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    const unsub4 = onSnapshot(query(collection(db, "suppliesCheckouts"), orderBy("timestamp", "desc"), limit(200)), snap => {
-      setSuppliesCheckouts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
-    });
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+    const updateListenerStatus = (status) => setListenerDiagnostics((prev) => ({ ...prev, [status.name]: status }));
+    const captureListenerError = (name) => (error) => setClientErrors((prev) => [...prev.slice(-19), { ...normalizeClientError(error), source: `firestore:${name}`, capturedAt: new Date().toISOString() }]);
+    const common = (name, onData) => ({ onData, onStatus: updateListenerStatus, onError: captureListenerError(name) });
+    const unsubscribers = [
+      listenToCollection(db, "foamGunParts", common("foamGunParts", setFoamPartsInventory)),
+      listenToCollection(db, "projectToolsInventory", common("projectToolsInventory", setProjectToolsInventory)),
+      listenToCollection(db, "builders", common("builders", setBuilders)),
+      listenToQuery(query(collection(db, "suppliesCheckouts"), orderBy("timestamp", "desc"), limit(200)), "suppliesCheckouts", common("suppliesCheckouts", setSuppliesCheckouts)),
+    ];
+    return () => unsubscribers.forEach((unsub) => unsub?.());
   }, []);
 
   const handleUpdateFoamParts = async (itemId, qty) => {
@@ -14712,6 +14700,6 @@ export default function App() {
     </div>
   );
   if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
-  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryItems={inventoryCatalog} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} consumables={consumables} onSaveConsumable={handleSaveConsumable} onDeleteConsumable={handleDeleteConsumable} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onSaveInventoryItem={handleSaveInventoryItem} onDeleteInventoryItem={handleDeleteInventoryItem} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} onSaveTruckToolInventory={handleSaveTruckToolInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
+  if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryItems={inventoryCatalog} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} consumables={consumables} diagnosticsState={diagnosticsState} onSaveConsumable={handleSaveConsumable} onDeleteConsumable={handleDeleteConsumable} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onSaveInventoryItem={handleSaveInventoryItem} onDeleteInventoryItem={handleDeleteInventoryItem} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} onSaveTruckToolInventory={handleSaveTruckToolInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   return null;
 }
