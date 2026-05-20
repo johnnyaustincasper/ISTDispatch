@@ -7933,7 +7933,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     log: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8M10 9H8"/></svg>,
     weather: <span style={{ fontSize: 20, lineHeight: 1 }}>☁️</span>,
     foamPricing: <span style={{ fontSize: 20, lineHeight: 1 }}>💵</span>,
-    diagnostics: <span style={{ fontSize: 20, lineHeight: 1 }}>🩺</span>,
   };
   const NAV_ITEMS = [
     { key: "schedule", label: "Schedule" },
@@ -7943,7 +7942,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     { key: "tickets", label: "Tickets", badge: openTicketCount },
     { key: "trucks", label: "Trucks" },
     { key: "roster", label: "Roster" },
-    { key: "diagnostics", label: "Health", badge: diagnosticsState?.errors?.length || 0 },
   ];
 
   return (
@@ -7969,6 +7967,24 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </div>
           <div className="office-session-actions" style={{ display: "flex", alignItems: "center", gap: "10px", flexShrink: 0 }}>
             <span style={{ fontSize: "12px", color: "#0f172a", padding: "7px 10px", borderRadius: 999, background: "rgba(255,255,255,0.52)", border: "1px solid rgba(15,23,42,0.10)" }}>{adminName}</span>
+            <Button
+              variant="ghost"
+              onClick={() => setView("diagnostics")}
+              style={{
+                fontSize: "12px",
+                color: view === "diagnostics" ? "#fff" : "#0f172a",
+                background: view === "diagnostics" ? "linear-gradient(135deg,#2563eb,#0f172a)" : "rgba(255,255,255,0.62)",
+                border: view === "diagnostics" ? "1px solid rgba(37,99,235,0.45)" : "1px solid rgba(15,23,42,0.10)",
+                borderRadius: 999,
+                whiteSpace: "nowrap",
+                position: "relative",
+              }}
+            >
+              Admin
+              {(diagnosticsState?.errors?.length || 0) > 0 && (
+                <span style={{ marginLeft: 6, background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 5px", minWidth: "15px", height: "15px", display: "inline-flex", alignItems: "center", justifyContent: "center" }}>{diagnosticsState.errors.length}</span>
+              )}
+            </Button>
             <Button className="crew-portal-logout" variant="ghost" onClick={onLogout} style={{ fontSize: "12px", color: "#0f172a", background: "rgba(255,255,255,0.62)", border: "1px solid rgba(15,23,42,0.10)", borderRadius: 999, whiteSpace: "nowrap" }}>Log Out</Button>
           </div>
         </div>
