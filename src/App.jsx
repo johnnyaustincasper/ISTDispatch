@@ -38,6 +38,10 @@ import {
   buildOfficeNavItems,
   shouldClearTruckFilterForNav,
 } from "./features/admin/adminNavigation.js";
+import {
+  buildCrewJobActionModel,
+  getCrewJobStatusMeta,
+} from "./features/crew/jobCardPresentation.js";
 import { getFeatureFlags } from "./config/featureFlags.js";
 import {
   createInitialListenerDiagnostics,
@@ -2748,128 +2752,170 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               // Distance
               const geocache = getGeocache(job.address);
               const distMi = (crewLocation && geocache) ? kmToMiles(haversineKm(crewLocation.lat, crewLocation.lon, geocache.lat, geocache.lon)) : null;
+              const statusMeta = getCrewJobStatusMeta(latestStatus);
+              const actionModel = buildCrewJobActionModel({
+                status: latestStatus,
+                hasTodayMaterials: !!existingToday,
+                missingMaterialDays: missingDays,
+              });
+              const runStatusUpdate = async (nextStatus, nextNotes = "") => {
+                await onSubmitUpdate({
+                  jobId: job.id,
+                  truckId: truck.id,
+                  status: nextStatus,
+                  notes: nextNotes,
+                  eta: "",
+                  crewName,
+                  timestamp: new Date().toISOString(),
+                  timeStr: timeStr(),
+                });
+              };
+              const handleJobAction = async (action) => {
+                if (!action) return;
+                if (action.key === "materials") { openTodayMaterials(); return; }
+                if (action.key === "details") {
+                  setExpandedJobCards(prev => ({ ...prev, [job.id]: !prev[job.id] }));
+                  return;
+                }
+                if (action.key === "update") {
+                  setActiveJob(job);
+                  setStatus(latestStatus === "not_started" ? "in_progress" : latestStatus);
+                  setEta("");
+                  setNotes("");
+                  return;
+                }
+                if (action.key === "complete") {
+                  setActiveJob(job);
+                  setStatus("completed");
+                  setEta("");
+                  setNotes("");
+                  return;
+                }
+                if (action.key === "reopen" && !window.confirm("Reopen this job and mark it back In Progress?")) return;
+                try {
+                  await runStatusUpdate(action.status, action.key === "reopen" ? "Reopened" : "");
+                } catch (error) {
+                  alert("Could not update job: " + (error?.message || error));
+                }
+              };
+              const buttonToneStyle = (tone, primary = false) => {
+                if (primary && tone === "success") return { background: "linear-gradient(135deg,#16a34a,#15803d)", color: "#fff", borderColor: "#15803d", boxShadow: "0 16px 34px rgba(22,163,74,0.24)" };
+                if (primary && tone === "outline") return { background: "#fff", color: "#b45309", borderColor: "#f59e0b", boxShadow: "0 12px 26px rgba(245,158,11,0.13)" };
+                if (primary) return { background: "linear-gradient(135deg,#2563eb,#0f172a)", color: "#fff", borderColor: "#2563eb", boxShadow: "0 16px 34px rgba(37,99,235,0.24)" };
+                if (tone === "danger") return { background: "#fff", color: "#b91c1c", borderColor: "#fecaca" };
+                if (tone === "success") return { background: "#f0fdf4", color: "#15803d", borderColor: "#bbf7d0" };
+                return { background: "rgba(255,255,255,0.84)", color: t.text, borderColor: "rgba(148,163,184,0.26)" };
+              };
+              const primaryTone = buttonToneStyle(actionModel.primary.tone, true);
               return (
-                <Card key={job.id}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
-                    <div>
-                      <div style={{ fontWeight: 600, color: t.text, fontSize: "15px" }}>{job.builder || "No Customer Listed"}</div>
-                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>
-                        <a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ color: t.accent, textDecoration: "underline" }}>{job.address}</a>
-                        {distMi !== null && <span style={{ color: t.textMuted, marginLeft: "6px", fontSize: "11px" }}>~{distMi.toFixed(1)} mi</span>}
+                <Card key={job.id} style={{ padding: 0, overflow: "hidden", borderRadius: 22, border: "1px solid rgba(148,163,184,0.24)", background: "rgba(255,255,255,0.86)", boxShadow: "0 22px 50px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.96)" }}>
+                  <div style={{ padding: "17px 17px 16px", background: "linear-gradient(180deg,rgba(248,250,252,0.98),rgba(255,255,255,0.88))" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 10.5, fontWeight: 950, letterSpacing: "0.12em", textTransform: "uppercase", color: t.accent, marginBottom: 5 }}>Today's Job</div>
+                        <div style={{ fontWeight: 950, color: t.text, fontSize: 22, lineHeight: 1.04, letterSpacing: "-0.8px" }}>{job.builder || "No Customer Listed"}</div>
+                        <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap", marginTop: 9 }}>
+                          <span style={{ fontSize: 12, fontWeight: 850, color: "#334155", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 999, padding: "5px 9px" }}>{job.type || "Job"}</span>
+                          {truck?.name && <span style={{ fontSize: 12, fontWeight: 850, color: "#334155", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 999, padding: "5px 9px" }}>{truck.name}</span>}
+                          {distMi !== null && <span style={{ fontSize: 12, fontWeight: 850, color: "#334155", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 999, padding: "5px 9px" }}>~{distMi.toFixed(1)} mi</span>}
+                        </div>
                       </div>
-                      <div style={{ fontSize: "12.5px", color: t.textMuted, marginTop: "2px" }}>{job.type}</div>
+                      <div style={{ textAlign: "right", flexShrink: 0 }}>
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 10px", borderRadius: 999, border: `1px solid ${statusMeta.border}`, background: statusMeta.bg, color: statusMeta.color, fontSize: 12, fontWeight: 900 }}>
+                          <span style={{ width: 7, height: 7, borderRadius: 999, background: statusMeta.color, boxShadow: `0 0 0 3px ${statusMeta.bg}` }} />
+                          {statusMeta.label}
+                        </div>
+                        <div style={{ marginTop: 6, color: t.textMuted, fontSize: 11.5, fontWeight: 750 }}>{statusMeta.eyebrow}</div>
+                      </div>
                     </div>
-                    <Badge color={statusObj.color} bg={statusObj.bg}>{statusObj.label}</Badge>
+
+                    <a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ marginTop: 15, display: "flex", alignItems: "flex-start", gap: 9, padding: "11px 12px", background: "#fff", border: "1px solid rgba(226,232,240,0.95)", borderRadius: 15, color: t.text, textDecoration: "none", fontSize: 13.5, lineHeight: 1.35, fontWeight: 700 }}>
+                      <span style={{ color: t.accent, fontSize: 16, lineHeight: 1 }}>⌖</span>
+                      <span style={{ minWidth: 0 }}>{job.address || "No address listed"}</span>
+                    </a>
+
+                    {job.notes && (
+                      <div style={{ marginTop: 11, display: "flex", gap: 9, padding: "11px 12px", borderRadius: 15, background: "#f8fafc", border: "1px solid #e2e8f0", color: t.textSecondary, fontSize: 13, lineHeight: 1.4 }}>
+                        <span style={{ color: t.accent }}>Office</span>
+                        <span>{job.notes}</span>
+                      </div>
+                    )}
                   </div>
-                  {job.notes && <div style={{ fontSize: "13px", color: t.textSecondary, background: t.bg, padding: "10px 12px", borderRadius: "6px", marginBottom: "10px", borderLeft: "3px solid " + t.accent }}>Office: {job.notes}</div>}
-                  {missingDays.length > 0 && (
-                    <button onClick={() => {
-                      setDailyMaterialQtys({});
-                      setDailyMaterialsJob({ ...job, _forceDate: missingDays[0] });
-                    }} style={{ width: "100%", textAlign: "left", fontSize: "11px", color: "#b45309", background: "#fef3c7", border: "1px solid #fcd34d", borderRadius: "6px", padding: "6px 10px", marginBottom: "10px", cursor: "pointer", fontFamily: "inherit" }}>
-                      ⚠️ Materials not logged for: <strong>{missingDays.map(fmt).join(", ")}</strong> — Tap to log →
-                    </button>
-                  )}
-                  {/* Quick action buttons */}
-                  {latestStatus !== "completed" && (
-                    <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px", marginBottom: "10px" }}>
-                      <button onClick={async () => {
-                        try {
-                          await onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "in_progress", notes: "", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
-                        } catch (error) {
-                          alert("Could not start job: " + (error?.message || error));
-                        }
-                      }} style={{ padding: "12px 8px", borderRadius: "99px", border: "none", background: "#b45309", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                        🔄 {latestStatus === "not_started" ? "Start Job" : "In Progress"}
-                      </button>
-                      <button onClick={openTodayMaterials} style={{ padding: "12px 8px", borderRadius: "99px", border: "none", background: "#2563eb", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                        📦 {existingToday ? "Edit Materials" : "Log Materials"}
-                      </button>
-                      <button onClick={async () => {
-                        try {
-                          await onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "issue", notes: "", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
-                        } catch (error) {
-                          alert("Could not mark issue: " + (error?.message || error));
-                        }
-                      }} style={{ padding: "12px 8px", borderRadius: "99px", border: "none", background: "#b91c1c", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                        ⚠️ Issue
-                      </button>
+
+                  <div style={{ padding: "0 17px 17px" }}>
+                    {missingDays.length > 0 && (
                       <button onClick={() => {
-                        setActiveJob(job);
-                        setStatus("completed");
-                        setEta("");
-                        setNotes("");
-                      }} style={{ padding: "12px 8px", borderRadius: "99px", border: "none", background: "#0f172a", color: "#fff", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                        ✅ Complete
+                        setDailyMaterialQtys({});
+                        setDailyMaterialsJob({ ...job, _forceDate: missingDays[0] });
+                      }} style={{ width: "100%", textAlign: "left", fontSize: 12.5, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 14, padding: "10px 12px", margin: "0 0 12px", cursor: "pointer", fontFamily: "inherit", fontWeight: 750 }}>
+                        ⚠️ Materials missing for <strong>{missingDays.map(fmt).join(", ")}</strong> — tap to log
                       </button>
-                    </div>
-                  )}
-                  {latestStatus === "completed" && (
-                    <div style={{ marginBottom: "10px" }}>
-                      <button onClick={() => {
-                        if (!window.confirm("Reopen this job and mark it back In Progress?")) return;
-                        onSubmitUpdate({ jobId: job.id, truckId: truck.id, status: "in_progress", notes: "Reopened", eta: "", crewName, timestamp: new Date().toISOString(), timeStr: timeStr() });
-                      }} style={{ width: "100%", padding: "12px 8px", borderRadius: "99px", border: "2px solid #b45309", background: "transparent", color: "#b45309", fontSize: "13px", fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
-                        🔓 Reopen Job
+                    )}
+
+                    <div style={{ display: "grid", gap: 10, marginBottom: 13 }}>
+                      <button onClick={() => handleJobAction(actionModel.primary)} style={{ width: "100%", minHeight: 54, padding: "14px 16px", borderRadius: 17, border: `1px solid ${primaryTone.borderColor}`, background: primaryTone.background, color: primaryTone.color, boxShadow: primaryTone.boxShadow, fontSize: 16, fontWeight: 950, letterSpacing: "-0.25px", cursor: "pointer", fontFamily: "inherit" }}>
+                        {actionModel.primary.label}
                       </button>
+                      <div style={{ color: t.textMuted, fontSize: 12.5, fontWeight: 700, lineHeight: 1.35, textAlign: "center" }}>{actionModel.prompt}</div>
                     </div>
-                  )}
-                  {/* Collapsible details section */}
-                  {isExpanded && (
-                    <div>
-                      {getMaterialLogsForJob(job).length > 0 && (
-                        <div style={{ marginBottom: "10px", background: t.bg, borderRadius: "6px", padding: "8px 12px" }}>
-                          <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Materials Logged</div>
-                          {getMaterialLogsForJob(job).map((log, idx) => (
-                            <div key={idx} style={{ fontSize: "12px", color: t.textSecondary, paddingBottom: "4px", marginBottom: "4px", borderBottom: idx < getMaterialLogsForJob(job).length - 1 ? "1px solid " + t.borderLight : "none" }}>
-                              <span style={{ color: t.textMuted, marginRight: "8px" }}>{log.date}</span>
-                              {Object.entries(log.materials).map(([itemId, qty]) => {
-                                const item = INVENTORY_ITEMS.find(i => i.id === itemId);
-                                if (!item) return null;
-                                const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(itemId);
-                                const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
-                                return <span key={itemId} style={{ marginRight: "8px" }}>{item.name}: <strong>{display}</strong></span>;
-                              })}
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                      {jobStatusList.length > 0 && (
-                        <div style={{ marginBottom: "10px" }}>
-                          <div style={{ fontSize: "11px", textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, marginBottom: "6px", fontWeight: 600 }}>Update Log</div>
-                          {jobStatusList.slice(0, 3).map((u) => {
-                            const uStatus = STATUS_OPTIONS.find((s) => s.value === u.status);
-                            return (
-                              <div key={u.id} style={{ fontSize: "12.5px", color: t.textSecondary, padding: "6px 0", borderBottom: "1px solid " + t.borderLight, display: "flex", gap: "8px" }}>
-                                <span style={{ color: t.textMuted, flexShrink: 0 }}>{u.timeStr}</span>
-                                <span>
-                                  <Badge color={uStatus?.color} bg={uStatus?.bg}>{uStatus?.label}</Badge>
-                                  {u.eta && <span style={{ marginLeft: "8px" }}>ETA: {u.eta}</span>}
-                                  {u.notes && <span style={{ display: "block", marginTop: "3px", color: t.textMuted }}>{u.notes}</span>}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                      <JobPhotosSection job={job} canDelete={false} uploaderName={crewName} />
-                      {(() => {
-                        const todayStr = todayCST();
-                        const existingToday = findDailyMaterialLog(job.dailyMaterialLogs, todayStr, getLogTruckIdForJob(job));
+
+                    <div style={{ display: "grid", gridTemplateColumns: actionModel.secondary.length > 2 ? "repeat(3, minmax(0, 1fr))" : "repeat(2, minmax(0, 1fr))", gap: 8, marginBottom: 13 }}>
+                      {actionModel.secondary.map((action) => {
+                        const tone = buttonToneStyle(action.tone, false);
                         return (
-                          <div style={{ display: "flex", gap: "8px" }}>
-                            <Button onClick={() => setActiveJob(job)} style={{ flex: 1 }}>Send Update</Button>
-                            <Button variant="secondary" onClick={openTodayMaterials} style={{ flex: 1 }}>{existingToday ? "Edit Today" : "Log Materials"}</Button>
-                          </div>
+                          <button key={action.key} onClick={() => handleJobAction(action)} style={{ minHeight: 43, padding: "10px 8px", borderRadius: 14, border: `1px solid ${tone.borderColor}`, background: tone.background, color: tone.color, fontSize: 12.5, fontWeight: 900, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 8px 20px rgba(15,23,42,0.04)" }}>
+                            {action.label}
+                          </button>
                         );
-                      })()}
+                      })}
                     </div>
-                  )}
-                  {/* Toggle details */}
-                  <button onClick={() => setExpandedJobCards(prev => ({ ...prev, [job.id]: !prev[job.id] }))}
-                    style={{ width: "100%", marginTop: "10px", padding: "8px", background: "none", border: "1px solid " + t.border, borderRadius: "8px", color: t.textMuted, fontSize: "13px", fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
-                    {isExpanded ? "▲ Hide Details" : "▼ Details"}
-                  </button>
+
+                    <button onClick={() => setExpandedJobCards(prev => ({ ...prev, [job.id]: !prev[job.id] }))}
+                      style={{ width: "100%", padding: "10px 12px", background: "rgba(248,250,252,0.78)", border: "1px solid rgba(148,163,184,0.24)", borderRadius: 14, color: t.textSecondary, fontSize: 13, fontWeight: 850, cursor: "pointer", fontFamily: "inherit" }}>
+                      {isExpanded ? "Hide photos & activity" : "Photos, materials & activity"}
+                    </button>
+
+                    {isExpanded && (
+                      <div style={{ marginTop: 14, display: "grid", gap: 12 }}>
+                        {getMaterialLogsForJob(job).length > 0 && (
+                          <div style={{ background: "#f8fafc", borderRadius: 16, padding: "12px 13px", border: "1px solid #e2e8f0" }}>
+                            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted, marginBottom: 8, fontWeight: 900 }}>Materials</div>
+                            {getMaterialLogsForJob(job).map((log, idx) => (
+                              <div key={idx} style={{ fontSize: 12.5, color: t.textSecondary, paddingBottom: 7, marginBottom: 7, borderBottom: idx < getMaterialLogsForJob(job).length - 1 ? "1px solid " + t.borderLight : "none" }}>
+                                <span style={{ color: t.textMuted, marginRight: 8, fontWeight: 800 }}>{log.date}</span>
+                                {Object.entries(log.materials).map(([itemId, qty]) => {
+                                  const item = INVENTORY_ITEMS.find(i => i.id === itemId);
+                                  if (!item) return null;
+                                  const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(itemId);
+                                  const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
+                                  return <span key={itemId} style={{ marginRight: 8 }}>{item.name}: <strong>{display}</strong></span>;
+                                })}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {jobStatusList.length > 0 && (
+                          <div style={{ background: "#fff", borderRadius: 16, padding: "12px 13px", border: "1px solid #e2e8f0" }}>
+                            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.08em", color: t.textMuted, marginBottom: 8, fontWeight: 900 }}>Activity</div>
+                            {jobStatusList.slice(0, 4).map((u) => {
+                              const uStatus = getCrewJobStatusMeta(u.status);
+                              return (
+                                <div key={u.id} style={{ fontSize: 12.5, color: t.textSecondary, padding: "8px 0", borderTop: "1px solid " + t.borderLight, display: "grid", gridTemplateColumns: "58px minmax(0,1fr)", gap: 8 }}>
+                                  <span style={{ color: t.textMuted, fontWeight: 800 }}>{u.timeStr || "—"}</span>
+                                  <span>
+                                    <span style={{ display: "inline-flex", padding: "3px 8px", borderRadius: 999, background: uStatus.bg, color: uStatus.color, fontSize: 11, fontWeight: 900 }}>{uStatus.label}</span>
+                                    {u.eta && <span style={{ marginLeft: 8 }}>ETA: {u.eta}</span>}
+                                    {u.notes && <span style={{ display: "block", marginTop: 4, color: t.textMuted }}>{u.notes}</span>}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                        <JobPhotosSection job={job} canDelete={false} uploaderName={crewName} />
+                      </div>
+                    )}
+                  </div>
                 </Card>
               );
             })}
