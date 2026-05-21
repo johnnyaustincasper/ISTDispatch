@@ -5,7 +5,7 @@ export const REQUIRED_FIREBASE_ENV_VARS = Object.freeze([
   "VITE_FB_AUTH_DOMAIN",
   "VITE_FB_PROJECT_ID",
   "VITE_FB_STORAGE_BUCKET",
-  "VITE_FB_MESSAGING_ID",
+  "VITE_FB_MSG_SENDER_ID",
   "VITE_FB_APP_ID",
 ]);
 
@@ -14,17 +14,11 @@ const FIREBASE_FIELD_ENV_MAP = Object.freeze({
   authDomain: "VITE_FB_AUTH_DOMAIN",
   projectId: "VITE_FB_PROJECT_ID",
   storageBucket: "VITE_FB_STORAGE_BUCKET",
-  messagingSenderId: "VITE_FB_MESSAGING_ID",
+  messagingSenderId: "VITE_FB_MSG_SENDER_ID",
   appId: "VITE_FB_APP_ID",
 });
 
-const getViteEnv = () => {
-  try {
-    return import.meta?.env || {};
-  } catch {
-    return {};
-  }
-};
+const getViteEnv = () => import.meta.env || {};
 
 const isPresent = (value) => value != null && String(value).trim() !== "";
 

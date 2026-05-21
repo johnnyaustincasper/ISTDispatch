@@ -29,7 +29,7 @@ const completeEnv = {
   VITE_FB_AUTH_DOMAIN: 'example.firebaseapp.com',
   VITE_FB_PROJECT_ID: 'ist-dispatch',
   VITE_FB_STORAGE_BUCKET: 'ist-dispatch.appspot.com',
-  VITE_FB_MESSAGING_ID: '123456',
+  VITE_FB_MSG_SENDER_ID: '123456',
   VITE_FB_APP_ID: '1:123456:web:abcdef',
   VITE_FEATURE_DIAGNOSTICS: 'false',
   VITE_FEATURE_INVENTORY_PARITY: '1',
@@ -40,7 +40,7 @@ assert.deepEqual(REQUIRED_FIREBASE_ENV_VARS, [
   'VITE_FB_AUTH_DOMAIN',
   'VITE_FB_PROJECT_ID',
   'VITE_FB_STORAGE_BUCKET',
-  'VITE_FB_MESSAGING_ID',
+  'VITE_FB_MSG_SENDER_ID',
   'VITE_FB_APP_ID',
 ]);
 
@@ -74,7 +74,7 @@ assert.deepEqual(incompleteValidation.missing, [
   'VITE_FB_AUTH_DOMAIN',
   'VITE_FB_PROJECT_ID',
   'VITE_FB_STORAGE_BUCKET',
-  'VITE_FB_MESSAGING_ID',
+  'VITE_FB_MSG_SENDER_ID',
   'VITE_FB_APP_ID',
 ]);
 
@@ -83,7 +83,7 @@ assert.deepEqual(getFirebaseConfigEnvNames(), {
   authDomain: 'VITE_FB_AUTH_DOMAIN',
   projectId: 'VITE_FB_PROJECT_ID',
   storageBucket: 'VITE_FB_STORAGE_BUCKET',
-  messagingSenderId: 'VITE_FB_MESSAGING_ID',
+  messagingSenderId: 'VITE_FB_MSG_SENDER_ID',
   appId: 'VITE_FB_APP_ID',
 });
 assert.deepEqual(getFirebaseConfig(completeEnv), {

@@ -44,7 +44,7 @@ assert.deepEqual(configHealth.firebase.present, ['VITE_FB_API_KEY', 'VITE_FB_AUT
 assert.deepEqual(configHealth.firebase.missing, [
   'VITE_FB_PROJECT_ID',
   'VITE_FB_STORAGE_BUCKET',
-  'VITE_FB_MESSAGING_ID',
+  'VITE_FB_MSG_SENDER_ID',
   'VITE_FB_APP_ID',
 ]);
 assert.equal(JSON.stringify(configHealth).includes('secret-api-key'), false);
