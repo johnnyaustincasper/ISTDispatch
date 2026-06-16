@@ -174,8 +174,6 @@ const INVENTORY_ITEMS = [
 
   { id: "oc_r13_15_8_t",   name: "Owens Corning R13 x 15\" x 93\" (8ft)", pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Owens Corning R13", hasPieces: true, cost: tubeCost(125.94, MAT_RATE.r13) },
   { id: "oc_r13_15_8_pcs", name: "Owens Corning R13 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_8_t", cost: pcsCost(125.94, MAT_RATE.r13, 13) },
-  { id: "oc_r13_15_9_t",   name: "Owens Corning R13 x 15\" x 105\" (9ft)", pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Owens Corning R13", hasPieces: true, cost: tubeCost(142.19, MAT_RATE.r13) },
-  { id: "oc_r13_15_9_pcs", name: "Owens Corning R13 x 15\" x 105\" (9ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_9_t", cost: pcsCost(142.19, MAT_RATE.r13, 13) },
 
   // Owens Corning R19 ($0.38/sqft)
   { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\" (8ft)", pcsPerTube: 9, sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: tubeCost(87.19, MAT_RATE.r19) },
