@@ -131,17 +131,6 @@ const formatTruckParityDelta = (delta, unit = "") => {
   const sign = rounded > 0 ? "+" : "";
   return `${sign}${rounded}${unit ? ` ${unit}` : ""}`;
 };
-const normalizeInventorySearchText = (value = "") => String(value)
-  .toLowerCase()
-  .replace(/owens\s+corning/g, "oc")
-  .replace(/johns\s+manville/g, "jm")
-  .replace(/[^a-z0-9]+/g, "");
-const inventorySearchHaystack = (item = {}) => normalizeInventorySearchText([
-  item.name,
-  item.category,
-  item.unit,
-  ...(item.aliases || []),
-].filter(Boolean).join(" "));
 const buildTruckInventoryParityMap = (legacyTruckInventory = {}, derivedTruckInventory = {}, trucks = []) => {
   const truckIds = new Set([
     ...Object.keys(legacyTruckInventory || {}),
@@ -185,8 +174,8 @@ const INVENTORY_ITEMS = [
 
   { id: "oc_r13_15_8_t",   name: "Owens Corning R13 x 15\" x 93\" (8ft)", pcsPerTube: 13, sqftPerTube: 125.94, unit: "tubes", category: "Owens Corning R13", hasPieces: true, cost: tubeCost(125.94, MAT_RATE.r13) },
   { id: "oc_r13_15_8_pcs", name: "Owens Corning R13 x 15\" x 93\" (8ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_8_t", cost: pcsCost(125.94, MAT_RATE.r13, 13) },
-  { id: "oc_r13_15_9_t",   name: "OC R13 x 15\" x 105\" (9ft)", aliases: ["Owens Corning R13 15x105", "OC R13 15x105", "OC r13 15 x 105"], pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Owens Corning R13", hasPieces: true, cost: tubeCost(142.19, MAT_RATE.r13) },
-  { id: "oc_r13_15_9_pcs", name: "OC R13 x 15\" x 105\" (9ft)", aliases: ["Owens Corning R13 15x105", "OC R13 15x105", "OC r13 15 x 105"], unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_9_t", cost: pcsCost(142.19, MAT_RATE.r13, 13) },
+  { id: "oc_r13_15_9_t",   name: "Owens Corning R13 x 15\" x 105\" (9ft)", pcsPerTube: 13, sqftPerTube: 142.19, unit: "tubes", category: "Owens Corning R13", hasPieces: true, cost: tubeCost(142.19, MAT_RATE.r13) },
+  { id: "oc_r13_15_9_pcs", name: "Owens Corning R13 x 15\" x 105\" (9ft)", unit: "pcs",   category: "Owens Corning R13", isPieces: true, parentId: "oc_r13_15_9_t", cost: pcsCost(142.19, MAT_RATE.r13, 13) },
 
   // Owens Corning R19 ($0.38/sqft)
   { id: "oc_r19_15_8_t",   name: "Owens Corning R19 x 15\" x 93\" (8ft)", pcsPerTube: 9, sqftPerTube: 87.19, unit: "tubes", category: "Owens Corning R19", hasPieces: true, cost: tubeCost(87.19, MAT_RATE.r19) },
@@ -8189,7 +8178,6 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
           const searchLower = invSearch.toLowerCase();
-          const normalizedSearch = normalizeInventorySearchText(invSearch);
           const sortItems = (arr) => [...arr].sort((a,b) => { const isMP = s => s.unit==='MP'||s.unit==='master packs'; if(isMP(a)!==isMP(b)) return isMP(a)?-1:1; const base = s => s.name.replace(/ *(MP|Tubes).*$/i,'').trim(); return base(a).localeCompare(base(b)); });
           const stockStatus = (qty) => qty === 0 ? "out" : qty <= 2 ? "low" : "ok";
           const stockColors = {
@@ -8257,7 +8245,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           const visibleCats2 = categories.filter(cat => {
             if (invCatFilter && invCatFilter !== cat) return false;
             const items = INVENTORY_ITEMS.filter(i => i.category === cat && !i.isPieces).filter(statusFilterFn);
-            return items.length > 0 && (!normalizedSearch || items.some(i => inventorySearchHaystack(i).includes(normalizedSearch)));
+            return items.length > 0 && (!searchLower || items.some(i => i.name.toLowerCase().includes(searchLower)));
           });
 
           const StatFilterBtn = ({ id, label, count, color, activeBg, activeBorder }) => {
@@ -8300,7 +8288,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 INVENTORY_ITEMS
                   .filter(i => !i.isPieces && getManufacturer(i) === mfg)
                   .filter(statusFilterFn)
-                  .filter(i => !normalizedSearch || inventorySearchHaystack(i).includes(normalizedSearch))
+                  .filter(i => !searchLower || i.name.toLowerCase().includes(searchLower) || (i.category||"").toLowerCase().includes(searchLower))
               ).sort((a, b) => getRVal(a.category) - getRVal(b.category));
               return { mfg, items };
             }).filter(g => g.items.length > 0);
