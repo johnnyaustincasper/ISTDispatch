@@ -6,11 +6,13 @@ export const OFFICE_NAV_KEYS = Object.freeze({
   tickets: "tickets",
   trucks: "trucks",
   roster: "roster",
+  reception: "reception",
 });
 
 export const OFFICE_NAV_ITEMS = Object.freeze([
   { key: OFFICE_NAV_KEYS.schedule, label: "Schedule", badgeKey: null },
   { key: OFFICE_NAV_KEYS.calendar, label: "Calendar", badgeKey: null },
+  { key: OFFICE_NAV_KEYS.reception, label: "Intake", badgeKey: null },
   { key: OFFICE_NAV_KEYS.inventory, label: "Inventory", badgeKey: "openChecklistShortageCount" },
   { key: OFFICE_NAV_KEYS.foamPricing, label: "Pricing", badgeKey: null },
   { key: OFFICE_NAV_KEYS.tickets, label: "Tickets", badgeKey: "openTicketCount" },

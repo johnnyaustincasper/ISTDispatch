@@ -21,6 +21,7 @@ import {
   limit,
   serverTimestamp,
   runTransaction,
+  arrayUnion,
 } from "firebase/firestore";
 import {
   ref as storageRef,
@@ -38,10 +39,16 @@ import {
   buildOfficeNavItems,
   shouldClearTruckFilterForNav,
 } from "./features/admin/adminNavigation.js";
+import { clearOfficeSession, getSavedOfficeSession, saveOfficeSession } from "./features/admin/officeSession.js";
 import {
   buildCrewJobActionModel,
   getCrewJobStatusMeta,
 } from "./features/crew/jobCardPresentation.js";
+import {
+  buildDailyAgenda,
+  buildDailyAgendaFileName,
+  exportDailyAgendaImage,
+} from "./features/agenda/agendaExport.js";
 import { getFeatureFlags } from "./config/featureFlags.js";
 import {
   createInitialListenerDiagnostics,
@@ -71,8 +78,14 @@ import {
   buildEditableMaterialItems,
   resolveMaterialLogTruckIdForEdit,
 } from "./materialLogHelpers.js";
+import {
+  buildDefaultMaterialTakeoffAreas,
+  calculateExpectedMaterialsFromTakeoffAreas,
+  normalizeMaterialTakeoffAreas,
+} from "./jobMaterialTakeoff.js";
 
 const AdminDiagnosticsView = React.lazy(() => import("./features/diagnostics/AdminDiagnosticsView.jsx"));
+const QuoteView = React.lazy(() => import("./features/takeoff/QuoteView.jsx"));
 
 // ─── Constants ───
 const INSULATION_JOB_TYPES = ["Foam","Fiberglass","Removal"];
@@ -91,6 +104,32 @@ const STATUS_OPTIONS = [
   { value: "completed", label: "Completed", color: "#15803d", bg: "#dcfce7" },
   { value: "issue", label: "Issue / Need Help", color: "#b91c1c", bg: "#fee2e2" },
 ];
+const PHOTO_TYPE_OPTIONS = [
+  { value: "workOrder", label: "Work Order", icon: "📋" },
+  { value: "before", label: "Before", icon: "🏁" },
+  { value: "during", label: "During", icon: "🔧" },
+  { value: "after", label: "After", icon: "✅" },
+  { value: "issue", label: "Issue", icon: "⚠️" },
+  { value: "general", label: "General", icon: "📷" },
+];
+const PHOTO_TYPE_VALUES = new Set(PHOTO_TYPE_OPTIONS.map((option) => option.value));
+const normalizePhotoType = (type) => PHOTO_TYPE_VALUES.has(type) ? type : "general";
+const getPhotoTypeMeta = (type) => PHOTO_TYPE_OPTIONS.find((option) => option.value === normalizePhotoType(type)) || PHOTO_TYPE_OPTIONS[PHOTO_TYPE_OPTIONS.length - 1];
+const sumActualJobMaterials = (job = {}) => (job.dailyMaterialLogs || []).reduce((totals, log) => {
+  Object.entries(log?.materials || {}).forEach(([itemId, qty]) => {
+    totals[itemId] = (totals[itemId] || 0) + (parseFloat(qty) || 0);
+  });
+  return totals;
+}, {});
+const getJobIntakeStatus = (job = {}) => {
+  const missing = [];
+  if (!(parseFloat(job.revenue) > 0)) missing.push("sales price");
+  if (!(parseFloat(job.sqft) > 0)) missing.push("sqft");
+  if (!job.laborMode || !(parseFloat(job.laborValue) > 0)) missing.push("labor");
+  if (!getJobWorkOrderPhoto(job)) missing.push("work order");
+  if (!Object.values(job.expectedMaterials || {}).some((qty) => (parseFloat(qty) || 0) > 0)) missing.push("expected materials");
+  return { status: missing.length ? "needs_info" : "ready", missing, label: missing.length ? `Needs ${missing.join(", ")}` : "Ready for crew" };
+};
 
 // Material cost rates: R11=$0.26/sqft, R13=$0.32/sqft, R19=$0.38/sqft, R30=$0.75/sqft
 // Blown wool/FG/cellulose=$32/bag, OC B-side=$32/gal (48gal/bbl=$1,536), CC B-side=$44/gal (50gal/bbl=$2,200)
@@ -195,12 +234,16 @@ const BASE_INVENTORY_ITEMS = [
   // Foam — A-side $0 (not priced), B-side only: OC 48gal×$32=$1,536/bbl, CC 50gal×$44=$2,200/bbl
   { id: "oc_a",       name: "Ambit A",                 unit: "bbl",   category: "Foam", cost: 0 },
   { id: "oc_b",       name: "Ambit Open Cell B",       unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
+  { id: "cc_a",       name: "Ambit Closed Cell A",     unit: "bbl",   category: "Foam", cost: 0 },
   { id: "cc_b",       name: "Ambit Closed Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
   { id: "env_oc_a",   name: "Enverge A",               unit: "bbl",   category: "Foam", cost: 0 },
   { id: "env_oc_b",   name: "Enverge Open Cell B",     unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
+  { id: "env_cc_a",   name: "Enverge Closed Cell A",   unit: "bbl",   category: "Foam", cost: 0 },
   { id: "env_cc_b",   name: "Enverge Closed Cell B",   unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
-  { id: "accufoam_a", name: "Accufoam A",              unit: "bbl",   category: "Foam", cost: 0 },
-  { id: "accufoam_b", name: "Accufoam B",              unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
+  { id: "accufoam_a",    name: "Accufoam A",              unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "accufoam_b",    name: "Accufoam B",              unit: "bbl",   category: "Foam", cost: MAT_RATE.oc_bbl },
+  { id: "accufoam_cc_a", name: "Accufoam CC A",           unit: "bbl",   category: "Foam", cost: 0 },
+  { id: "accufoam_cc_b", name: "Accufoam CC B",           unit: "bbl",   category: "Foam", cost: MAT_RATE.cc_bbl },
   // Blown — $32/bag
   { id: "blown_fg",        name: "Certainteed Blown Fiberglass", unit: "bags", category: "Blown", cost: MAT_RATE.blown },
   { id: "blown_fg_jm",     name: "JM Blown Fiberglass",          unit: "bags", category: "Blown", cost: MAT_RATE.blown },
@@ -294,10 +337,10 @@ const calcJobMaterialCost = (job) => {
   }
   return total;
 };
-const FOAM_MATERIAL_IDS = new Set(["oc_a", "oc_b", "cc_a", "cc_b", "env_oc_a", "env_oc_b", "env_cc_b", "accufoam_a", "accufoam_b"]);
-const FOAM_BSIDE_IDS = new Set(["oc_b", "cc_b", "env_oc_b", "env_cc_b", "accufoam_b"]);
+const FOAM_MATERIAL_IDS = new Set(["oc_a", "oc_b", "cc_a", "cc_b", "env_oc_a", "env_oc_b", "env_cc_a", "env_cc_b", "accufoam_a", "accufoam_b", "accufoam_cc_a", "accufoam_cc_b"]);
+const FOAM_BSIDE_IDS = new Set(["oc_b", "cc_b", "env_oc_b", "env_cc_b", "accufoam_b", "accufoam_cc_b"]);
 const foamQtyToGallons = (itemId, qty) => {
-  const gallonsPerBbl = ["cc_a", "cc_b", "env_cc_b"].includes(itemId) ? 50 : 48;
+  const gallonsPerBbl = ["cc_a", "cc_b", "env_cc_a", "env_cc_b", "accufoam_cc_a", "accufoam_cc_b"].includes(itemId) ? 50 : 48;
   return (parseFloat(qty) || 0) * gallonsPerBbl;
 };
 const getTruckUsageWindowStats = (jobs = [], truckId = null, windows = [7, 14, 30]) => {
@@ -311,8 +354,8 @@ const getTruckUsageWindowStats = (jobs = [], truckId = null, windows = [7, 14, 3
   const foamCostForQty = (itemId, qty) => {
     const parsedQty = parseFloat(qty) || 0;
     if (parsedQty <= 0) return 0;
-    if (["oc_b", "env_oc_b"].includes(itemId)) return foamQtyToGallons(itemId, parsedQty) * 32;
-    if (["cc_b", "env_cc_b"].includes(itemId)) return foamQtyToGallons(itemId, parsedQty) * 44;
+    if (["oc_b", "env_oc_b", "accufoam_b"].includes(itemId)) return foamQtyToGallons(itemId, parsedQty) * 32;
+    if (["cc_b", "env_cc_b", "accufoam_cc_b"].includes(itemId)) return foamQtyToGallons(itemId, parsedQty) * 44;
     return 0;
   };
 
@@ -484,8 +527,9 @@ const MATERIAL_COSTS = {
   oc_a: 0,    oc_b: MAT_RATE.oc_bbl,
   cc_a: 0,    cc_b: MAT_RATE.cc_bbl,
   env_oc_a: 0, env_oc_b: MAT_RATE.oc_bbl,
+  env_cc_a: 0, env_cc_b: MAT_RATE.cc_bbl,
   accufoam_a: 0, accufoam_b: MAT_RATE.oc_bbl,
-  env_cc_b: MAT_RATE.cc_bbl,
+  accufoam_cc_a: 0, accufoam_cc_b: MAT_RATE.cc_bbl,
     blown_fg: MAT_RATE.blown, blown_fg_jm: MAT_RATE.blown, blown_cel: MAT_RATE.blown,
 };
 
@@ -516,6 +560,35 @@ const todayStr = todayCST; // alias
 const normalizeSchedulableJobDate = (date) => (!date || date < todayCST() ? todayCST() : date);
 const normalizeEnergySealLabel = (label) => String(label || "").trim().toLowerCase() === "energy seal technician" ? "Energy Seal Van" : label;
 const truckDisplayName = (tr) => normalizeEnergySealLabel(tr?.vehicleName || tr?.members || tr?.name) || "Truck";
+const TV_INSULATION_TRUCK_ROWS = [
+  { key: "F1", label: "Foam Truck 1", shortLabel: "F1", family: "foam", accent: "#16a34a" },
+  { key: "F2", label: "Foam Truck 2", shortLabel: "F2", family: "foam", accent: "#16a34a" },
+  { key: "F3", label: "Foam Truck 3", shortLabel: "F3", family: "foam", accent: "#16a34a" },
+  { key: "B1", label: "Blow Truck 1", shortLabel: "B1", family: "blow", accent: "#2563eb" },
+  { key: "B2", label: "Blow Truck 2", shortLabel: "B2", family: "blow", accent: "#2563eb" },
+  { key: "B3", label: "Blow Truck 3", shortLabel: "B3", family: "blow", accent: "#2563eb" },
+  { key: "B4", label: "Blow Truck 4", shortLabel: "B4", family: "blow", accent: "#2563eb" },
+];
+const TV_INSULATION_TRUCK_ROW_KEYS = new Set(TV_INSULATION_TRUCK_ROWS.map((row) => row.key));
+const getTvTruckLaneKey = (truck = null, job = {}) => {
+  const label = `${truckDisplayName(truck)} ${truck?.name || ""} ${truck?.members || ""} ${truck?.vehicleName || ""}`.toLowerCase();
+  const explicit = label.match(/\b([fb])\s*[-#]?\s*([1-4])\b/i);
+  if (explicit) {
+    const key = `${explicit[1].toUpperCase()}${explicit[2]}`;
+    if (TV_INSULATION_TRUCK_ROW_KEYS.has(key)) return key;
+  }
+  const foamMatch = label.match(/\bfoam(?:\s+(?:truck|rig|unit))?\s*#?\s*([1-3])\b/i)
+    || (label.includes("foam") ? label.match(/\b(?:truck|rig|unit)\s*#?\s*([1-3])\b/i) : null);
+  if (foamMatch) return `F${foamMatch[1]}`;
+  const blowMatch = label.match(/\b(?:blow|blown|fiberglass|fibreglass)(?:\s+(?:truck|rig|unit))?\s*#?\s*([1-4])\b/i)
+    || (/(blow|blown|fiberglass|fibreglass)/i.test(label) ? label.match(/\b(?:truck|rig|unit)\s*#?\s*([1-4])\b/i) : null);
+  if (blowMatch) return `B${blowMatch[1]}`;
+  const displayType = normalizeInsulationJobType(job?.type || job?.jobCategory || "");
+  const genericNumber = label.match(/\b(?:truck|rig|unit)\s*#?\s*([1-4])\b/i);
+  if (genericNumber && displayType === "Foam" && Number(genericNumber[1]) <= 3) return `F${genericNumber[1]}`;
+  if (genericNumber && displayType === "Fiberglass") return `B${genericNumber[1]}`;
+  return "_other";
+};
 const naturalSort = (a, b) => truckDisplayName(a).localeCompare(truckDisplayName(b), undefined, { numeric: true, sensitivity: "base" });
 const timeStr = () => new Date().toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
 const dateStr = (iso) => { try { return new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return ""; } };
@@ -559,6 +632,24 @@ const getCurrentWorkWeekDates = () => {
     return date.toLocaleDateString("en-CA", { timeZone: "America/Chicago" });
   });
 };
+const getCurrentWorkWeekStart = () => getCurrentWorkWeekDates()[0] || todayCST();
+const getTruckWeekPlan = (truck = {}, weekStart = getCurrentWorkWeekStart()) => {
+  const saved = truck?.weeklySchedules?.[weekStart] || {};
+  const workDays = Array.isArray(saved.workDays) ? saved.workDays : [];
+  const expectedDaysRaw = parseInt(saved.expectedDays, 10);
+  return {
+    weekStart,
+    workDays,
+    expectedDays: Number.isFinite(expectedDaysRaw) ? expectedDaysRaw : workDays.length,
+    notes: saved.notes || "",
+    updatedAt: saved.updatedAt || null,
+  };
+};
+const formatRouteOrder = (value) => {
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) && n > 0 ? n : null;
+};
+const getJobRouteOrder = (job = {}) => formatRouteOrder(job.routeOrder) || 999;
 const mapsUrl = (addr) => `https://maps.apple.com/?daddr=${encodeURIComponent(addr)}`;
 
 function haversineKm(lat1, lon1, lat2, lon2) {
@@ -840,7 +931,8 @@ const kbStyles = `
     .avatar-btn span { font-size: 11.5px !important; line-height: 1.15 !important; }
   }
   @media (max-width: 640px) {
-    .crew-portal-shell { padding-top: calc(62px + env(safe-area-inset-top, 0px)) !important; min-height: 100dvh !important; }
+    .crew-portal-shell-home { padding-top: calc(62px + env(safe-area-inset-top, 0px)) !important; }
+    .crew-portal-shell-subview { padding-top: calc(126px + env(safe-area-inset-top, 0px)) !important; }
     .crew-portal-header { padding: 8px 16px !important; padding-top: calc(8px + env(safe-area-inset-top,0px)) !important; }
     .crew-portal-logout { white-space: nowrap !important; min-width: 76px !important; padding: 9px 12px !important; display: inline-flex !important; align-items: center !important; justify-content: center !important; line-height: 1 !important; }
     .crew-portal-body { padding: 14px 16px 26px !important; }
@@ -862,12 +954,27 @@ const kbStyles = `
   .office-tv-mode .office-schedule-actions button { min-height: 34px !important; padding: 7px 10px !important; border-radius: 12px !important; line-height: 1 !important; }
   .schedule-tv-board { --tv-row-gap: 8px; height: calc(100dvh - 58px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
   .schedule-tv-head { flex: 0 0 auto; }
-  .schedule-tv-grid { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); grid-template-rows: repeat(3, minmax(0, 1fr)); grid-auto-rows: calc((100% - (var(--tv-row-gap) * 2)) / 3); gap: var(--tv-row-gap); align-items: stretch; overflow: hidden; }
-  .schedule-tv-card { height: 100%; min-height: 0; max-height: 100%; }
-  .schedule-tv-card * { min-width: 0; }
+  .schedule-tv-grid { flex: 1 1 auto; min-height: 0; display: flex; flex-wrap: wrap; gap: var(--tv-row-gap); align-content: flex-start; align-items: flex-start; overflow: hidden; }
+  .schedule-tv-truck-rows { flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: var(--tv-row-gap); overflow: hidden; }
+  .schedule-tv-truck-row { min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--tv-row-gap); overflow: hidden; }
+  .schedule-tv-truck-lane { flex: 0 0 68px; min-width: 0; border-radius: 16px; padding: 8px; color: #fff; display: flex; flex-direction: column; justify-content: center; box-shadow: 0 10px 24px rgba(15,23,42,0.13); }
+  .schedule-tv-truck-row-jobs { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; flex-wrap: nowrap; gap: var(--tv-row-gap); overflow: hidden; align-items: stretch; }
+  .schedule-tv-truck-empty { flex: 1 1 auto; min-height: 96px; border-radius: 16px; border: 1px dashed rgba(148,163,184,0.45); background: rgba(255,255,255,0.64); color: #64748b; display: grid; place-items: center; text-align: center; font-size: 11px; font-weight: 900; letter-spacing: 0.08em; text-transform: uppercase; padding: 8px; }
+  .schedule-tv-card { flex: 1 1 220px; min-width: 220px; min-height: 210px; max-height: 100%; }
+  .schedule-tv-truck-row .schedule-tv-card { flex: 0 1 154px; width: 100%; min-width: 0; min-height: 0; max-height: 164px; padding: 8px !important; gap: 4px !important; }
+  .schedule-tv-truck-row .schedule-tv-customer { font-size: 15px !important; -webkit-line-clamp: 2 !important; line-height: 1.04 !important; }
+  .schedule-tv-truck-row .schedule-tv-address { font-size: 10px !important; -webkit-line-clamp: 1 !important; line-height: 1.05 !important; }
+  .schedule-tv-truck-row .schedule-tv-meta { gap: 4px !important; }
+  .schedule-tv-truck-row .schedule-tv-note { display: none !important; }
+  .schedule-tv-materials-button { min-height: 24px; }
+  .schedule-tv-type-line { flex: 1 1 auto; max-width: 100%; }
+  .schedule-tv-status-pill { flex-shrink: 0; }
+  .schedule-tv-card *, .schedule-tv-completed-bar * { min-width: 0; }
+  .schedule-tv-completed-bar { flex: 1 1 520px; min-width: 420px; min-height: 76px; }
   @media (min-width: 1180px) {
-    .office-tv-mode .schedule-tv-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: var(--tv-row-gap); }
-    .office-tv-mode .schedule-tv-card { height: 100%; }
+    .office-tv-mode .schedule-tv-card { flex: 0 1 calc((100% - (var(--tv-row-gap) * 4)) / 5); }
+    .office-tv-mode .schedule-tv-truck-row .schedule-tv-card { flex: 0 1 154px; }
+    .office-tv-mode .schedule-tv-completed-bar { flex: 1 1 calc((100% - var(--tv-row-gap)) / 2); }
   }
   @media (min-width: 1180px) and (max-height: 820px) {
     .schedule-tv-board { --tv-row-gap: 6px; height: calc(100dvh - 50px); }
@@ -904,8 +1011,16 @@ const kbStyles = `
     .office-session-actions button { padding: 7px 9px !important; }
     .office-left-dock { display: none !important; }
     .office-content { width: 100% !important; max-width: none !important; padding: 14px 10px 0 !important; box-sizing: border-box !important; }
-    .office-mobile-bottom-nav { position: fixed; left: 8px; right: 8px; bottom: calc(8px + env(safe-area-inset-bottom, 0px)); z-index: 250; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; padding: 7px; border-radius: 22px; background: rgba(255,255,255,0.86); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); border: 1px solid rgba(148,163,184,0.28); box-shadow: 0 18px 48px rgba(15,23,42,0.20); }
-    .office-mobile-nav-btn { min-width: 0; height: 54px; padding: 6px 2px; border-radius: 16px; }
+    @keyframes officeMobileDockOpen { 0% { opacity: 0; transform: translateX(-50%) translateY(14px) scale(0.88); } 70% { opacity: 1; transform: translateX(-50%) translateY(-2px) scale(1.02); } 100% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } }
+    @keyframes officeMobileDockClose { 0% { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); } 100% { opacity: 0; transform: translateX(-50%) translateY(12px) scale(0.90); } }
+    .office-mobile-bottom-nav { position: fixed; left: 50%; right: auto; transform: translateX(-50%); bottom: calc(10px + env(safe-area-inset-bottom, 0px)); z-index: 250; display: flex; align-items: center; justify-content: center; width: auto; pointer-events: none; }
+    .office-mobile-nav-panel { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%) translateY(8px) scale(0.92); transform-origin: bottom center; display: grid; grid-template-columns: repeat(4, 58px); gap: 8px; padding: 9px; border-radius: 24px; background: rgba(255,255,255,0.90); -webkit-backdrop-filter: blur(22px); backdrop-filter: blur(22px); border: 1px solid rgba(148,163,184,0.28); box-shadow: 0 18px 48px rgba(15,23,42,0.22); pointer-events: none; opacity: 0; visibility: hidden; }
+    .office-mobile-nav-panel.open { visibility: visible; pointer-events: auto; animation: officeMobileDockOpen 180ms cubic-bezier(0.2, 0.9, 0.2, 1) forwards; }
+    .office-mobile-nav-panel.closing { visibility: visible; pointer-events: none; animation: officeMobileDockClose 150ms ease-in forwards; }
+    .office-mobile-nav-panel.closed { opacity: 0; visibility: hidden; pointer-events: none; }
+    .office-mobile-nav-launcher { width: 64px; height: 64px; border-radius: 999px; display: grid; place-items: center; border: 1px solid rgba(37,99,235,0.36); background: linear-gradient(135deg,#2563eb,#0f172a); color: #fff; box-shadow: 0 18px 48px rgba(37,99,235,0.34); pointer-events: auto; transition: transform 180ms ease, box-shadow 180ms ease; }
+    .office-mobile-nav-launcher[aria-expanded="true"] { box-shadow: 0 22px 56px rgba(37,99,235,0.42); }
+    .office-mobile-nav-btn { min-width: 0; width: 58px; height: 58px; padding: 6px 2px; border-radius: 16px; }
     .office-mobile-nav-label { font-size: 9px !important; max-width: 100%; }
     .office-inventory-shell { height: calc(100dvh - 158px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)) !important; margin: 0 -10px !important; border-radius: 0 !important; }
     .office-inventory-tabs, .materials-filter-row, .materials-search-row { overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
@@ -1411,6 +1526,7 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
   const [selectedMember, setSelectedMember] = useState(null);
   const [pin, setPin] = useState("");
   const [setupPin, setSetupPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState("");
   const [checking, setChecking] = useState(false);
   const [crewSearch, setCrewSearch] = useState("");
@@ -1450,51 +1566,39 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
   function handleSelectMember(member) {
     setSelectedMember(member);
     setSelectedTruckId(member.truckId || "");
-    setPin(""); setSetupPin(""); setError("");
+    setPin("");
+    setSetupPin("");
+    setConfirmPin("");
+    setError("");
     setStep(member.pin ? "pin" : "setup");
   }
 
-  async function handlePinDigit(digit) {
-    if (checking) return;
-
-    if (step === "setup") {
-      const next = setupPin + digit;
-      if (next.length > 4) return;
-      setSetupPin(next);
-      if (next.length === 4) { setStep("confirm"); setPin(""); setError(""); }
-      return;
+  function handleEnterPin() {
+    if (checking || pin.length !== 4 || !selectedMember) return;
+    if (selectedMember.pin === pin) {
+      setError("");
+      setStep("truck");
+    } else {
+      setError("Wrong PIN. Try again.");
+      setPin("");
     }
+  }
 
-    if (step === "confirm") {
-      const next = pin + digit;
-      if (next.length > 4) return;
-      setPin(next);
-      if (next.length === 4) {
-        if (next !== setupPin) {
-          setError("PINs don't match. Try again.");
-          setPin(""); setSetupPin(""); setStep("setup");
-          return;
-        }
-        setChecking(true);
-        await updateDoc(doc(db, "crewMembers", selectedMember.id), { pin: next });
-        setChecking(false);
-        setSelectedMember(prev => prev ? ({ ...prev, pin: next }) : prev);
-        setStep("truck");
-      }
-      return;
-    }
-
-    // verify
-    const next = pin + digit;
-    if (next.length > 4) return;
-    setPin(next);
-    if (next.length === 4) {
-      if (selectedMember.pin === next) {
-        setStep("truck");
-      } else {
-        setError("Wrong PIN. Try again.");
-        setPin("");
-      }
+  async function handleCreateCrewPin() {
+    if (checking || !selectedMember) return;
+    if (setupPin.length !== 4 || !/^\d{4}$/.test(setupPin)) { setError("PIN must be exactly 4 digits."); return; }
+    if (setupPin !== confirmPin) { setError("PINs don't match. Try again."); return; }
+    setChecking(true);
+    try {
+      await updateDoc(doc(db, "crewMembers", selectedMember.id), { pin: setupPin });
+      setSelectedMember(prev => prev ? ({ ...prev, pin: setupPin }) : prev);
+      setError("");
+      setStep("truck");
+    } catch (err) {
+      console.error("Failed to save crew PIN", err);
+      setError("Could not save PIN. Try again.");
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -1504,13 +1608,6 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
     onLogin({ ...member, activeTruckId: chosenTruckId || null }, truck);
   }
 
-  function handleBackspace() {
-    if (step === "setup") setSetupPin(p => p.slice(0,-1));
-    else setPin(p => p.slice(0,-1));
-    setError("");
-  }
-
-  const displayPin = step === "setup" ? setupPin : pin;
   const title = step === "pick" ? null : step === "setup" ? "Create your PIN" : step === "confirm" ? "Confirm your PIN" : step === "truck" ? "Select your truck" : `Hi, ${selectedMember?.name?.split(" ")[0]} 👋`;
   const subtitle = step === "pick" ? null : step === "setup" ? "You'll use this every time you log in" : step === "confirm" ? "Enter your PIN again to confirm" : step === "truck" ? "Choose the truck you’re using today" : "Enter your PIN";
   const selectedTruck = visibleTrucks.find(tr => tr.id === selectedTruckId) || null;
@@ -1630,25 +1727,56 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
             )}
             {step !== "truck" && (
               <>
-                <div style={{ display: "flex", justifyContent: "center", gap: 16, marginBottom: 32 }}>
-                  {[0,1,2,3].map(i => (
-                    <div key={i} style={{ width: 18, height: 18, borderRadius: "50%", background: i < displayPin.length ? t.accent : "rgba(0,0,0,0.12)", transition: "background 0.15s" }} />
-                  ))}
-                </div>
-                {error && <div style={{ textAlign: "center", color: "#ef4444", fontSize: 14, marginBottom: 16, fontWeight: 500 }}>{error}</div>}
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
-                  {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d, i) => {
-                    if (d === "") return <div key={i} />;
-                    return (
-                      <button key={i} onClick={() => {
-                        if (d === "⌫") handleBackspace();
-                        else handlePinDigit(String(d));
-                      }}
-                        disabled={checking}
-                        style={{ padding: "18px 0", borderRadius: 12, fontSize: d === "⌫" ? 20 : 22, fontWeight: 600, background: "#fff", border: "1.5px solid " + t.border, color: t.text, cursor: "pointer", fontFamily: "inherit", WebkitTapHighlightColor: "transparent" }}>{d}</button>
-                    );
-                  })}
-                </div>
+                {step === "pin" ? (
+                  <>
+                    <input
+                      className="crew-pin-native-input"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="----"
+                      value={pin}
+                      onChange={(e) => { setPin(e.target.value.replace(/\D/g, "").slice(0, 4)); setError(""); }}
+                      onKeyDown={(e) => e.key === "Enter" && pin.length === 4 && handleEnterPin()}
+                      autoFocus
+                      autoComplete="one-time-code"
+                      style={{ width: "100%", padding: "14px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "14px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box" }}
+                    />
+                    {error && <div style={{ color: t.danger, fontSize: "13px", marginTop: "8px", textAlign: "center" }}>{error}</div>}
+                    <Button onClick={handleEnterPin} disabled={pin.length !== 4 || checking} style={{ width: "100%", marginTop: "14px" }}>Log In</Button>
+                  </>
+                ) : (
+                  <>
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Create PIN</label>
+                    <input
+                      className="crew-pin-native-input"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="----"
+                      value={setupPin}
+                      onChange={(e) => { setSetupPin(e.target.value.replace(/\D/g, "").slice(0, 4)); setError(""); }}
+                      autoFocus
+                      autoComplete="new-password"
+                      style={{ width: "100%", padding: "14px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "14px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box", marginBottom: "14px" }}
+                    />
+                    <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Confirm PIN</label>
+                    <input
+                      className="crew-pin-native-input"
+                      type="password"
+                      inputMode="numeric"
+                      maxLength={4}
+                      placeholder="----"
+                      value={confirmPin}
+                      onChange={(e) => { setConfirmPin(e.target.value.replace(/\D/g, "").slice(0, 4)); setError(""); }}
+                      onKeyDown={(e) => e.key === "Enter" && setupPin.length === 4 && confirmPin.length === 4 && handleCreateCrewPin()}
+                      autoComplete="new-password"
+                      style={{ width: "100%", padding: "14px", background: "rgba(255,255,255,0.92)", border: "1px solid " + t.border, borderRadius: "14px", color: t.text, fontSize: "24px", fontFamily: "inherit", textAlign: "center", letterSpacing: "12px", outline: "none", boxSizing: "border-box" }}
+                    />
+                    {error && <div style={{ color: t.danger, fontSize: "13px", marginTop: "8px", textAlign: "center" }}>{error}</div>}
+                    <Button onClick={handleCreateCrewPin} disabled={setupPin.length !== 4 || confirmPin.length !== 4 || checking} style={{ width: "100%", marginTop: "14px" }}>Set PIN & Log In</Button>
+                  </>
+                )}
               </>
             )}
             {step === "truck" && error && <div style={{ textAlign: "center", color: "#ef4444", fontSize: 14, marginBottom: 16, fontWeight: 500 }}>{error}</div>}
@@ -1670,7 +1798,7 @@ function CrewLogin({ trucks, members: rosterMembers = [], onLogin, onBack }) {
                 </button>
               </>
             ) : (
-              <button onClick={() => { setStep("pick"); setPin(""); setSetupPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
+              <button onClick={() => { setStep("pick"); setPin(""); setSetupPin(""); setConfirmPin(""); setError(""); }} style={{ width: "100%", padding: "10px", background: "none", border: "none", color: t.textMuted, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Back</button>
             )}
           </>
         )}
@@ -2199,7 +2327,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   const [closeoutJob, setCloseoutJob] = useState(null);
   const [closeoutMaterialQtys, setCloseoutMaterialQtys] = useState({});
   const [editMaterialsJob, setEditMaterialsJob] = useState(null);
-  const [editMaterialQtys, setEditMaterialQtys] = useState({});
   const [dailyMaterialsJob, setDailyMaterialsJob] = useState(null);
   const [dailyMaterialQtys, setDailyMaterialQtys] = useState({});
   const [histCalMonth, setHistCalMonth] = useState(new Date().getMonth());
@@ -2323,7 +2450,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
   const handleCloseoutConfirm = (bypass) => {
     const { job, status: s, eta: e, notes: n } = closeoutJob;
-    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+    const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
     const materialsUsed = bypass ? null : (() => {
       const used = {};
       INVENTORY_ITEMS.forEach(i => {
@@ -2495,7 +2622,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
   };
 
   return (
-    <div className="crew-portal-shell" style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingTop: crewView !== "home" ? "calc(116px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
+    <div className={`crew-portal-shell ${crewView !== "home" ? "crew-portal-shell-subview" : "crew-portal-shell-home"}`} style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingTop: crewView !== "home" ? "calc(124px + env(safe-area-inset-top, 0px))" : "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <style>{kbStyles}</style>
       {wrapUpToast && (
         <div style={{ position: "fixed", top: "calc(env(safe-area-inset-top, 0px) + 80px)", left: "50%", transform: "translateX(-50%)", background: "#15803d", color: "#fff", padding: "12px 24px", borderRadius: "99px", fontSize: "15px", fontWeight: 700, zIndex: 9999, boxShadow: "0 4px 20px rgba(0,0,0,0.25)", whiteSpace: "nowrap" }}>
@@ -2737,7 +2864,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 if (existingToday) {
                   const preQtys = {};
                   INVENTORY_ITEMS.forEach(i => {
-                    const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(i.id);
+                    const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(i.id);
                     const val = existingToday.materials[i.id];
                     if (val) preQtys[i.id] = isFoam ? String(Math.round(val * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                   });
@@ -2758,6 +2885,11 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 hasTodayMaterials: !!existingToday,
                 missingMaterialDays: missingDays,
               });
+              const workOrderPhoto = getJobWorkOrderPhoto(job);
+              const openWorkOrderPhoto = () => {
+                if (!workOrderPhoto?.url) return;
+                window.open(workOrderPhoto.url, "_blank", "noopener,noreferrer");
+              };
               const runStatusUpdate = async (nextStatus, nextNotes = "") => {
                 await onSubmitUpdate({
                   jobId: job.id,
@@ -2829,6 +2961,19 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                       </div>
                     </div>
 
+                    {workOrderPhoto && (
+                      <button onClick={openWorkOrderPhoto} style={{ marginTop: 15, width: "100%", display: "grid", gridTemplateColumns: "54px minmax(0,1fr) auto", alignItems: "center", gap: 12, padding: "10px 12px", background: "linear-gradient(135deg,#fffbeb,#fef3c7 58%,#fde68a)", border: "1px solid #f59e0b", borderRadius: 16, color: "#78350f", textAlign: "left", cursor: "pointer", fontFamily: "inherit", boxShadow: "0 0 0 1px rgba(251,191,36,0.5), 0 0 24px rgba(245,158,11,0.35)" }}>
+                        <div style={{ width: 54, height: 54, borderRadius: 12, overflow: "hidden", background: "rgba(120,53,15,0.08)", border: "1px solid rgba(146,64,14,0.18)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {workOrderPhoto.url ? <img src={workOrderPhoto.url} alt="Work order" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /> : <span style={{ fontSize: 24 }}>📋</span>}
+                        </div>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 17, fontWeight: 950, letterSpacing: "-0.3px", color: "#78350f" }}>📋 Work Order</div>
+                          <div style={{ marginTop: 2, fontSize: 12.5, fontWeight: 850, color: "#92400e" }}>Tap to view before starting this job</div>
+                        </div>
+                        <div style={{ color: "#92400e", fontSize: 22, fontWeight: 950 }}>›</div>
+                      </button>
+                    )}
+
                     <a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ marginTop: 15, display: "flex", alignItems: "flex-start", gap: 9, padding: "11px 12px", background: "#fff", border: "1px solid rgba(226,232,240,0.95)", borderRadius: 15, color: t.text, textDecoration: "none", fontSize: 13.5, lineHeight: 1.35, fontWeight: 700 }}>
                       <span style={{ color: t.accent, fontSize: 16, lineHeight: 1 }}>⌖</span>
                       <span style={{ minWidth: 0 }}>{job.address || "No address listed"}</span>
@@ -2886,7 +3031,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                                 {Object.entries(log.materials).map(([itemId, qty]) => {
                                   const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                                   if (!item) return null;
-                                  const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(itemId);
+                                  const isFoam = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(itemId);
                                   const display = isFoam ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                                   return <span key={itemId} style={{ marginRight: 8 }}>{item.name}: <strong>{display}</strong></span>;
                                 })}
@@ -2924,7 +3069,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
         {/* ── LOAD TRUCK MODAL ── */}
         {crewView === "history" && (() => { // eslint-disable-line no-extra-parens
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
           const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
           const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
           // All completed jobs for this crew member
@@ -3033,7 +3178,6 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                           variant="secondary"
                           onClick={() => {
                             setEditMaterialsJob(buildMaterialLogEditContext(job, truckScopedLog, histDayJobs.date));
-                            setEditMaterialQtys({});
                           }}
                           style={{ width: "100%", marginTop: 10, fontSize: 13 }}
                         >
@@ -3049,7 +3193,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         })()}
 
         {crewView === "truck" && (() => {
-          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+          const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
           const galsToBbl = (g, id) => Math.round(g / (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48) * 100) / 100;
           const bblToGals = (b, id) => Math.round(b * (id && ["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
           const loadedItems = INVENTORY_ITEMS.filter(i => (truckInventory[i.id] || 0) > 0);
@@ -3092,8 +3236,8 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 label: "Foam",
                 groups: [
                   { key: "ambit", label: "Ambit", items: itemsForMode.filter(i => ["oc_a","oc_b","cc_a","cc_b"].includes(i.id)) },
-                  { key: "enverge", label: "Enverge", items: itemsForMode.filter(i => ["env_oc_a","env_oc_b","env_cc_b"].includes(i.id)) },
-                  { key: "accufoam", label: "Accufoam", items: itemsForMode.filter(i => ["accufoam_a","accufoam_b"].includes(i.id)) },
+                  { key: "enverge", label: "Enverge", items: itemsForMode.filter(i => ["env_oc_a","env_oc_b","env_cc_a","env_cc_b"].includes(i.id)) },
+                  { key: "accufoam", label: "Accufoam", items: itemsForMode.filter(i => ["accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(i.id)) },
                 ].filter(group => group.items.length > 0),
               },
               {
@@ -3304,7 +3448,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                 ))}
               </div>
               {truckTab === "loadHistory" && (() => {
-                const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+                const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
                 const truckLoads = (loadLog || []).filter(r => r.truckId === truck.id);
                 const truckReturns = (returnLog || []).filter(r => r.truckId === truck.id);
                 const allEntries = [
@@ -3520,7 +3664,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
 
       {/* ── CLOSEOUT MATERIALS MODAL ── */}
       {dailyMaterialsJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
         const today = dailyMaterialsJob._editingDate || dailyMaterialsJob._forceDate || todayCST();
         const isEditingPast = !!dailyMaterialsJob._editingDate || !!dailyMaterialsJob._forceDate;
         const matchedDailyLog = findDailyMaterialLog(dailyMaterialsJob.dailyMaterialLogs, today, normalizeMaterialLogTruckId(truck?.id ?? dailyMaterialsJob._logTruckId ?? null));
@@ -3668,7 +3812,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       })()}
 
       {closeoutJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
         const truckItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (truckInventory[i.id] || 0) > 0);
         return (
           <Modal title="Close Out Job" onClose={() => setCloseoutJob(null)}>
@@ -3683,7 +3827,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               const logs = getMaterialLogsForJob(closeoutJob.job);
               if (logs.length === 0) return null;
               const fmtDate = (ds) => { const [y,m,d] = ds.split("-"); const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]; return months[parseInt(m)-1] + " " + parseInt(d); };
-              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+              const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
               return (
                 <div style={{ marginBottom: 16 }}>
                   <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.5px", color: t.textMuted, fontWeight: 600, marginBottom: 8 }}>Materials Logged — Previous Days</div>
@@ -3704,7 +3848,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
                       <button onClick={() => {
                         const preQtys = {};
                         INVENTORY_ITEMS.forEach(i => {
-                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(i.id);
+                          const isFoamItem = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(i.id);
                           const val = log.materials[i.id];
                           if (val) preQtys[i.id] = isFoamItem ? String(Math.round(val * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(val);
                         });
@@ -3763,7 +3907,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
               <Button variant="secondary" onClick={() => setCloseoutJob(null)} style={{ flex: 1 }}>Cancel</Button>
               <Button onClick={() => {
                 // Build materials summary for confirmation
-                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
                 const allMaterials = {};
                 if (!closeoutJob.skipMaterials) {
                   INVENTORY_ITEMS.forEach(i => {
@@ -3784,7 +3928,7 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       {closeoutConfirm && (() => {
         const { closeoutJobData, materialsForConfirm } = closeoutConfirm;
         const job = closeoutJobData.job;
-        const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+        const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
         const allMats = { ...materialsForConfirm };
         (job.dailyMaterialLogs || []).forEach(log => {
           Object.entries(log.materials || {}).forEach(([id, qty]) => { allMats[id] = (allMats[id] || 0) + qty; });
@@ -3824,89 +3968,17 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
       })()}
 
       {/* ── EDIT MATERIALS MODAL ── */}
-      {editMaterialsJob && (() => {
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
-        const editDate = editMaterialsJob._editingDate || todayCST();
-        const targetTruckId = normalizeMaterialLogTruckId(truck?.id ?? editMaterialsJob._logTruckId ?? null);
-        const targetTruck = trucks.find(tr => tr.id === targetTruckId) || truck || null;
-        const targetTruckLabel = targetTruck ? (targetTruck.members || targetTruck.name) : "No Truck";
-        const existing = editMaterialsJob._existingMaterials || {};
-        const editMaterialInventory = getInventoryForMaterialLog(editMaterialsJob, editMaterialsJob._sourceDailyLog, targetTruckId);
-        const tubeItems = INVENTORY_ITEMS.filter(i => !i.isPieces && (existing[i.id] || (editMaterialInventory[i.id] || 0) > 0 || (i.hasPieces && (editMaterialInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)));
-        const getVal = (item) => { const e = existing[item.id]; const r = editMaterialQtys[item.id]; if (r !== undefined) return r; if (e) return isFoam(item.id) ? String(Math.round(e * (["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48))) : String(e); return ""; };
-        return (
-          <Modal title="Edit Materials" onClose={() => setEditMaterialsJob(null)}>
-            <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
-              <strong style={{ color: t.text }}>{editMaterialsJob.builder || "No Customer"}</strong><br />{editMaterialsJob.address}
-              <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>Editing {editDate} for {targetTruckLabel}</div>
-            </div>
-            {tubeItems.map(item => {
-              const onTruck = editMaterialInventory[item.id] || 0;
-              const label = isFoam(item.id)
-                ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * (["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48)) + " gal)" : "")
-                : item.name + (onTruck > 0 ? " (on truck: " + onTruck + " " + item.unit + ")" : "");
-              const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
-              const showPcs = pcsItem && ((editMaterialInventory[pcsItem.id] || 0) > 0 || existing[pcsItem.id]);
-              return (
-                <div key={item.id} style={{ marginBottom: 14 }}>
-                  <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
-                  <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used" : item.hasPieces ? "full tubes used" : item.unit + " used"} value={getVal(item)}
-                    onChange={e => setEditMaterialQtys(p => ({ ...p, [item.id]: e.target.value }))}
-                    style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
-                  {(pcsItem && (showPcs || true)) && (
-                    <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
-                      <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used</label>
-                      <input type="number" min="0" placeholder="pieces used" value={getVal(pcsItem)}
-                        onChange={e => setEditMaterialQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
-                        style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
-              <Button variant="secondary" onClick={() => setEditMaterialsJob(null)} style={{ flex: 1 }}>Cancel</Button>
-              <Button onClick={async () => {
-                const used = {};
-                INVENTORY_ITEMS.forEach(i => {
-                  const raw = editMaterialQtys[i.id] !== undefined ? editMaterialQtys[i.id] : (existing[i.id] ? (isFoam(i.id) ? String(Math.round(existing[i.id] * (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48))) : String(existing[i.id])) : "");
-                  if (raw && parseFloat(raw) > 0) {
-                    used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / (["cc_a","cc_b","env_cc_b"].includes(i.id) ? 50 : 48) * 100) / 100 : parseFloat(raw);
-                  }
-                });
-                let canSave = true;
-                INVENTORY_ITEMS.filter(i => !i.isPieces && i.pcsPerTube).forEach(item => {
-                  const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
-                  const oldTubes = existing[item.id] || 0;
-                  const oldPcs = pcsItem ? (existing[pcsItem.id] || 0) : 0;
-                  const oldTotal = oldTubes * item.pcsPerTube + oldPcs;
-                  const newTubes = used[item.id] || 0;
-                  const newPcs = pcsItem ? (used[pcsItem.id] || 0) : 0;
-                  const newTotal = newTubes * item.pcsPerTube + newPcs;
-                  const delta = newTotal - oldTotal;
-                  if (delta > 0) {
-                    const truckTubes = editMaterialInventory[item.id] || 0;
-                    const truckPcs = pcsItem ? (editMaterialInventory[pcsItem.id] || 0) : 0;
-                    const truckTotal = truckTubes * item.pcsPerTube + truckPcs;
-                    if (delta > truckTotal) { alert(`Not enough ${item.name} on your truck. Need ${delta} more pieces than available.`); canSave = false; }
-                  }
-                });
-                if (!canSave) return;
-                if (Object.keys(used).length === 0) { alert("No materials entered."); return; }
-                await onSaveJobMaterials(editMaterialsJob.id, {
-                  date: editDate,
-                  truckId: targetTruckId,
-                  sourceTruckId: editMaterialsJob._sourceTruckId,
-                  materials: used,
-                  loggedBy: crewName,
-                  timestamp: new Date().toISOString(),
-                }, targetTruckId);
-                setEditMaterialsJob(null); setEditMaterialQtys({});
-              }} style={{ flex: 1 }}>Save</Button>
-            </div>
-          </Modal>
-        );
-      })()}
+      {editMaterialsJob && (
+        <EditMaterialsModal
+          editMaterialsJob={editMaterialsJob}
+          truck={truck}
+          trucks={trucks}
+          crewName={crewName}
+          getInventoryForMaterialLog={getInventoryForMaterialLog}
+          onSaveJobMaterials={onSaveJobMaterials}
+          onClose={() => setEditMaterialsJob(null)}
+        />
+      )}
 
       {showTicketForm && (
         <Modal title="Submit Ticket" onClose={() => setShowTicketForm(false)}>
@@ -3966,6 +4038,112 @@ function CrewDashboard({ truck, crewName, crewMemberId, jobs, updates, jobUpdate
         </Modal>
       )}
     </div>
+  );
+}
+
+
+function EditMaterialsModal({ editMaterialsJob, truck, trucks, crewName, getInventoryForMaterialLog, onSaveJobMaterials, onClose }) {
+  const [draftQtys, setDraftQtys] = useState({});
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
+  const foamGallonsPerBarrel = (id) => (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48);
+  const editDate = editMaterialsJob._editingDate || todayCST();
+  const targetTruckId = normalizeMaterialLogTruckId(truck?.id ?? editMaterialsJob._logTruckId ?? null);
+  const targetTruck = trucks.find(tr => tr.id === targetTruckId) || truck || null;
+  const targetTruckLabel = targetTruck ? (targetTruck.members || targetTruck.name) : "No Truck";
+  const existing = editMaterialsJob._existingMaterials || {};
+  const editMaterialInventory = useMemo(
+    () => getInventoryForMaterialLog(editMaterialsJob, editMaterialsJob._sourceDailyLog, targetTruckId),
+    [editMaterialsJob, getInventoryForMaterialLog, targetTruckId]
+  );
+  const tubeItems = useMemo(() => INVENTORY_ITEMS.filter(i => !i.isPieces && (
+    existing[i.id]
+    || (editMaterialInventory[i.id] || 0) > 0
+    || (i.hasPieces && (editMaterialInventory[INVENTORY_ITEMS.find(p => p.parentId === i.id)?.id] || 0) > 0)
+  )), [editMaterialInventory, existing]);
+  const getVal = (item) => {
+    const e = existing[item.id];
+    const r = draftQtys[item.id];
+    if (r !== undefined) return r;
+    if (e) return isFoam(item.id) ? String(Math.round(e * foamGallonsPerBarrel(item.id))) : String(e);
+    return "";
+  };
+  const close = () => {
+    setDraftQtys({});
+    onClose();
+  };
+  const handleSave = async () => {
+    const used = {};
+    INVENTORY_ITEMS.forEach(i => {
+      const raw = draftQtys[i.id] !== undefined ? draftQtys[i.id] : (existing[i.id] ? (isFoam(i.id) ? String(Math.round(existing[i.id] * foamGallonsPerBarrel(i.id))) : String(existing[i.id])) : "");
+      if (raw && parseFloat(raw) > 0) {
+        used[i.id] = isFoam(i.id) ? Math.round(parseFloat(raw) / foamGallonsPerBarrel(i.id) * 100) / 100 : parseFloat(raw);
+      }
+    });
+    let canSave = true;
+    INVENTORY_ITEMS.filter(i => !i.isPieces && i.pcsPerTube).forEach(item => {
+      const pcsItem = INVENTORY_ITEMS.find(p => p.parentId === item.id);
+      const oldTubes = existing[item.id] || 0;
+      const oldPcs = pcsItem ? (existing[pcsItem.id] || 0) : 0;
+      const oldTotal = oldTubes * item.pcsPerTube + oldPcs;
+      const newTubes = used[item.id] || 0;
+      const newPcs = pcsItem ? (used[pcsItem.id] || 0) : 0;
+      const newTotal = newTubes * item.pcsPerTube + newPcs;
+      const delta = newTotal - oldTotal;
+      if (delta > 0) {
+        const truckTubes = editMaterialInventory[item.id] || 0;
+        const truckPcs = pcsItem ? (editMaterialInventory[pcsItem.id] || 0) : 0;
+        const truckTotal = truckTubes * item.pcsPerTube + truckPcs;
+        if (delta > truckTotal) { alert(`Not enough ${item.name} on your truck. Need ${delta} more pieces than available.`); canSave = false; }
+      }
+    });
+    if (!canSave) return;
+    if (Object.keys(used).length === 0) { alert("No materials entered."); return; }
+    await onSaveJobMaterials(editMaterialsJob.id, {
+      date: editDate,
+      truckId: targetTruckId,
+      sourceTruckId: editMaterialsJob._sourceTruckId,
+      materials: used,
+      loggedBy: crewName,
+      timestamp: new Date().toISOString(),
+    }, targetTruckId);
+    close();
+  };
+
+  return (
+    <Modal title="Edit Materials" onClose={close}>
+      <div style={{ fontSize: 13.5, color: t.textMuted, marginBottom: 14 }}>
+        <strong style={{ color: t.text }}>{editMaterialsJob.builder || "No Customer"}</strong><br />{editMaterialsJob.address}
+        <div style={{ fontSize: 12, marginTop: 4, color: t.accent, fontWeight: 600 }}>Editing {editDate} for {targetTruckLabel}</div>
+      </div>
+      {tubeItems.map(item => {
+        const onTruck = editMaterialInventory[item.id] || 0;
+        const label = isFoam(item.id)
+          ? item.name + (onTruck > 0 ? " (on truck: " + Math.round(onTruck * foamGallonsPerBarrel(item.id)) + " gal)" : "")
+          : item.name + (onTruck > 0 ? " (on truck: " + onTruck + " " + item.unit + ")" : "");
+        const pcsItem = item.hasPieces ? INVENTORY_ITEMS.find(x => x.parentId === item.id) : null;
+        const showPcs = pcsItem && ((editMaterialInventory[pcsItem.id] || 0) > 0 || existing[pcsItem.id]);
+        return (
+          <div key={item.id} style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 4 }}>{label}</label>
+            <input type="number" min="0" placeholder={isFoam(item.id) ? "gallons used" : item.hasPieces ? "full tubes used" : item.unit + " used"} value={getVal(item)}
+              onChange={e => setDraftQtys(p => ({ ...p, [item.id]: e.target.value }))}
+              style={{ width: "100%", padding: "10px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 15, fontFamily: "inherit", boxSizing: "border-box" }} />
+            {(pcsItem && (showPcs || true)) && (
+              <div style={{ marginTop: 6, paddingLeft: 14, borderLeft: "2px dashed " + t.border }}>
+                <label style={{ display: "block", fontSize: 11, fontWeight: 500, color: t.textMuted, marginBottom: 4 }}>Pieces used</label>
+                <input type="number" min="0" placeholder="pieces used" value={getVal(pcsItem)}
+                  onChange={e => setDraftQtys(p => ({ ...p, [pcsItem.id]: e.target.value }))}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: 8, border: "1px solid " + t.border, fontSize: 14, fontFamily: "inherit", boxSizing: "border-box" }} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+      <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+        <Button variant="secondary" onClick={close} style={{ flex: 1 }}>Cancel</Button>
+        <Button onClick={handleSave} style={{ flex: 1 }}>Save</Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -4212,7 +4390,7 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 
       {/* TRUCKS TAB */}
       {tab === "trucks" && (() => {
-        const isFoamItem = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+        const isFoamItem = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
         const visibleTrucks = trucks.filter(tr => tr.department !== "energySeal").sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
         return (
           <div>
@@ -4866,10 +5044,13 @@ function ToolsView({ isOffice, tools, toolCheckouts, onAddTool, onEditTool, onDe
 }
 
 // ─── Toast Notification System ───
-function ToastContainer({ toasts, onDismiss }) {
+function ToastContainer({ toasts, onDismiss, onDismissAll }) {
   if (!toasts || toasts.length === 0) return null;
   return ReactDOM.createPortal(
     <div style={{ position: "fixed", bottom: 24, right: 16, zIndex: 9999, display: "flex", flexDirection: "column", gap: 10, alignItems: "flex-end", pointerEvents: "none" }}>
+      {toasts.length > 1 && (
+        <button onClick={onDismissAll} style={{ pointerEvents: "auto", border: "1px solid rgba(148,163,184,0.35)", background: "rgba(15,23,42,0.88)", color: "#e2e8f0", borderRadius: 999, padding: "6px 10px", fontSize: 11, fontWeight: 800, cursor: "pointer", boxShadow: "0 8px 24px rgba(15,23,42,0.22)" }}>Clear all</button>
+      )}
       {toasts.map(toast => (
         <div key={toast.id} style={{ pointerEvents: "auto", background: "#1e293b", color: "#f1f5f9", borderRadius: 12, padding: "12px 16px", minWidth: 260, maxWidth: 340, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", border: "1px solid rgba(255,255,255,0.1)", display: "flex", gap: 12, alignItems: "flex-start", animation: "toastSlide 0.25s ease" }}>
           <div style={{ flex: 1 }}>
@@ -4888,27 +5069,52 @@ function ToastContainer({ toasts, onDismiss }) {
   );
 }
 
+const JOB_UPDATE_TOAST_SEEN_STORAGE_KEY = "ist.jobUpdateToasts.seen.v1";
+
+function getJobUpdateTimestampMillis(timestamp) {
+  if (!timestamp) return null;
+  if (typeof timestamp.toMillis === "function") return timestamp.toMillis();
+  if (typeof timestamp.seconds === "number") return timestamp.seconds * 1000;
+  const parsed = new Date(timestamp).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
 function useJobUpdateToasts(updates, jobs) {
   const [toasts, setToasts] = useState([]);
+  const mountedAtRef = useRef(Date.now());
   const seenRef = useRef(new Set());
-  const mountedRef = useRef(false);
 
   useEffect(() => {
-    // On first mount, seed seenRef with all existing updates so we don't toast on load
-    if (!mountedRef.current) {
-      (updates || []).forEach(u => seenRef.current.add(u.id));
-      mountedRef.current = true;
-      return;
+    try {
+      const saved = JSON.parse(localStorage.getItem(JOB_UPDATE_TOAST_SEEN_STORAGE_KEY) || "[]");
+      if (Array.isArray(saved)) saved.forEach((id) => { if (id) seenRef.current.add(id); });
+    } catch {
+      // If localStorage is blocked or corrupt, fall back to in-memory seen tracking.
     }
+  }, []);
+
+  const persistSeen = useCallback(() => {
+    try {
+      localStorage.setItem(JOB_UPDATE_TOAST_SEEN_STORAGE_KEY, JSON.stringify([...seenRef.current].slice(-300)));
+    } catch {
+      // Ignore storage failures; the current session still has in-memory protection.
+    }
+  }, []);
+
+  useEffect(() => {
     const today = todayCST();
+    let changedSeen = false;
     (updates || []).forEach(u => {
       if (!u.id || seenRef.current.has(u.id)) return;
       if (!u.timestamp || !u.status || !u.crewName) return;
-      // Only show for today's updates
+      const updateMillis = getJobUpdateTimestampMillis(u.timestamp);
+      if (!updateMillis || updateMillis < mountedAtRef.current) { seenRef.current.add(u.id); changedSeen = true; return; }
+      // Only show for today's brand-new updates created after this app session loaded.
       const updateDate = tsToCST(u.timestamp);
-      if (updateDate !== today) { seenRef.current.add(u.id); return; }
-      if (!["in_progress","completed","issue"].includes(u.status)) { seenRef.current.add(u.id); return; }
+      if (updateDate !== today) { seenRef.current.add(u.id); changedSeen = true; return; }
+      if (!["in_progress","completed","issue"].includes(u.status)) { seenRef.current.add(u.id); changedSeen = true; return; }
       seenRef.current.add(u.id);
+      changedSeen = true;
       const job = jobs.find(j => j.id === u.jobId);
       const statusObj = STATUS_OPTIONS.find(s => s.value === u.status);
       const toast = {
@@ -4920,21 +5126,23 @@ function useJobUpdateToasts(updates, jobs) {
         statusBg: statusObj ? statusObj.bg : "#374151",
       };
       setToasts(prev => {
-        const next = [...prev.slice(-2), toast]; // max 3
+        const next = [...prev.slice(-1), toast]; // max 2, so the stack is not annoying
         return next;
       });
-      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== u.id)), 6000);
+      setTimeout(() => setToasts(prev => prev.filter(t => t.id !== u.id)), 4500);
     });
-  }, [updates]);
+    if (changedSeen) persistSeen();
+  }, [updates, jobs, persistSeen]);
 
   const dismiss = useCallback((id) => setToasts(prev => prev.filter(t => t.id !== id)), []);
-  return [toasts, dismiss];
+  const dismissAll = useCallback(() => setToasts([]), []);
+  return [toasts, dismiss, dismissAll];
 }
 
 // ─── EOD Summary Modal ───
 function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, onClose, hideMaterialCosts = false }) {
   const today = todayCST();
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
 
   // Jobs with any activity today
   const todayJobs = jobs.filter(j => {
@@ -5127,7 +5335,7 @@ function EodSummaryModal({ jobs, updates, tickets, members, loadLog, returnLog, 
 // ─── Truck Reconciliation View ───
 function TruckReconcileView({ trucks, loadLog, returnLog, jobs, updates, truckInventory, derivedTruckInventory = {}, truckInventoryParity = {} }) {
   const today = todayCST();
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
 
   const fmtQty = (itemId, qty) => {
     if (isFoam(itemId)) return Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal";
@@ -6115,7 +6323,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, truckSecondaryInvent
   const allLoadout = [...inventoryLoadout, ...customItems.map(c => ({ key: "custom_" + c.name, name: c.name, qty: c.qty, unit: c.unit, isCustom: true }))];
   const secondaryLoadout = getTruckInventoryDisplayRows(tsi);
 
-  const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+  const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
   const fmtQty = (key, qty) => {
     if (isFoamId(key)) return Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(key) ? 50 : 48)) + " gal";
     const u = INVENTORY_ITEMS.find(i => i.id === key)?.unit || "";
@@ -6348,7 +6556,7 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, truckSecondaryInvent
         // Jobs assigned to this truck
         const truckJobs = (jobs || []).filter(j => j.truckId === truck.id);
 
-        const isFoamIdLocal = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+        const isFoamIdLocal = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
 
         // Build per-day data, broken out by job
         const dayData = days.map(dateStr => {
@@ -6428,35 +6636,92 @@ function TruckDetailModal({ truck, truckInventory: ti = {}, truckSecondaryInvent
 }
 
 
+function getJobWorkOrderPhoto(job) {
+  return (job?.photos || []).find((photo) => {
+    const type = normalizePhotoType(photo?.type);
+    const haystack = `${photo?.type || ""} ${photo?.label || ""} ${photo?.filename || ""}`.toLowerCase();
+    return type === "workOrder" || haystack.includes("workorder") || haystack.includes("work order") || haystack.includes("work-order");
+  }) || null;
+}
+
 // ─── Job Photos Section ───
 function JobPhotosSection({ job, canDelete, uploaderName, emptyText }) {
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(null);
   const [lightboxIdx, setLightboxIdx] = useState(null);
+  const [uploadPhotoType, setUploadPhotoType] = useState("general");
+  const [touchStartX, setTouchStartX] = useState(null);
   const photos = job.photos || [];
+
+  const readPhotoFileAsDataUrl = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const compressJobPhoto = async (file) => {
+    if (!file.type?.startsWith("image/")) return { file, dataUrl: await readPhotoFileAsDataUrl(file) };
+    try {
+      const objectUrl = URL.createObjectURL(file);
+      const img = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => { URL.revokeObjectURL(objectUrl); resolve(image); };
+        image.onerror = (err) => { URL.revokeObjectURL(objectUrl); reject(err); };
+        image.src = objectUrl;
+      });
+      const maxSide = 1280;
+      const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+      const width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+      const height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.62);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.62));
+      const baseName = String(file.name || "job-photo").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "job-photo";
+      return { file: blob ? new File([blob], `${baseName}.jpg`, { type: "image/jpeg" }) : file, dataUrl };
+    } catch (err) {
+      console.warn("Job photo compression failed; using original file", err);
+      return { file, dataUrl: await readPhotoFileAsDataUrl(file) };
+    }
+  };
 
   const handleUpload = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
     setUploading(true);
     try {
-      const newPhotos = [...photos];
-      for (const file of files) {
+      const uploadedPhotos = [];
+      for (const originalFile of files) {
+        const { file, dataUrl } = await compressJobPhoto(originalFile);
         const filename = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
         const path = `jobs/${job.id}/photos/${filename}`;
-        const sRef = storageRef(storage, path);
-        await uploadBytes(sRef, file);
-        const url = await getDownloadURL(sRef);
-        newPhotos.push({
+        let url = "";
+        let storageBacked = true;
+        try {
+          const sRef = storageRef(storage, path);
+          await uploadBytes(sRef, file, { contentType: file.type || "image/jpeg" });
+          url = await getDownloadURL(sRef);
+        } catch (err) {
+          storageBacked = false;
+          console.warn("Job photo Storage upload unavailable; saving inline job-card photo", err);
+          url = dataUrl;
+        }
+        uploadedPhotos.push({
           url,
           filename,
+          type: normalizePhotoType(uploadPhotoType),
+          label: getPhotoTypeMeta(uploadPhotoType).label,
+          storagePath: storageBacked ? path : "",
           uploadedBy: uploaderName || "Unknown",
           uploadedAt: new Date().toISOString(),
         });
       }
-      await updateDoc(doc(db, "jobs", job.id), { photos: newPhotos });
+      await updateDoc(doc(db, "jobs", job.id), { photos: arrayUnion(...uploadedPhotos) });
     } catch (err) {
-      alert("Upload failed: " + err.message);
+      alert("Upload failed: " + (err?.message || err));
     } finally {
       setUploading(false);
       e.target.value = "";
@@ -6467,9 +6732,11 @@ function JobPhotosSection({ job, canDelete, uploaderName, emptyText }) {
     if (!window.confirm("Delete this photo?")) return;
     setDeleting(idx);
     try {
-      const path = `jobs/${job.id}/photos/${photo.filename}`;
-      const sRef = storageRef(storage, path);
-      await deleteObject(sRef).catch(() => {});
+      const path = photo.storagePath || `jobs/${job.id}/photos/${photo.filename}`;
+      if (photo.storagePath || !String(photo.url || "").startsWith("data:")) {
+        const sRef = storageRef(storage, path);
+        await deleteObject(sRef).catch(() => {});
+      }
       const newPhotos = photos.filter((_, i) => i !== idx);
       await updateDoc(doc(db, "jobs", job.id), { photos: newPhotos });
     } catch (err) {
@@ -6483,30 +6750,51 @@ function JobPhotosSection({ job, canDelete, uploaderName, emptyText }) {
     <div style={{ marginBottom: "16px" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px", paddingBottom: "6px", borderBottom: "1px solid " + t.borderLight }}>
         <div style={{ fontSize: "12px", fontWeight: 600, color: t.textMuted, textTransform: "uppercase", letterSpacing: "0.5px" }}>📷 Photos {photos.length > 0 ? `(${photos.length})` : ""}</div>
-        <label style={{ cursor: "pointer", padding: "5px 12px", background: t.accent, color: "#fff", borderRadius: "6px", fontSize: "12px", fontWeight: 600, opacity: uploading ? 0.6 : 1, pointerEvents: uploading ? "none" : "auto" }}>
-          {uploading ? "Uploading…" : "+ Add Photo"}
-          <input type="file" accept="image/*" multiple onChange={handleUpload} style={{ display: "none" }} />
-        </label>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <select value={uploadPhotoType} onChange={(e) => setUploadPhotoType(e.target.value)} disabled={uploading} style={{ padding: "5px 8px", border: "1px solid " + t.border, borderRadius: 6, fontSize: 12, fontWeight: 700, color: t.textSecondary, background: "#fff", fontFamily: "inherit" }}>
+            {PHOTO_TYPE_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.icon} {option.label}</option>)}
+          </select>
+          <label style={{ cursor: "pointer", padding: "5px 12px", background: t.accent, color: "#fff", borderRadius: "6px", fontSize: "12px", fontWeight: 600, opacity: uploading ? 0.6 : 1, pointerEvents: uploading ? "none" : "auto" }}>
+            {uploading ? "Uploading…" : "+ Add Photo"}
+            <input type="file" accept="image/*" multiple onChange={handleUpload} style={{ display: "none" }} />
+          </label>
+        </div>
       </div>
       {photos.length === 0 ? (
         <div style={{ fontSize: "12px", color: t.textMuted, fontStyle: "italic" }}>{emptyText || "No photos yet."}</div>
       ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "8px" }}>
-          {photos.map((photo, idx) => (
-            <div key={idx} style={{ position: "relative", borderRadius: "8px", overflow: "hidden", aspectRatio: "1", background: t.bg, cursor: "pointer" }} onClick={() => setLightboxIdx(idx)}>
-              <img src={photo.url} alt={photo.filename} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
-              {canDelete && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(photo, idx); }}
-                  disabled={deleting === idx}
-                  style={{ position: "absolute", top: "4px", right: "4px", background: "rgba(220,38,38,0.85)", border: "none", color: "#fff", borderRadius: "50%", width: "22px", height: "22px", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
-                >✕</button>
-              )}
-              <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.5)", padding: "2px 4px" }}>
-                <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{photo.uploadedBy}</div>
+        <div style={{ display: "grid", gap: "12px" }}>
+          {PHOTO_TYPE_OPTIONS.map((option) => {
+            const photosForType = photos
+              .map((photo, idx) => ({ photo, idx }))
+              .filter(({ photo }) => normalizePhotoType(photo?.type) === option.value || (!photo?.type && option.value === "general"));
+            if (!photosForType.length) return null;
+            return (
+              <div key={option.value}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6, fontSize: 11, fontWeight: 900, letterSpacing: "0.08em", textTransform: "uppercase", color: t.textMuted }}>
+                  <span>{option.icon}</span><span>{option.label}</span><span style={{ color: t.textMuted }}>({photosForType.length})</span>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(90px, 1fr))", gap: "8px" }}>
+                  {photosForType.map(({ photo, idx }) => (
+                    <div key={idx} style={{ position: "relative", borderRadius: "8px", overflow: "hidden", aspectRatio: "1", background: t.bg, cursor: "pointer" }} onClick={() => setLightboxIdx(idx)}>
+                      <img src={photo.url} alt={photo.filename} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+                      {canDelete && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDelete(photo, idx); }}
+                          disabled={deleting === idx}
+                          style={{ position: "absolute", top: "4px", right: "4px", background: "rgba(220,38,38,0.85)", border: "none", color: "#fff", borderRadius: "50%", width: "22px", height: "22px", cursor: "pointer", fontSize: "12px", display: "flex", alignItems: "center", justifyContent: "center", lineHeight: 1 }}
+                        >✕</button>
+                      )}
+                      <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "rgba(0,0,0,0.5)", padding: "2px 4px" }}>
+                        <div style={{ fontSize: "9px", color: "#fff", fontWeight: 800, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{photo.label || option.label}</div>
+                        <div style={{ fontSize: "9px", color: "rgba(255,255,255,0.8)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{photo.uploadedBy}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -6514,9 +6802,12 @@ function JobPhotosSection({ job, canDelete, uploaderName, emptyText }) {
       {lightboxIdx !== null && photos[lightboxIdx] && (() => {
         const photo = photos[lightboxIdx];
         const total = photos.length;
+        const photoTypeMeta = getPhotoTypeMeta(photo?.type);
+        const goPrevPhoto = () => setLightboxIdx((idx) => (idx - 1 + total) % total);
+        const goNextPhoto = () => setLightboxIdx((idx) => (idx + 1) % total);
         const fmt = (iso) => { try { return new Date(iso).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }); } catch { return iso; } };
         return (
-          <div onClick={() => setLightboxIdx(null)} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.88)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "16px" }}>
+          <div onClick={() => setLightboxIdx(null)} onTouchStart={(e) => setTouchStartX(e.touches?.[0]?.clientX ?? null)} onTouchEnd={(e) => { const endX = e.changedTouches?.[0]?.clientX; if (touchStartX == null || endX == null) return; const delta = endX - touchStartX; setTouchStartX(null); if (Math.abs(delta) < 45) return; delta > 0 ? goPrevPhoto() : goNextPhoto(); }} style={{ position: "fixed", inset: 0, zIndex: 9999, background: "rgba(0,0,0,0.88)", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: "16px", boxSizing: "border-box", overflow: "hidden" }}>
             {/* Close */}
             <button onClick={() => setLightboxIdx(null)} style={{ position: "absolute", top: "16px", right: "20px", background: "none", border: "none", color: "#fff", fontSize: "28px", cursor: "pointer", lineHeight: 1 }}>✕</button>
 
@@ -6524,16 +6815,18 @@ function JobPhotosSection({ job, canDelete, uploaderName, emptyText }) {
             <div style={{ position: "absolute", top: "18px", left: "50%", transform: "translateX(-50%)", color: "rgba(255,255,255,0.6)", fontSize: "13px" }}>{lightboxIdx + 1} / {total}</div>
 
             {/* Nav + image row */}
-            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", gap: "16px", width: "100%", maxWidth: "900px" }}>
-              <button onClick={() => setLightboxIdx((lightboxIdx - 1 + total) % total)} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: "50%", width: "44px", height: "44px", fontSize: "22px", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
-              <img src={photo.url} alt={photo.filename} style={{ flex: 1, maxHeight: "70vh", objectFit: "contain", borderRadius: "8px", display: "block" }} />
-              <button onClick={() => setLightboxIdx((lightboxIdx + 1) % total)} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: "50%", width: "44px", height: "44px", fontSize: "22px", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+            <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "10px", width: "100%", maxWidth: "min(900px, 100%)", boxSizing: "border-box", overflow: "hidden" }}>
+              <button onClick={goPrevPhoto} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: "50%", width: "40px", height: "40px", fontSize: "22px", cursor: "pointer", flex: "0 0 40px", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+              <img src={photo.url} alt={photo.filename} style={{ flex: "1 1 auto", minWidth: 0, width: "auto", maxWidth: "calc(100vw - 120px)", maxHeight: "calc(100dvh - 150px)", objectFit: "contain", borderRadius: "8px", display: "block" }} />
+              <button onClick={goNextPhoto} style={{ background: "rgba(255,255,255,0.1)", border: "none", color: "#fff", borderRadius: "50%", width: "40px", height: "40px", fontSize: "22px", cursor: "pointer", flex: "0 0 40px", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
             </div>
 
             {/* Meta */}
-            <div onClick={(e) => e.stopPropagation()} style={{ marginTop: "14px", textAlign: "center" }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ marginTop: "14px", textAlign: "center", display: "grid", gap: 6, justifyItems: "center" }}>
+              <div style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 999, background: "rgba(255,255,255,0.12)", color: "#fff", fontSize: 12, fontWeight: 900 }}>{photoTypeMeta.icon} {photo.label || photoTypeMeta.label}</div>
               <div style={{ color: "#fff", fontSize: "13px", fontWeight: 600 }}>{photo.uploadedBy}</div>
               {photo.uploadedAt && <div style={{ color: "rgba(255,255,255,0.55)", fontSize: "12px", marginTop: "3px" }}>{fmt(photo.uploadedAt)}</div>}
+              {photo.url && <a href={photo.url} target="_blank" rel="noreferrer" style={{ color: "#93c5fd", fontSize: 12, fontWeight: 900, textDecoration: "none" }}>Open Original</a>}
             </div>
           </div>
         );
@@ -6629,7 +6922,7 @@ async function generateJobPDF(job, updates, pmUpdates, members) {
     doc2.setTextColor(17, 24, 39);
     doc2.setFontSize(9);
 
-    const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+    const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
 
     const renderMaterials = (mats) => {
       Object.entries(mats || {}).forEach(([itemId, qty]) => {
@@ -7156,6 +7449,7 @@ function FoamPricingCalculatorView() {
   const manufacturerPresets = {
     ris: { label: "RIS", openCellCost: "2062", openCellYield: "19000", closedCellCost: "2604", closedCellYield: "3200" },
     cameronAshley: { label: "Cameron Ashley", openCellCost: "1927", openCellYield: "19000", closedCellCost: "2467", closedCellYield: "3200" },
+    direct: { label: "Direct", openCellCost: "1628", openCellYield: "19000" },
   };
   const defaults = {
     sqft: "4000",
@@ -7241,7 +7535,14 @@ function FoamPricingCalculatorView() {
   const calc = useMemo(() => calcFor(), [form]);
   const applyManufacturerPreset = (manufacturerKey) => {
     const preset = manufacturerPresets[manufacturerKey];
-    setForm(prev => ({ ...prev, manufacturer: manufacturerKey, ...(preset ? { openCellCost: preset.openCellCost, openCellYield: preset.openCellYield, closedCellCost: preset.closedCellCost, closedCellYield: preset.closedCellYield } : {}) }));
+    setForm(prev => ({
+      ...prev,
+      manufacturer: manufacturerKey,
+      ...(preset?.openCellCost ? { openCellCost: preset.openCellCost } : {}),
+      ...(preset?.openCellYield ? { openCellYield: preset.openCellYield } : {}),
+      ...(preset?.closedCellCost ? { closedCellCost: preset.closedCellCost } : {}),
+      ...(preset?.closedCellYield ? { closedCellYield: preset.closedCellYield } : {}),
+    }));
   };
   const setLineField = (id, key, value) => setForm(prev => ({ ...prev, lines: (prev.lines || defaults.lines).map(line => line.id === id ? { ...line, [key]: value } : line) }));
   const addLine = () => setForm(prev => ({ ...prev, lines: [...(prev.lines || defaults.lines), { id: `line-${Date.now()}`, sqft: "", thickness: "", foamType: firstLine.foamType || "openCell" }] }));
@@ -7295,7 +7596,12 @@ function FoamPricingCalculatorView() {
             </div>
             <div style={fieldWrapStyle}>
               <label style={labelStyle}>Manufacturer preset</label>
-              <select value={form.manufacturer} onChange={(e) => applyManufacturerPreset(e.target.value)} style={inputStyle}><option value="ris">RIS</option><option value="cameronAshley">Cameron Ashley</option><option value="custom">Custom / manual</option></select>
+              <select value={form.manufacturer} onChange={(e) => applyManufacturerPreset(e.target.value)} style={inputStyle}>
+                <option value="ris">RIS</option>
+                <option value="cameronAshley">Cameron Ashley</option>
+                <option value="direct">Direct</option>
+                <option value="custom">Custom / manual</option>
+              </select>
               <div style={hintStyle}>Preset fills set cost and yield below. All four values stay editable for the presentation.</div>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(210px, 1fr))", gap: 10 }}>
@@ -7303,7 +7609,10 @@ function FoamPricingCalculatorView() {
                 const active = form.manufacturer === key;
                 return <button key={key} type="button" onClick={() => applyManufacturerPreset(key)} style={{ textAlign: "left", padding: "13px 14px", borderRadius: 16, border: `1px solid ${active ? "#2563eb" : "#dbeafe"}`, background: active ? "linear-gradient(180deg,#eff6ff,#fff)" : "#fff", boxShadow: active ? "0 12px 28px rgba(37,99,235,0.12)" : "none", cursor: "pointer", fontFamily: "inherit" }}>
                   <div style={{ fontSize: 13, fontWeight: 950, color: active ? "#1d4ed8" : t.text }}>{preset.label}</div>
-                  <div style={{ marginTop: 7, fontSize: 11.5, fontWeight: 750, color: t.textSecondary, lineHeight: 1.45 }}>Open: {money(parseFloat(preset.openCellCost))} / {Number(preset.openCellYield).toLocaleString()} BF<br />Closed: {money(parseFloat(preset.closedCellCost))} / {Number(preset.closedCellYield).toLocaleString()} BF</div>
+                  <div style={{ marginTop: 7, fontSize: 11.5, fontWeight: 750, color: t.textSecondary, lineHeight: 1.45 }}>
+                    Open: {money(parseFloat(preset.openCellCost))} / {Number(preset.openCellYield).toLocaleString()} BF
+                    {preset.closedCellCost && preset.closedCellYield && <><br />Closed: {money(parseFloat(preset.closedCellCost))} / {Number(preset.closedCellYield).toLocaleString()} BF</>}
+                  </div>
                 </button>;
               })}
             </div>
@@ -7389,8 +7698,12 @@ function FoamPricingCalculatorView() {
 
 function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets, activityLog, pmUpdates, members, inventory, inventoryItems = INVENTORY_ITEMS, inventoryEvents = [], truckInventory, truckSecondaryInventory = {}, derivedTruckInventory = {}, truckInventoryParity = {}, warehouseInventoryParity = null, jobUsageParityByJobId = {}, jobUsageParitySummary = null, returnLog, loadLog, tools, toolCheckouts, employeeFlags, truckDailyLogs = [], consumables = [], diagnosticsState = {}, onAddTool, onEditTool, onDeleteTool, onCheckout, onReturn, onSetFlag, onAddTruck, onDeleteTruck, onReorderTruck, onAddJob, onEditJob, onSaveJobMaterials, onDeleteJob, onUpdateTicket, onSubmitTicket, onLogAction, onSubmitPmUpdate, onUpdateInventory, onSaveInventoryItem, onDeleteInventoryItem, onAddJobUpdate, onSubmitUpdate, onCloseOutJob, onUpdateTruck, onSaveTruckToolInventory, onSaveConsumable, onDeleteConsumable, onAdminSetLoadout, onAdminUnload, onLogout, foamPartsInventory, projectToolsInventory, onUpdateFoamParts, onUpdateProjectTools, builders, onAddBuilder, onEditBuilder, onDeleteBuilder, suppliesCheckouts, onSuppliesCheckout }) {
   const [view, setView] = useState("schedule");
+  const [mobileOfficeNavOpen, setMobileOfficeNavOpen] = useState(false);
+  const [mobileOfficeNavClosing, setMobileOfficeNavClosing] = useState(false);
   const [scheduleView, setScheduleView] = useState("insulation"); // "insulation" | "energySeal"
   const [scheduleTvMode, setScheduleTvMode] = useState(false);
+  const [showWeeklyTruckPlan, setShowWeeklyTruckPlan] = useState(false);
+  const [dailyAgendaExporting, setDailyAgendaExporting] = useState(false);
   // Builders DB state
   const [builderSearchQuery, setBuilderSearchQuery] = useState("");
   const [showAddBuilder, setShowAddBuilder] = useState(false);
@@ -7400,11 +7713,15 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [quickRevenueJobId, setQuickRevenueJobId] = useState(null);
   const [quickRevenueVal, setQuickRevenueVal] = useState("");
   const [showAddJob, setShowAddJob] = useState(false);
+  const [addJobSaving, setAddJobSaving] = useState(false);
+  const [addJobError, setAddJobError] = useState("");
   const [scanningWorkOrder, setScanningWorkOrder] = useState(false);
   const [showTakeoffImport, setShowTakeoffImport] = useState(false);
   const [takeoffQuotes, setTakeoffQuotes] = useState([]);
   const [takeoffLoading, setTakeoffLoading] = useState(false);
   const [expandedJobs, setExpandedJobs] = useState({});
+  const [tvCompletedCollapsed, setTvCompletedCollapsed] = useState(true);
+  const [tvMaterialsJobId, setTvMaterialsJobId] = useState(null);
   const toggleJobExpand = (id) => setExpandedJobs(prev => ({ ...prev, [id]: !prev[id] }));
   const [showAddTruck, setShowAddTruck] = useState(false);
   const [truckHistoryView, setTruckHistoryView] = useState(null);
@@ -7505,7 +7822,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const [expandedTruckSections, setExpandedTruckSections] = useState({}); // truckId -> { checklist, loads, returns }
   const toggleTruckSection = (truckId, section) => setExpandedTruckSections(prev => ({ ...prev, [truckId]: { ...(prev[truckId] || {}), [section]: !(prev[truckId] || {})[section] } }));
   const [showReconcile, setShowReconcile] = useState(false);
-  const [toasts, dismissToast] = useJobUpdateToasts(updates, jobs);
+  const [toasts, dismissToast, dismissAllToasts] = useJobUpdateToasts(updates, jobs);
 
   const deptTruckIds = new Set(
     trucks.filter(tr => scheduleView === "energySeal" ? tr.department === "energySeal" : (tr.department !== "energySeal"))
@@ -7637,7 +7954,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       .slice(0, 1)
       .map(tr => ({ ...tr, name: "Energy Seal Van", vehicleName: "Energy Seal Van", members: normalizeEnergySealLabel(tr.members) }))
     : [...trucks].filter(tr => tr.department !== "energySeal").sort(orderSort);
-  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+  const workWeekStart = getCurrentWorkWeekStart();
+  const workWeekDates = getCurrentWorkWeekDates();
+  const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
 
   const getLatestUpdate = (jobId) => { const u = updates.filter((u) => u.jobId === jobId).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp)); return u.length > 0 ? u[0] : null; };
   const getCompletedUpdateForJob = (jobId) => updates.filter((u) => u.jobId === jobId && u.status === "completed").sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))[0] || null;
@@ -7654,6 +7973,35 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     return 1;
   };
   const compareScheduleJobStatus = (a, b) => getScheduleJobStatusRank(a) - getScheduleJobStatusRank(b);
+  const compareScheduleJobs = (a, b) => {
+    const dateCompare = (a.date || "").localeCompare(b.date || "");
+    if (dateCompare) return dateCompare;
+    return getJobRouteOrder(a) - getJobRouteOrder(b)
+      || compareScheduleJobStatus(a, b)
+      || (a.builder || a.address || "").localeCompare(b.builder || b.address || "");
+  };
+  const saveTruckWeekPlan = async (truck, changes) => {
+    if (!truck?.id || !onUpdateTruck) return;
+    const current = getTruckWeekPlan(truck, workWeekStart);
+    const next = {
+      ...current,
+      ...changes,
+      workDays: Array.isArray(changes.workDays) ? changes.workDays : current.workDays,
+      expectedDays: Math.max(0, Math.min(7, parseInt(changes.expectedDays ?? current.expectedDays, 10) || 0)),
+      updatedAt: new Date().toISOString(),
+    };
+    await onUpdateTruck(truck.id, { [`weeklySchedules.${workWeekStart}`]: next });
+  };
+  const updateCrewDayJobOrder = async (jobsForDay, jobId, nextOrder) => {
+    const ordered = [...jobsForDay].sort(compareScheduleJobs);
+    const moving = ordered.find((job) => job.id === jobId);
+    if (!moving) return;
+    const remaining = ordered.filter((job) => job.id !== jobId);
+    const targetIndex = Math.max(0, Math.min(remaining.length, parseInt(nextOrder, 10) - 1));
+    remaining.splice(targetIndex, 0, moving);
+    await Promise.all(remaining.map((job, index) => onEditJob(job.id, { routeOrder: index + 1 })));
+    onLogAction?.(`Updated route order for ${moving.builder || moving.address || "job"}`);
+  };
   const isRemovalJob = (job) => normalizeInsulationJobType(job?.type || job?.jobCategory || "") === "Removal" || /removal|remove|tear/i.test(`${job?.type || ""} ${job?.jobCategory || ""} ${job?.notes || ""}`);
   const isRetroJob = (job) => String(job?.jobCategory || "").toLowerCase() === "retro";
   const isNewConstructionJob = (job) => String(job?.jobCategory || "").toLowerCase() === "new construction";
@@ -7683,23 +8031,95 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     if (!logs.length && job?.materialsUsed && Object.keys(job.materialsUsed).length) logs.push({ date: "Closeout", materials: job.materialsUsed });
     return logs.map((log, idx) => {
       const tokens = Object.entries(log.materials || {}).map(([id, qty]) => formatTvMaterialToken(id, qty)).filter(Boolean);
-      return tokens.length ? `${idx + 1}. ${tokens.join(" ")}` : null;
+      const label = log.date || `Log ${idx + 1}`;
+      return tokens.length ? `${label}: ${tokens.join(" · ")}` : null;
     }).filter(Boolean);
   };
+  const readFileAsBase64 = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || "").split(",")[1] || "");
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+
+  const handleExportDailyAgenda = async () => {
+    if (dailyAgendaExporting) return;
+    setDailyAgendaExporting(true);
+    try {
+      const agendaDate = todayCST();
+      const exportJobs = showUncheckedOnly ? activeJobs.filter((j) => j.jobCheckedAM !== "Yes" || j.jobCheckedPM !== "Yes") : activeJobs;
+      const agenda = buildDailyAgenda({ jobs: exportJobs, trucks, members, updates, date: agendaDate, scheduleView, includeAllActiveJobs: true });
+      if (!agenda.summary.jobs && exportJobs.length > 0) {
+        throw new Error("No exportable jobs found from the current active schedule.");
+      }
+      await exportDailyAgendaImage(agenda, {
+        fileName: buildDailyAgendaFileName(agendaDate, scheduleView),
+        width: scheduleView === "energySeal" ? 1600 : 2400,
+      });
+    } catch (err) {
+      alert("Agenda image export failed: " + (err?.message || err));
+    } finally {
+      setDailyAgendaExporting(false);
+    }
+  };
+
+  const loadImageFromFile = (file) => new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = (error) => { URL.revokeObjectURL(url); reject(error); };
+    img.src = url;
+  });
+
+  const buildWorkOrderScanPayload = async (file) => {
+    if (!file.type?.startsWith("image/")) {
+      return { imageBase64: await readFileAsBase64(file), mimeType: file.type || "application/octet-stream", photoFile: null, photoName: "" };
+    }
+    const img = await loadImageFromFile(file);
+    const maxSide = 1600;
+    const scale = Math.min(1, maxSide / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+    const width = Math.max(1, Math.round((img.naturalWidth || img.width) * scale));
+    const height = Math.max(1, Math.round((img.naturalHeight || img.height) * scale));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(img, 0, 0, width, height);
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+    const photoBlob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.72));
+    const baseName = String(file.name || "work-order").replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9._-]/g, "_") || "work-order";
+    const photoFile = photoBlob ? new File([photoBlob], `${baseName}.jpg`, { type: "image/jpeg" }) : file;
+    return { imageBase64: dataUrl.split(",")[1] || "", mimeType: "image/jpeg", photoFile, photoName: photoFile.name };
+  };
+
+  const describeScanError = (err) => {
+    const code = String(err?.code || "").toLowerCase();
+    const message = String(err?.message || "");
+    if (code.includes("deadline-exceeded") || message.includes("deadline-exceeded")) {
+      return "The scan timed out before it finished. I just made this path use smaller uploads and a longer server timeout — please try again after the app updates.";
+    }
+    if (code.includes("resource-exhausted") || message.includes("quota")) {
+      return "The scan service is hitting a quota/billing limit. Try again in a minute or send Johnny/Hermes this exact error.";
+    }
+    return message || "Unknown error";
+  };
+
   const handleScanWorkOrder = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setScanningWorkOrder(true);
     try {
-      const reader = new FileReader();
-      const base64 = await new Promise((res, rej) => {
-        reader.onload = () => res(reader.result.split(',')[1]);
-        reader.onerror = rej;
-        reader.readAsDataURL(file);
-      });
+      const payload = await buildWorkOrderScanPayload(file);
+      if (payload.photoFile) {
+        setJobForm(prev => ({
+          ...prev,
+          scannedWorkOrderFile: payload.photoFile,
+          scannedWorkOrderName: payload.photoName || payload.photoFile.name,
+        }));
+      }
       const fns = getFunctions(app);
-      const scan = httpsCallable(fns, 'scanWorkOrder');
-      const { data } = await scan({ imageBase64: base64, mimeType: file.type || 'image/jpeg' });
+      const scan = httpsCallable(fns, 'scanWorkOrder', { timeout: 120000 });
+      const { data } = await scan({ imageBase64: payload.imageBase64, mimeType: payload.mimeType });
       const r = data.result || {};
 
       // Fuzzy-match crew names against the members list
@@ -7724,15 +8144,48 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         revenue:        r.revenue  != null ? String(r.revenue) : prev.revenue,
         notes:          r.notes    || prev.notes,
         crewMemberIds:  matchedIds.length > 0 ? matchedIds : prev.crewMemberIds,
+        scannedWorkOrderFile:  payload.photoFile || (file.type?.startsWith("image/") ? file : prev.scannedWorkOrderFile),
+        scannedWorkOrderName:  payload.photoName || (file.type?.startsWith("image/") ? file.name : prev.scannedWorkOrderName),
       }));
     } catch (err) {
-      alert('Scan failed: ' + (err.message || 'Unknown error'));
+      alert('Scan failed: ' + describeScanError(err));
     } finally {
+      if (e.target) e.target.value = "";
       setScanningWorkOrder(false);
     }
   };
 
-  const handleAddJob = () => { const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean); const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null; const safeDate = normalizeSchedulableJobDate(jobForm.date); const safeType = scheduleView === "energySeal" ? jobForm.type : normalizeInsulationJobType(jobForm.type); onAddJob({ ...jobForm, type: safeType, date: safeDate, crewMemberIds: cleanCrew, revenue: revenueVal }); onLogAction("Added job: " + jobForm.address + " (" + safeType + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")); setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "" }); setAddCrewSearch(""); setBuilderSearch(""); setShowBuilderDropdown(false); setShowAddJob(false); };
+  const handleAddJob = async () => {
+    if (addJobSaving) return;
+    setAddJobError("");
+    const hasJobName = !!String(jobForm.builder || jobForm.address || "").trim();
+    if (!hasJobName) {
+      setAddJobError("Enter either a Builder / Customer or a Job Address first.");
+      return;
+    }
+    const cleanCrew = (jobForm.crewMemberIds || []).filter(Boolean);
+    const revenueVal = jobForm.revenue !== "" ? parseFloat(jobForm.revenue) : null;
+    const sqftVal = jobForm.sqft !== "" ? parseFloat(jobForm.sqft) : null;
+    const laborVal = jobForm.laborValue !== "" ? parseFloat(jobForm.laborValue) : null;
+    const safeDate = normalizeSchedulableJobDate(jobForm.date);
+    const safeType = scheduleView === "energySeal" ? jobForm.type : normalizeInsulationJobType(jobForm.type);
+    const payload = { ...jobForm, type: safeType, date: safeDate, crewMemberIds: cleanCrew, revenue: revenueVal, sqft: sqftVal, laborValue: laborVal };
+    setAddJobSaving(true);
+    try {
+      await onAddJob(payload);
+      onLogAction("Added job: " + (jobForm.address || jobForm.builder || "Untitled job") + " (" + safeType + ") — Crew: " + (cleanCrew.map(id => members.find(m => m.id === id)?.name).filter(Boolean).join(", ") || "none")).catch((err) => console.warn("Add-job activity log failed", err));
+      setJobForm({ address: "", builder: "", type: JOB_TYPES[0], truckId: "", crewMemberIds: [], date: todayStr(), notes: "", jobCategory: "", revenue: "", sqft: "", laborMode: "percent", laborValue: "", scannedWorkOrderFile: null, scannedWorkOrderName: "" });
+      setAddCrewSearch("");
+      setBuilderSearch("");
+      setShowBuilderDropdown(false);
+      setShowAddJob(false);
+    } catch (err) {
+      console.error("Add job failed", err);
+      setAddJobError(err?.message || "Could not add this job. Try again or send Johnny/Hermes this screen.");
+    } finally {
+      setAddJobSaving(false);
+    }
+  };
 
   const openTakeoffImport = async () => {
     setShowTakeoffImport(true);
@@ -7972,12 +8425,52 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   const inProgressTodayCount = todaysJobs.filter((j) => getLatestJobStatusValue(j.id) === "in_progress").length;
   const unassignedActiveJobs = activeJobs.filter((j) => !(j.crewMemberIds || []).filter(Boolean).length);
   const completedTodayCount = updates.filter((u) => u.status === "completed" && tsToCST(u.timestamp) === todayCST()).length;
+  const receptionJobs = [...jobs].sort((a, b) => {
+    const aReady = getJobIntakeStatus(a).status === "ready" ? 1 : 0;
+    const bReady = getJobIntakeStatus(b).status === "ready" ? 1 : 0;
+    return aReady - bReady || String(a.date || "").localeCompare(String(b.date || ""));
+  });
+  const intakeNeedsInfoCount = receptionJobs.filter((job) => getJobIntakeStatus(job).status !== "ready").length;
+  const moneyFmt = (value) => `$${(parseFloat(value) || 0).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  const updateExpectedMaterialQty = (job, itemId, rawValue) => {
+    const nextExpected = { ...(job.expectedMaterials || {}) };
+    const parsed = parseFloat(rawValue);
+    if (Number.isFinite(parsed) && parsed > 0) nextExpected[itemId] = parsed;
+    else delete nextExpected[itemId];
+    return onEditJob(job.id, { ...job, expectedMaterials: nextExpected });
+  };
+  const getJobTakeoffAreas = (job) => normalizeMaterialTakeoffAreas(job.materialTakeoffAreas || buildDefaultMaterialTakeoffAreas());
+  const getFiberglassCoverageItems = () => inventoryItems.filter((item) => !item.isPieces && (parseFloat(item.sqftPerTube || item.coverageSqft || item.sqftPerUnit) || 0) > 0);
+  const getFoamTakeoffItems = () => inventoryItems.filter((item) => !item.isPieces && item.category === "Foam" && !/\bA\b|A-side|\bA$/i.test(item.name || ""));
+  const saveJobTakeoffAreas = (job, areas) => {
+    const normalizedAreas = normalizeMaterialTakeoffAreas(areas);
+    const calc = calculateExpectedMaterialsFromTakeoffAreas(normalizedAreas, inventoryItems);
+    return onEditJob(job.id, {
+      ...job,
+      materialTakeoffAreas: normalizedAreas,
+      expectedMaterials: calc.expectedMaterials,
+      ...(calc.totalSqft > 0 ? { sqft: Math.round(calc.totalSqft * 100) / 100 } : {}),
+    });
+  };
+  const updateJobTakeoffArea = (job, areaId, changes) => {
+    const areas = getJobTakeoffAreas(job).map((area) => area.id === areaId ? { ...area, ...changes } : area);
+    return saveJobTakeoffAreas(job, areas);
+  };
+  const addJobTakeoffArea = (job) => {
+    const areas = getJobTakeoffAreas(job);
+    return saveJobTakeoffAreas(job, [...areas, { id: `custom-${Date.now()}`, key: "custom", label: "Custom area", materialType: normalizeInsulationJobType(job.type) === "Foam" ? "foam" : "fiberglass", materialItemId: "", sqft: "", installedInches: "", oversprayInches: "1", foamType: "openCell" }]);
+  };
+  const removeJobTakeoffArea = (job, areaId) => {
+    const areas = getJobTakeoffAreas(job).filter((area) => area.id !== areaId);
+    return saveJobTakeoffAreas(job, areas.length ? areas : buildDefaultMaterialTakeoffAreas());
+  };
 
   const tabStyle = (active) => ({ padding: "9px 16px", background: active ? "linear-gradient(135deg,#2563eb,#1d4ed8)" : "rgba(255,255,255,0.74)", color: active ? "#fff" : t.textSecondary, border: active ? "1px solid rgba(37,99,235,0.45)" : "1px solid " + t.border, borderRadius: "14px", fontSize: "12.5px", fontWeight: active ? 800 : 650, cursor: "pointer", fontFamily: "inherit", position: "relative", boxShadow: active ? "0 10px 24px rgba(37,99,235,0.20)" : "0 6px 16px rgba(15,23,42,0.04)" });
 
   const NAV_ICONS = {
     schedule: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>,
     calendar: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18M8 14h8M8 18h5"/></svg>,
+    reception: <span style={{ fontSize: 20, lineHeight: 1 }}>🧾</span>,
     tickets: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M2 9a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v1.5a1.5 1.5 0 0 0 0 3V15a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1.5a1.5 1.5 0 0 0 0-3V9z"/></svg>,
     trucks: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="1" y="3" width="15" height="13" rx="2"/><path d="M16 8h4l3 3v5h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
     roster: <svg width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><circle cx="9" cy="7" r="4"/><path d="M3 21v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2"/><path d="M16 3.13a4 4 0 0 1 0 7.75M21 21v-2a4 4 0 0 0-3-3.87"/></svg>,
@@ -7988,11 +8481,25 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
   };
   const featureFlags = useMemo(() => getFeatureFlags(import.meta.env), []);
   const NAV_ITEMS = useMemo(() => buildOfficeNavItems({ openChecklistShortageCount, openTicketCount }), [openChecklistShortageCount, openTicketCount]);
+  useEffect(() => {
+    if (!mobileOfficeNavClosing) return undefined;
+    const timeout = window.setTimeout(() => setMobileOfficeNavClosing(false), 170);
+    return () => window.clearTimeout(timeout);
+  }, [mobileOfficeNavClosing]);
+  const toggleMobileOfficeNav = useCallback(() => {
+    if (mobileOfficeNavOpen) {
+      setMobileOfficeNavClosing(true);
+      setMobileOfficeNavOpen(false);
+    } else {
+      setMobileOfficeNavClosing(false);
+      setMobileOfficeNavOpen(true);
+    }
+  }, [mobileOfficeNavOpen]);
 
   return (
     <div className={`office-app-shell ${view === "schedule" && scheduleTvMode ? "office-tv-mode" : ""}`} style={{ minHeight: "100dvh", background: "radial-gradient(circle at 20% 0%, rgba(37,99,235,0.12), transparent 30%), radial-gradient(circle at 90% 10%, rgba(16,185,129,0.10), transparent 28%), " + t.bg, paddingBottom: "24px", paddingLeft: "86px", paddingTop: "calc(64px + env(safe-area-inset-top, 0px))" }}>
       <style>{kbStyles}</style>
-      <ToastContainer toasts={toasts} onDismiss={dismissToast} />
+      <ToastContainer toasts={toasts} onDismiss={dismissToast} onDismissAll={dismissAllToasts} />
       {showEodSummary && <EodSummaryModal jobs={jobs} updates={updates} tickets={tickets} members={members} loadLog={loadLog} returnLog={returnLog} onClose={() => setShowEodSummary(false)} hideMaterialCosts={view === "schedule" && scheduleTvMode} />}
       {/* Top header — premium wordmark + session */}
       <div className="office-top-header" style={{ padding: "9px 20px", paddingTop: "calc(9px + env(safe-area-inset-top, 0px))", position: "fixed", top: 0, left: 0, right: 0, zIndex: 100, background: "rgba(255,255,255,0.74)", WebkitBackdropFilter: "blur(22px)", backdropFilter: "blur(22px)", boxShadow: "0 18px 45px rgba(15,23,42,0.16)", borderBottom: "1px solid rgba(148,163,184,0.24)" }}>
@@ -8074,34 +8581,45 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       </div>
 
       <div className="office-mobile-bottom-nav" aria-label="Office navigation">
-        {NAV_ITEMS.map(item => {
-          const isActive = view === item.key;
-          return (
-            <button key={item.key}
-              className="nav-tab-btn office-mobile-nav-btn"
-              title={item.label}
-              onClick={() => { if (shouldClearTruckFilterForNav(item.key)) setTruckFilter(null); setView(item.key); }}
-              style={{
-                width: "100%",
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",
-                justifyContent: "center",
-                background: isActive ? "linear-gradient(135deg,#2563eb,#0f172a)" : "transparent",
-                border: isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid transparent",
-                cursor: "pointer",
-                fontFamily: "inherit",
-                position: "relative",
-                gap: "3px",
-                transition: "all 0.15s ease",
-                boxShadow: isActive ? "0 10px 22px rgba(37,99,235,0.24)" : "none",
-              }}>
-              <span style={{ lineHeight: 1, color: isActive ? "#fff" : "#64748b", transform: isActive ? "scale(1.06)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
-              <span className="office-mobile-nav-label" style={{ fontSize: "9px", fontWeight: 900, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
-              {item.badge > 0 && <span style={{ position: "absolute", top: "-3px", right: "-3px", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
-            </button>
-          );
-        })}
+        <div className={`office-mobile-nav-panel ${mobileOfficeNavOpen ? "open" : mobileOfficeNavClosing ? "closing" : "closed"}`}>
+          {NAV_ITEMS.map(item => {
+            const isActive = view === item.key;
+            return (
+              <button key={item.key}
+                className="nav-tab-btn office-mobile-nav-btn"
+                title={item.label}
+                onClick={() => { if (shouldClearTruckFilterForNav(item.key)) setTruckFilter(null); setMobileOfficeNavClosing(true); setMobileOfficeNavOpen(false); setView(item.key); }}
+                style={{
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: isActive ? "linear-gradient(135deg,#2563eb,#0f172a)" : "rgba(248,250,252,0.82)",
+                  border: isActive ? "1px solid rgba(37,99,235,0.45)" : "1px solid rgba(148,163,184,0.20)",
+                  cursor: "pointer",
+                  fontFamily: "inherit",
+                  position: "relative",
+                  gap: "3px",
+                  transition: "all 0.15s ease",
+                  boxShadow: isActive ? "0 10px 22px rgba(37,99,235,0.24)" : "none",
+                }}>
+                <span style={{ lineHeight: 1, color: isActive ? "#fff" : "#64748b", transform: isActive ? "scale(1.06)" : "scale(1)", display: "block", transition: "all 0.15s ease" }}>{NAV_ICONS[item.key]}</span>
+                <span className="office-mobile-nav-label" style={{ fontSize: "9px", fontWeight: 900, color: isActive ? "#fff" : "#64748b", transition: "all 0.15s", letterSpacing: "-0.25px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.label}</span>
+                {item.badge > 0 && <span style={{ position: "absolute", top: "-3px", right: "-3px", background: t.danger, color: "#fff", fontSize: "9px", fontWeight: 800, borderRadius: "99px", padding: "1px 4px", minWidth: "15px", height: "15px", display: "flex", alignItems: "center", justifyContent: "center", animation: "badgePulse 1.8s ease-in-out infinite" }}>{item.badge}</span>}
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          className="office-mobile-nav-launcher"
+          aria-label={mobileOfficeNavOpen ? "Close office navigation" : "Open office navigation"}
+          aria-expanded={mobileOfficeNavOpen}
+          onClick={toggleMobileOfficeNav}
+          style={{ transform: mobileOfficeNavOpen ? "translateY(-2px) rotate(90deg) scale(1.04)" : "translateY(0) rotate(0deg) scale(1)" }}
+        >
+          {mobileOfficeNavOpen ? <span style={{ fontSize: 26, lineHeight: 1 }}>×</span> : <span style={{ display: "grid", placeItems: "center", gap: 3 }}><span style={{ width: 22, height: 2, borderRadius: 99, background: "#fff" }} /><span style={{ width: 22, height: 2, borderRadius: 99, background: "#fff" }} /><span style={{ width: 22, height: 2, borderRadius: 99, background: "#fff" }} /></span>}
+        </button>
       </div>
 
       <div className="office-content" style={{ padding: "24px 20px", maxWidth: "1480px", margin: "0 auto" }}>
@@ -8189,11 +8707,57 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               </div>
               <div className="office-schedule-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <Button variant="secondary" onClick={() => setScheduleTvMode((p) => !p)} style={{ fontSize: 12, background: scheduleTvMode ? "linear-gradient(135deg,#0f172a,#2563eb)" : "rgba(255,255,255,0.9)", color: scheduleTvMode ? "#fff" : t.textSecondary, boxShadow: scheduleTvMode ? "0 14px 30px rgba(37,99,235,0.26)" : "0 8px 20px rgba(15,23,42,0.05)" }}>{scheduleTvMode ? "↩ Standard View" : "📺 TV Mode"}</Button>
+                <Button variant="secondary" onClick={handleExportDailyAgenda} disabled={dailyAgendaExporting} style={{ fontSize: 12 }}>{dailyAgendaExporting ? "Creating…" : "🖼 Export Agenda"}</Button>
+                <Button variant="secondary" onClick={() => setShowWeeklyTruckPlan((p) => !p)} style={{ fontSize: 12, background: showWeeklyTruckPlan ? "linear-gradient(135deg,#2563eb,#0f172a)" : "rgba(255,255,255,0.9)", color: showWeeklyTruckPlan ? "#fff" : t.textSecondary }}>🗓 Truck Week</Button>
                 <Button variant="secondary" onClick={() => setShowEodSummary(true)} style={{ fontSize: 12 }}>📋 EOD Summary</Button>
                 <Button variant="secondary" onClick={() => setShowOnHold((p) => !p)} style={{ fontSize: 12, background: showOnHold ? "linear-gradient(135deg,#f59e0b,#92400e)" : "rgba(255,255,255,0.9)", color: showOnHold ? "#fff" : t.textSecondary, boxShadow: showOnHold ? "0 14px 30px rgba(245,158,11,0.24)" : "0 8px 20px rgba(15,23,42,0.05)" }}>⏸ On Hold {onHoldJobs.length > 0 ? `(${onHoldJobs.length})` : ""}</Button>
-                <Button onClick={() => { setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }} style={{ background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.28)" }}>+ Add Job</Button>
+                <Button onClick={() => { setAddJobError(""); setJobForm({ ...jobForm, date: todayStr(), type: scheduleView === "energySeal" ? "Energy Seal" : jobForm.type }); setShowAddJob(true); }} style={{ background: "linear-gradient(135deg,#2563eb,#0f172a)", boxShadow: "0 14px 30px rgba(37,99,235,0.28)" }}>+ Add Job</Button>
               </div>
             </div>
+            {showWeeklyTruckPlan && (
+              <div style={{ marginBottom: 18, padding: 16, borderRadius: 24, background: "linear-gradient(135deg,#ffffff,#eff6ff)", border: "1px solid rgba(37,99,235,0.20)", boxShadow: "0 16px 42px rgba(37,99,235,0.10)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 950, letterSpacing: "0.14em", textTransform: "uppercase", color: "#2563eb" }}>Truck weekly schedule</div>
+                    <div style={{ fontSize: 18, fontWeight: 950, color: t.text, letterSpacing: "-0.4px" }}>Week of {formatChecklistDayDate(workWeekStart).dateLabel}</div>
+                    <div style={{ fontSize: 12, color: t.textMuted, marginTop: 2 }}>Set which days each truck is expected to run and the expected day count for the week.</div>
+                  </div>
+                  <Button variant="secondary" onClick={() => setShowWeeklyTruckPlan(false)} style={{ fontSize: 12 }}>Hide</Button>
+                </div>
+                <div style={{ display: "grid", gap: 10 }}>
+                  {sortedTrucks.map((truck) => {
+                    const plan = getTruckWeekPlan(truck, workWeekStart);
+                    const workSet = new Set(plan.workDays);
+                    return (
+                      <div key={truck.id} style={{ display: "grid", gridTemplateColumns: "minmax(150px, 0.7fr) minmax(260px, 1.4fr) minmax(130px, 0.35fr)", gap: 10, alignItems: "center", padding: 12, borderRadius: 18, background: "rgba(255,255,255,0.86)", border: "1px solid rgba(148,163,184,0.24)" }}>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 950, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{truckDisplayName(truck)}</div>
+                          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>{plan.workDays.length} selected · {plan.expectedDays || 0} expected</div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, minmax(0, 1fr))", gap: 6 }}>
+                          {workWeekDates.map((date) => {
+                            const meta = formatChecklistDayDate(date);
+                            const active = workSet.has(date);
+                            return (
+                              <button key={date} type="button" onClick={() => {
+                                const nextDays = active ? plan.workDays.filter((d) => d !== date) : [...plan.workDays, date].sort();
+                                saveTruckWeekPlan(truck, { workDays: nextDays, expectedDays: Math.max(plan.expectedDays || 0, nextDays.length) });
+                              }} style={{ border: active ? "1px solid #2563eb" : "1px solid rgba(148,163,184,0.35)", borderRadius: 14, padding: "8px 6px", background: active ? "linear-gradient(135deg,#2563eb,#0f172a)" : "#f8fafc", color: active ? "#fff" : t.textSecondary, fontFamily: "inherit", cursor: "pointer", fontWeight: 900, fontSize: 11 }}>
+                                <div>{meta.dayLabel}</div>
+                                <div style={{ opacity: active ? 0.82 : 0.72, fontWeight: 750 }}>{meta.dateLabel}</div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <label style={{ display: "grid", gap: 4, fontSize: 10.5, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Expected days
+                          <input type="number" min="0" max="7" defaultValue={plan.expectedDays || 0} onBlur={(e) => saveTruckWeekPlan(truck, { expectedDays: e.target.value })} style={{ width: "100%", boxSizing: "border-box", padding: "9px 10px", border: "1px solid " + t.border, borderRadius: 12, fontSize: 14, fontWeight: 900, fontFamily: "inherit" }} />
+                        </label>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {truckFilterName && (
               <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "14px", padding: "8px 12px", background: t.accentBg, borderRadius: "6px", fontSize: "13px", color: t.accent, fontWeight: 500 }}>
                 Showing jobs for {truckFilterName}
@@ -8256,24 +8820,47 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               });
               const crewGroups = Object.values(crewGroupMap).map((group) => ({
                 ...group,
-                jobs: [...group.jobs].sort(compareScheduleJobStatus),
+                jobs: [...group.jobs].sort(compareScheduleJobs),
               })).sort((a, b) => {
                 if (a.key === "_unassigned") return 1;
                 if (b.key === "_unassigned") return -1;
                 return (a.names[0] || "").localeCompare(b.names[0] || "");
               }).filter((g) => !truckFilter || g.jobs.some(j => j.truckId === truckFilter));
               if (scheduleTvMode) {
-                const tvJobs = [...boardJobs].sort((a, b) => {
+                const sortTvJob = (a, b) => {
                   const at = trucks.find(tr => tr.id === a.truckId)?.order ?? 999;
                   const bt = trucks.find(tr => tr.id === b.truckId)?.order ?? 999;
-                  return compareScheduleJobStatus(a, b) || at - bt || (a.date || "").localeCompare(b.date || "") || (a.builder || a.address || "").localeCompare(b.builder || b.address || "");
+                  return (a.date || "").localeCompare(b.date || "") || at - bt || getJobRouteOrder(a) - getJobRouteOrder(b) || compareScheduleJobStatus(a, b) || (a.builder || a.address || "").localeCompare(b.builder || b.address || "");
+                };
+                const isCompletedTodayForTv = (job) => wasJobCompletedToday(job.id) || (isJobCompletedForSchedule(job) && job.date === todayCST());
+                const tvActiveJobs = [...boardJobs].filter((job) => !isJobCompletedForSchedule(job)).sort(sortTvJob);
+                const tvCompletedJobs = jobs
+                  .filter((job) => belongsToCurrentSchedule(job) && isCompletedTodayForTv(job))
+                  .filter((job, idx, arr) => idx === arr.findIndex((candidate) => candidate.id === job.id))
+                  .sort((a, b) => new Date(getCompletedUpdateForJob(b.id)?.timestamp || b.date || 0) - new Date(getCompletedUpdateForJob(a.id)?.timestamp || a.date || 0));
+                const tvUnassignedOrOtherJobs = tvActiveJobs.filter((job) => {
+                  const truck = trucks.find(tr => tr.id === job.truckId);
+                  return !TV_INSULATION_TRUCK_ROW_KEYS.has(getTvTruckLaneKey(truck, job));
                 });
+                const tvTruckRows = scheduleView === "insulation"
+                  ? [
+                      ...TV_INSULATION_TRUCK_ROWS.map((row) => {
+                        const rowTrucks = trucks.filter((tr) => getTvTruckLaneKey(tr) === row.key).sort(naturalSort);
+                        const rowTruckIds = new Set(rowTrucks.map((tr) => tr.id));
+                        const rowJobs = tvActiveJobs.filter((job) => rowTruckIds.has(job.truckId) || getTvTruckLaneKey(trucks.find(tr => tr.id === job.truckId), job) === row.key);
+                        return { ...row, trucks: rowTrucks, jobs: rowJobs };
+                      }),
+                      ...(tvUnassignedOrOtherJobs.length ? [{ key: "_other", label: "Other / Unassigned", shortLabel: "—", family: "other", accent: "#64748b", trucks: [], jobs: tvUnassignedOrOtherJobs }] : []),
+                    ]
+                  : [{ key: "energy-seal", label: "Energy Seal Van", shortLabel: "ES", family: "energySeal", accent: "#10b981", trucks: [], jobs: tvActiveJobs }];
+                const tvMaterialsJob = tvMaterialsJobId ? jobs.find((job) => job.id === tvMaterialsJobId) : null;
+                const tvMaterialsLines = tvMaterialsJob ? getTvMaterialLines(tvMaterialsJob) : [];
                 return (
                   <div className="schedule-tv-board">
                     <div className="schedule-tv-head" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 8, padding: "8px 10px", borderRadius: 18, background: "linear-gradient(135deg,#0f172a,#1e3a8a)", color: "#fff", boxShadow: "0 12px 30px rgba(15,23,42,0.16)", flexWrap: "wrap" }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.14em", textTransform: "uppercase", color: "#bfdbfe", lineHeight: 1 }}>TV schedule · {new Date().toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}</div>
-                        <div className="schedule-tv-head-title" style={{ fontSize: "clamp(20px, 2.6vw, 32px)", fontWeight: 950, letterSpacing: "-1.1px", lineHeight: 0.98 }}>{scheduleView === "energySeal" ? "Energy Seal" : "Insulation"} · {tvJobs.length} active job{tvJobs.length !== 1 ? "s" : ""}</div>
+                        <div className="schedule-tv-head-title" style={{ fontSize: "clamp(20px, 2.6vw, 32px)", fontWeight: 950, letterSpacing: "-1.1px", lineHeight: 0.98 }}>{scheduleView === "energySeal" ? "Energy Seal" : "Insulation"} · {tvActiveJobs.length} active · {tvCompletedJobs.length} completed today</div>
                       </div>
                       <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                         {[{ label: "Not Started", value: notStartedTodayCount }, { label: "In Progress", value: inProgressTodayCount }, { label: "Done", value: completedTodayCount }, { label: "Unassigned", value: unassignedActiveJobs.length }].map(stat => (
@@ -8287,8 +8874,35 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     {unassignedCrew.length > 0 && (
                       <div style={{ marginBottom: 10, padding: "9px 12px", borderRadius: 16, background: "#fff7ed", border: "1px solid #fed7aa", color: "#92400e", fontSize: 13, fontWeight: 850 }}>⚠️ {unassignedCrew.length} job{unassignedCrew.length !== 1 ? "s" : ""} missing assigned employees</div>
                     )}
-                    <div className="schedule-tv-grid">
-                      {tvJobs.map((job) => {
+                    {tvMaterialsJob && (
+                      <div role="dialog" aria-modal="true" onClick={() => setTvMaterialsJobId(null)} style={{ position: "fixed", inset: 0, zIndex: 5000, display: "grid", placeItems: "center", padding: 24, background: "rgba(15,23,42,0.58)", WebkitBackdropFilter: "blur(10px)", backdropFilter: "blur(10px)" }}>
+                        <div onClick={(e) => e.stopPropagation()} style={{ width: "min(760px, 92vw)", maxHeight: "82vh", overflow: "auto", borderRadius: 26, background: "#ffffff", border: "1px solid rgba(148,163,184,0.32)", boxShadow: "0 30px 90px rgba(15,23,42,0.38)", padding: 18 }}>
+                          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 14, marginBottom: 12 }}>
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontSize: 12, fontWeight: 950, letterSpacing: "0.14em", textTransform: "uppercase", color: "#2563eb" }}>Materials</div>
+                              <div style={{ marginTop: 4, fontSize: 28, fontWeight: 950, letterSpacing: "-0.9px", color: t.text, lineHeight: 1.02 }}>{tvMaterialsJob.builder || "No Customer Listed"}</div>
+                              <div style={{ marginTop: 5, fontSize: 14, fontWeight: 800, color: "#2563eb" }}>📍 {tvMaterialsJob.address || "No address"}</div>
+                            </div>
+                            <button type="button" onClick={() => setTvMaterialsJobId(null)} style={{ flex: "0 0 auto", border: "1px solid rgba(148,163,184,0.35)", background: "#f8fafc", color: "#0f172a", borderRadius: 999, padding: "9px 14px", fontSize: 13, fontWeight: 950, fontFamily: "inherit", cursor: "pointer" }}>Close</button>
+                          </div>
+                          <div style={{ display: "grid", gap: 8 }}>
+                            {tvMaterialsLines.length ? tvMaterialsLines.map((line) => (
+                              <div key={line} style={{ padding: "12px 14px", borderRadius: 16, background: "#f8fafc", border: "1px solid rgba(148,163,184,0.24)", color: "#0f172a", fontSize: 16, fontWeight: 850, lineHeight: 1.25 }}>{line}</div>
+                            )) : <div style={{ padding: "18px", borderRadius: 18, background: "#f8fafc", border: "1px dashed rgba(148,163,184,0.55)", color: "#64748b", fontSize: 16, fontWeight: 850, textAlign: "center" }}>No materials logged for this job yet.</div>}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div className="schedule-tv-truck-rows">
+                      {tvTruckRows.map((row) => (
+                        <div key={row.key} className="schedule-tv-truck-row">
+                          <div className="schedule-tv-truck-lane" style={{ background: `linear-gradient(135deg,${row.accent},#0f172a)` }}>
+                            <div style={{ fontSize: 30, fontWeight: 950, letterSpacing: "-1.3px", lineHeight: 0.9 }}>{row.shortLabel}</div>
+                            <div style={{ marginTop: 6, fontSize: 10, fontWeight: 950, letterSpacing: "0.09em", textTransform: "uppercase", color: "rgba(255,255,255,0.78)", lineHeight: 1.05 }}>{row.label}</div>
+                            <div style={{ marginTop: 5, fontSize: 10, fontWeight: 800, color: "rgba(255,255,255,0.68)", lineHeight: 1.05 }}>{row.jobs.length} active</div>
+                          </div>
+                          <div className="schedule-tv-truck-row-jobs">
+                            {row.jobs.length ? row.jobs.map((job) => {
                         const latest = getLatestUpdate(job.id);
                         const statusObj = latest ? STATUS_OPTIONS.find((s) => s.value === latest.status) : STATUS_OPTIONS[0];
                         const displayType = scheduleView === "energySeal" ? job.type : normalizeInsulationJobType(job.type);
@@ -8299,48 +8913,130 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                         const crewLine = crewFirstNames.length ? crewFirstNames.join(" + ") : "Unassigned";
                         const crewLineSize = crewFirstNames.length >= 4 ? 10.5 : crewFirstNames.length === 3 ? 11.2 : 12.5;
                         const whenLine = latest?.timeStr || (job.date ? new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "No date");
+                        const shortDateLine = job.date ? new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "numeric", day: "numeric" }) : "—";
                         const noteText = latest?.notes || job.notes || "";
                         const isDone = latest?.status === "completed";
+                        const isExpanded = !!expandedJobs[job.id];
                         const jobCardBg = isDone ? "linear-gradient(135deg,#f0fdf4,#ffffff)" : "linear-gradient(135deg,#ffffff,#f8fbff)";
                         const needsDumpster = isDone && isRemovalJob(job);
-                        const materialLines = getTvMaterialLines(job).slice(0, 3);
+                        const materialLines = getTvMaterialLines(job);
+                        const tvStatusLabel = latest?.status === "in_progress" ? "Progress" : (statusObj?.label || "Not Started");
                         const cardBorder = needsDumpster ? "2px solid #ef4444" : isDone ? "1px solid rgba(21,128,61,0.35)" : "1px solid rgba(148,163,184,0.25)";
                         const cardShadow = needsDumpster ? "0 0 0 3px rgba(239,68,68,0.10), 0 14px 32px rgba(239,68,68,0.22)" : isDone ? "0 10px 26px rgba(21,128,61,0.12)" : "0 10px 26px rgba(15,23,42,0.08)";
+                        if (isDone && !isExpanded) {
+                          return (
+                            <div key={job.id} className="schedule-tv-completed-bar" style={{ position: "relative", overflow: "hidden", borderRadius: 17, padding: "10px 11px 10px 15px", background: "linear-gradient(135deg,#ecfdf5,#ffffff)", border: "1px solid rgba(21,128,61,0.32)", boxShadow: "0 8px 20px rgba(21,128,61,0.10)", display: "grid", gridTemplateColumns: "minmax(0, 1.8fr) minmax(0, 1.25fr) minmax(78px, 0.5fr) auto", alignItems: "center", gap: 12 }}>
+                              <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 6, background: "#16a34a" }} />
+                              <div style={{ minWidth: 0, paddingLeft: 2 }}>
+                                <div style={{ fontSize: 9.5, fontWeight: 950, letterSpacing: "0.13em", textTransform: "uppercase", color: jobAccent, lineHeight: 1 }}>JOB · {displayType}{job.jobCategory ? ` · ${categoryDisplayLabel(job)}` : ""}</div>
+                                <div style={{ marginTop: 3, fontSize: 18, fontWeight: 950, letterSpacing: "-0.45px", color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.builder || "No Customer Listed"}</div>
+                                <div style={{ marginTop: 2, fontSize: 11.5, fontWeight: 800, color: "#2563eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📍 {job.address || "No address"}</div>
+                              </div>
+                              <div style={{ minWidth: 0, padding: "7px 9px", borderRadius: 12, background: "rgba(15,23,42,0.04)" }}>
+                                <div style={{ fontSize: 9, fontWeight: 950, letterSpacing: "0.12em", textTransform: "uppercase", color: "#64748b", lineHeight: 1 }}>Crew / Truck</div>
+                                <div style={{ marginTop: 3, fontSize: 15.5, fontWeight: 950, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{crewLine}</div>
+                                <div style={{ marginTop: 1, fontSize: 11, fontWeight: 800, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{truck ? truckDisplayName(truck) : "No truck"}</div>
+                              </div>
+                              <div style={{ minWidth: 0, textAlign: "center" }}>
+                                <div style={{ borderRadius: 999, padding: "5px 8px", background: "#dcfce7", color: "#15803d", fontSize: 10.5, fontWeight: 950, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>Completed</div>
+                                <div style={{ marginTop: 4, fontSize: 12.5, fontWeight: 950, color: "#166534", whiteSpace: "nowrap" }}>{whenLine}</div>
+                              </div>
+                              <button type="button" onClick={() => toggleJobExpand(job.id)} style={{ border: "1px solid #bbf7d0", background: "#ffffff", color: "#166534", borderRadius: 999, padding: "8px 13px", fontSize: 12.5, fontWeight: 950, fontFamily: "inherit", cursor: "pointer", boxShadow: "0 6px 16px rgba(22,101,52,0.10)" }}>View</button>
+                            </div>
+                          );
+                        }
                         return (
                           <div key={job.id} className="schedule-tv-card" onClick={() => toggleJobExpand(job.id)} style={{ position: "relative", overflow: "hidden", borderRadius: 19, padding: 10, background: jobCardBg, border: cardBorder, boxShadow: cardShadow, animation: needsDumpster ? "borderPulse 1.25s ease-in-out infinite" : "none", display: "flex", flexDirection: "column", gap: 6, cursor: "pointer" }}>
                             <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 5, background: "linear-gradient(135deg,#2563eb,#0f172a)" }} />
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "flex-start" }}>
-                              <div style={{ minWidth: 0 }}>
-                                <div style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.11em", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", display: "flex", gap: 5, alignItems: "center" }}><span style={{ color: jobAccent }}>{displayType}</span>{job.jobCategory && <span style={categoryLabelStyle(job, { letterSpacing: "0.13em" })}>· {categoryDisplayLabel(job)}</span>}</div>
-                                <div className="schedule-tv-customer" style={{ marginTop: 2, fontSize: 16.5, fontWeight: 950, letterSpacing: "-0.5px", color: t.text, lineHeight: 1.02, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{job.builder || "No Customer Listed"}</div>
+                            <div style={{ display: "grid", gap: 3 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 6, alignItems: "center", minWidth: 0 }}>
+                                <div className="schedule-tv-type-line" style={{ minWidth: 0, fontSize: 10, fontWeight: 950, letterSpacing: "0.11em", textTransform: "uppercase", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", color: jobAccent }}>{displayType}</div>
+                                <span className="schedule-tv-status-pill" style={{ flex: "0 0 auto", borderRadius: 999, padding: "4px 7px", background: statusObj?.bg || "#f3f4f6", color: statusObj?.color || "#6b7280", fontSize: 9.5, fontWeight: 950, letterSpacing: "0.04em", textTransform: "uppercase", lineHeight: 1, whiteSpace: "nowrap", maxWidth: "88px", overflow: "hidden", textOverflow: "ellipsis" }}>{tvStatusLabel}</span>
                               </div>
-                              <Badge color={statusObj?.color} bg={statusObj?.bg}>{statusObj?.label || "Not Started"}</Badge>
+                              <div className="schedule-tv-customer" style={{ marginTop: 0, fontSize: 16.5, fontWeight: 950, letterSpacing: "-0.5px", color: t.text, lineHeight: 1.06, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>{job.builder || "No Customer Listed"}</div>
+                              {isDone && isExpanded && <button type="button" onClick={(e) => { e.stopPropagation(); toggleJobExpand(job.id); }} style={{ border: "1px solid #bbf7d0", background: "#f0fdf4", color: "#166534", borderRadius: 999, padding: "5px 9px", fontSize: 10.5, fontWeight: 950, fontFamily: "inherit", cursor: "pointer" }}>Hide</button>}
                             </div>
                             <div className="schedule-tv-address" style={{ fontSize: 11.5, color: "#2563eb", fontWeight: 800, lineHeight: 1.12, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>📍 {job.address || "No address"}</div>
                             {needsDumpster && <button type="button" onClick={(e) => e.stopPropagation()} style={{ width: "100%", padding: "7px 9px", borderRadius: 12, border: "1px solid #dc2626", background: "linear-gradient(135deg,#ef4444,#991b1b)", color: "#fff", fontSize: 11, fontWeight: 950, letterSpacing: "0.08em", textTransform: "uppercase", boxShadow: "0 10px 22px rgba(239,68,68,0.28)" }}>🚨 Order Dumpster</button>}
-                            {materialLines.length > 0 && <div style={{ padding: "7px 8px", borderRadius: 12, background: "rgba(15,23,42,0.04)", border: "1px solid rgba(148,163,184,0.18)", color: "#334155", fontSize: 10.5, fontWeight: 850, lineHeight: 1.18, display: "grid", gap: 2 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                                <span style={{ fontSize: 8.5, fontWeight: 950, letterSpacing: "0.1em", textTransform: "uppercase", color: "#64748b" }}>Materials logged</span>
+                            <button type="button" className="schedule-tv-materials-button" onClick={(e) => { e.stopPropagation(); setTvMaterialsJobId(job.id); }} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 6, padding: "5px 8px", borderRadius: 11, border: "1px solid rgba(37,99,235,0.24)", background: "#eff6ff", color: "#1e3a8a", fontSize: 10.5, fontWeight: 950, fontFamily: "inherit", cursor: "pointer", lineHeight: 1 }}>
+                              <span>Materials</span>
+                              <span style={{ color: materialLines.length ? "#2563eb" : "#64748b", fontSize: 9.5 }}>{materialLines.length || "None"}</span>
+                            </button>
+                            <div className="schedule-tv-meta" style={{ display: "grid", gap: 5, marginTop: "auto" }}>
+                              <div className="schedule-tv-crew-line" style={{ minWidth: 0 }}>
+                                <div style={{ fontSize: 8.5, fontWeight: 950, letterSpacing: "0.1em", textTransform: "uppercase", color: t.textMuted, lineHeight: 1 }}>Crew</div>
+                                <div style={{ marginTop: 2, fontSize: crewLineSize, fontWeight: 950, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{crewLine}</div>
                               </div>
-                              {materialLines.map((line) => <div key={line} style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{line}</div>)}
-                            </div>}
-                            <div className="schedule-tv-meta" style={{ display: "grid", gridTemplateColumns: "minmax(0,1.35fr) minmax(72px,0.9fr)", gap: 6, marginTop: "auto" }}>
-                              <div className="schedule-tv-meta-box" style={{ padding: "6px 7px", borderRadius: 12, background: "#f1f5f9", minWidth: 0 }}>
-                                <div style={{ fontSize: 9, fontWeight: 950, letterSpacing: "0.1em", textTransform: "uppercase", color: t.textMuted }}>Crew / Truck</div>
-                                <div style={{ marginTop: 1, fontSize: crewLineSize, fontWeight: 950, color: t.text, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", whiteSpace: "normal", lineHeight: 1.05, overflowWrap: "anywhere" }}>{crewLine}</div>
-                                <div style={{ fontSize: 10.5, fontWeight: 750, color: t.textMuted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{truck ? truckDisplayName(truck) : "No truck"}</div>
-                              </div>
-                              <div className="schedule-tv-meta-box" style={{ padding: "6px 7px", borderRadius: 12, background: "#eff6ff", minWidth: 0 }}>
-                                <div style={{ fontSize: 9, fontWeight: 950, letterSpacing: "0.1em", textTransform: "uppercase", color: "#1d4ed8" }}>Time / Date</div>
-                                <div style={{ marginTop: 1, fontSize: 13, fontWeight: 950, color: "#1e3a8a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{whenLine}</div>
-                                <div style={{ fontSize: 10.5, fontWeight: 750, color: "#64748b", lineHeight: 1.05 }}>{job.date || "—"}</div>
+                              <div className="schedule-tv-time-line" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, minWidth: 0, padding: "5px 6px", borderRadius: 10, background: "#eff6ff" }}>
+                                <span style={{ minWidth: 0, fontSize: 12.5, fontWeight: 950, color: "#1e3a8a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1 }}>{whenLine}</span>
+                                <span style={{ flex: "0 0 auto", fontSize: 10.5, fontWeight: 850, color: "#64748b", lineHeight: 1 }}>{shortDateLine}</span>
                               </div>
                             </div>
                             {noteText && <div className="schedule-tv-note" style={{ paddingTop: 5, borderTop: "1px solid rgba(148,163,184,0.18)", fontSize: 10.5, lineHeight: 1.15, color: t.textMuted, display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>📝 {noteText}</div>}
                           </div>
                         );
-                      })}
+                      }) : <div className="schedule-tv-truck-empty">No active jobs</div>}
+                          </div>
+                        </div>
+                      ))}
                     </div>
+                    {tvCompletedJobs.length > 0 && (
+                      <div className="schedule-tv-completed-section" style={{ flex: "0 0 auto", marginTop: 8, padding: tvCompletedCollapsed ? "7px 10px" : 8, borderRadius: 18, background: "rgba(236,253,245,0.92)", border: "1px solid rgba(21,128,61,0.22)", boxShadow: "0 10px 24px rgba(21,128,61,0.08)" }}>
+                        <button type="button" onClick={() => setTvCompletedCollapsed(prev => !prev)} aria-expanded={!tvCompletedCollapsed} className="schedule-tv-completed-toggle" style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: 0, border: 0, background: "transparent", fontFamily: "inherit", cursor: "pointer", textAlign: "left" }}>
+                          <div style={{ minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 950, letterSpacing: "0.14em", textTransform: "uppercase", color: "#166534" }}>{tvCompletedCollapsed ? "▸" : "▾"} Completed today · {tvCompletedJobs.length}</div>
+                            <div style={{ marginTop: 2, fontSize: 10.5, fontWeight: 800, color: "#15803d", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {tvCompletedCollapsed ? tvCompletedJobs.slice(0, 4).map(j => j.builder || j.address || "Unnamed job").join(" · ") : "View opens only that job"}
+                            </div>
+                          </div>
+                          <div style={{ flex: "0 0 auto", border: "1px solid #bbf7d0", background: "#ffffff", color: "#166534", borderRadius: 999, padding: "7px 12px", fontSize: 12, fontWeight: 950, boxShadow: "0 6px 16px rgba(22,101,52,0.08)" }}>{tvCompletedCollapsed ? "Show" : "Collapse"}</div>
+                        </button>
+                        {!tvCompletedCollapsed && <div className="schedule-tv-completed-list" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(520px, 1fr))", gap: 7, marginTop: 7 }}>
+                          {tvCompletedJobs.map((job) => {
+                            const completedUpdate = getCompletedUpdateForJob(job.id);
+                            const latest = getLatestUpdate(job.id) || completedUpdate;
+                            const displayType = scheduleView === "energySeal" ? job.type : normalizeInsulationJobType(job.type);
+                            const jobAccent = displayType === "Foam" ? "#16a34a" : displayType === "Energy Seal" ? "#10b981" : displayType === "Fiberglass" ? "#2563eb" : displayType === "Removal" ? "#dc2626" : "#64748b";
+                            const truck = trucks.find(tr => tr.id === job.truckId);
+                            const crewNames = (job.crewMemberIds || []).map(id => members.find(m => m.id === id)?.name).filter(Boolean);
+                            const crewLine = crewNames.length ? crewNames.map(n => n.split(" ")[0]).join(" + ") : "Unassigned";
+                            const whenLine = completedUpdate?.timeStr || latest?.timeStr || (completedUpdate?.timestamp ? new Date(completedUpdate.timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }) : "Done");
+                            const materialLines = getTvMaterialLines(job).slice(0, 4);
+                            const isExpanded = !!expandedJobs[job.id];
+                            return (
+                              <div key={`completed-${job.id}`} style={{ display: "grid", gap: 6 }}>
+                                <div className="schedule-tv-completed-bar" style={{ position: "relative", overflow: "hidden", borderRadius: 16, padding: "9px 11px 9px 15px", background: "linear-gradient(135deg,#ffffff,#ecfdf5)", border: "1px solid rgba(21,128,61,0.32)", display: "grid", gridTemplateColumns: "minmax(0, 1.8fr) minmax(0, 1.1fr) minmax(78px, 0.45fr) auto", alignItems: "center", gap: 11 }}>
+                                  <div style={{ position: "absolute", left: 0, top: 0, bottom: 0, width: 6, background: "#16a34a" }} />
+                                  <div style={{ minWidth: 0 }}>
+                                    <div style={{ fontSize: 9.5, fontWeight: 950, letterSpacing: "0.13em", textTransform: "uppercase", color: jobAccent }}>JOB · {displayType}{job.jobCategory ? ` · ${categoryDisplayLabel(job)}` : ""}</div>
+                                    <div style={{ marginTop: 2, fontSize: 17, fontWeight: 950, color: t.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{job.builder || "No Customer Listed"}</div>
+                                    <div style={{ marginTop: 1, fontSize: 11.5, fontWeight: 800, color: "#2563eb", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>📍 {job.address || "No address"}</div>
+                                  </div>
+                                  <div style={{ minWidth: 0, padding: "7px 9px", borderRadius: 12, background: "rgba(15,23,42,0.04)" }}>
+                                    <div style={{ fontSize: 9, fontWeight: 950, letterSpacing: "0.12em", textTransform: "uppercase", color: "#64748b" }}>Crew / Truck</div>
+                                    <div style={{ marginTop: 2, fontSize: 14.5, fontWeight: 950, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{crewLine}</div>
+                                    <div style={{ fontSize: 10.5, fontWeight: 800, color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{truck ? truckDisplayName(truck) : "No truck"}</div>
+                                  </div>
+                                  <div style={{ textAlign: "center" }}>
+                                    <div style={{ borderRadius: 999, padding: "5px 8px", background: "#dcfce7", color: "#15803d", fontSize: 10.5, fontWeight: 950, letterSpacing: "0.08em", textTransform: "uppercase" }}>Completed</div>
+                                    <div style={{ marginTop: 3, fontSize: 12, fontWeight: 950, color: "#166534", whiteSpace: "nowrap" }}>{whenLine}</div>
+                                  </div>
+                                  <button type="button" onClick={(e) => { e.stopPropagation(); toggleJobExpand(job.id); }} style={{ border: "1px solid #bbf7d0", background: "#ffffff", color: "#166534", borderRadius: 999, padding: "8px 13px", fontSize: 12.5, fontWeight: 950, fontFamily: "inherit", cursor: "pointer", boxShadow: "0 6px 16px rgba(22,101,52,0.10)" }}>{isExpanded ? "Hide" : "View"}</button>
+                                </div>
+                                {isExpanded && (
+                                  <div style={{ padding: "9px 12px", borderRadius: 15, background: "#ffffff", border: "1px solid rgba(21,128,61,0.20)", display: "grid", gridTemplateColumns: "minmax(0, 1fr) minmax(0, 1fr)", gap: 10, fontSize: 12, color: t.textSecondary }}>
+                                    <div><strong style={{ color: t.text }}>Address:</strong> {job.address || "No address"}</div>
+                                    <div><strong style={{ color: t.text }}>Crew/Truck:</strong> {crewLine} · {truck ? truckDisplayName(truck) : "No truck"}</div>
+                                    <div><strong style={{ color: t.text }}>Materials:</strong> {materialLines.length ? materialLines.join(" · ") : "None logged"}</div>
+                                    <div><strong style={{ color: t.text }}>Notes:</strong> {latest?.notes || job.notes || "None"}</div>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>}
+                      </div>
+                    )}
                   </div>
                 );
               }
@@ -8405,6 +9101,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               <span style={{ fontSize: 10, fontWeight: 950, letterSpacing: "0.12em", textTransform: "uppercase", color: jobAccent }}>{displayType}</span>
                               {job.jobCategory && <span style={categoryLabelStyle(job, { fontSize: 10, fontWeight: 850 })}>{categoryDisplayLabel(job)}</span>}
                               <span style={{ fontSize: 10, color: t.textMuted, fontWeight: 800 }}>{new Date(job.date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                              {formatRouteOrder(job.routeOrder) && <span style={{ fontSize: 10, color: "#1d4ed8", background: "#dbeafe", borderRadius: 999, padding: "3px 7px", fontWeight: 950 }}>Stop #{formatRouteOrder(job.routeOrder)}</span>}
                             </div>
                             <div style={{ fontWeight: 950, color: t.text, fontSize: "18px", letterSpacing: "-0.55px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{job.builder || "No Customer Listed"}</div>
                             <div style={{ fontSize: "13px", color: t.textMuted, marginTop: "3px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}><a href={mapsUrl(job.address)} target="_blank" rel="noreferrer" style={{ color: "#2563eb", textDecoration: "none", fontWeight: 700 }}>📍 {job.address}</a></div>
@@ -8425,6 +9122,19 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             ? <a href={`https://www.google.com/maps?q=${job.pmGeoTag.lat},${job.pmGeoTag.lng}`} target="_blank" rel="noreferrer" style={{ fontSize: "11px", fontWeight: 850, padding: "5px 9px", borderRadius: "20px", background: "#dcfce7", color: "#15803d", textDecoration: "none" }}>PM ✓ 📍</a>
                             : <span style={{ fontSize: "11px", fontWeight: 850, padding: "5px 9px", borderRadius: "20px", background: job.jobCheckedPM === "Yes" ? "#dcfce7" : "#fee2e2", color: job.jobCheckedPM === "Yes" ? "#15803d" : "#dc2626" }}>PM {job.jobCheckedPM === "Yes" ? "✓" : "✗"}</span>}
                           <span style={{ fontSize: "11px", color: t.textMuted, fontWeight: 800, padding: "5px 9px", borderRadius: 999, background: "#f1f5f9" }}>Crew check</span>
+                          {(() => {
+                            const sameDayJobs = group.jobs.filter((candidate) => candidate.date === job.date).sort(compareScheduleJobs);
+                            if (sameDayJobs.length <= 1) return null;
+                            const currentOrder = sameDayJobs.findIndex((candidate) => candidate.id === job.id) + 1;
+                            return (
+                              <label onClick={(e) => e.stopPropagation()} style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, color: "#1d4ed8", fontWeight: 900, padding: "4px 7px", borderRadius: 999, background: "#dbeafe", border: "1px solid #bfdbfe" }}>
+                                Stop
+                                <select value={currentOrder} onChange={(e) => updateCrewDayJobOrder(sameDayJobs, job.id, e.target.value)} style={{ border: "1px solid #93c5fd", borderRadius: 999, background: "#fff", color: "#1d4ed8", fontSize: 11, fontWeight: 950, fontFamily: "inherit", padding: "2px 5px" }}>
+                                  {sameDayJobs.map((candidate, idx) => <option key={candidate.id} value={idx + 1}>#{idx + 1}</option>)}
+                                </select>
+                              </label>
+                            );
+                          })()}
                         </div>
 
                         {/* Expanded detail */}
@@ -8507,6 +9217,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                               const laborCost = (() => {
                                 if (!job.laborValue) return 0;
                                 if (job.laborMode === "sqft" && job.sqft) return parseFloat(job.laborValue) * parseFloat(job.sqft);
+                                if (job.laborMode === "flat") return parseFloat(job.laborValue) || 0;
                                 if (job.laborMode === "percent") return rev * (parseFloat(job.laborValue) / 100);
                                 return 0;
                               })();
@@ -8582,7 +9293,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                             })()}
 
                             {((job.dailyMaterialLogs || []).length > 0 || Object.keys(job.materialsUsed || {}).length > 0) && (() => {
-                              const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+                              const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
                               const bblToGal = (qty, id) => Math.round((parseFloat(qty) || 0) * (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
                               const renderMaterialPills = (materials = {}) => Object.entries(materials || {}).map(([itemId, qty]) => {
                                 const item = INVENTORY_ITEMS.find(i => i.id === itemId);
@@ -8846,6 +9557,161 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
           </>
         )}
 
+        {view === "reception" && (
+          <>
+            <SectionHeader title="Reception / Job Intake" right={<span style={{ padding: "7px 10px", borderRadius: 999, background: intakeNeedsInfoCount ? "#fef3c7" : "#dcfce7", color: intakeNeedsInfoCount ? "#92400e" : "#166534", fontSize: 12, fontWeight: 900 }}>{intakeNeedsInfoCount} need info</span>} />
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12, marginBottom: 16 }}>
+              {[
+                ["Jobs in intake", receptionJobs.length, "#2563eb"],
+                ["Missing financials", receptionJobs.filter(job => !(parseFloat(job.revenue) > 0) || !(parseFloat(job.sqft) > 0)).length, "#dc2626"],
+                ["Missing work order", receptionJobs.filter(job => !getJobWorkOrderPhoto(job)).length, "#f59e0b"],
+                ["Ready for crew", receptionJobs.filter(job => getJobIntakeStatus(job).status === "ready").length, "#16a34a"],
+              ].map(([label, value, color]) => (
+                <div key={label} style={{ background: "#fff", border: "1px solid " + t.border, borderRadius: 16, padding: 16, boxShadow: "0 10px 28px rgba(15,23,42,0.06)" }}>
+                  <div style={{ color: t.textMuted, fontSize: 11, fontWeight: 900, textTransform: "uppercase", letterSpacing: "0.08em" }}>{label}</div>
+                  <div style={{ color, fontSize: 28, fontWeight: 950, marginTop: 4 }}>{value}</div>
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gap: 14 }}>
+              {receptionJobs.map((job) => {
+                const intake = getJobIntakeStatus(job);
+                const actualMaterials = sumActualJobMaterials(job);
+                const expectedMaterials = job.expectedMaterials || {};
+                const expectedRows = inventoryItems.filter((item) => !item.isPieces && ((expectedMaterials[item.id] || 0) > 0 || (actualMaterials[item.id] || 0) > 0)).slice(0, 24);
+                const takeoffAreas = getJobTakeoffAreas(job);
+                const takeoffCalc = calculateExpectedMaterialsFromTakeoffAreas(takeoffAreas, inventoryItems);
+                const fiberglassCoverageItems = getFiberglassCoverageItems();
+                const foamTakeoffItems = getFoamTakeoffItems();
+                const areaInputStyle = { width: "100%", minWidth: 0, padding: "8px 9px", border: "1px solid " + t.border, borderRadius: 9, fontSize: 12, fontWeight: 800, fontFamily: "inherit", boxSizing: "border-box", background: "#fff" };
+                const laborPreview = job.laborMode === "flat"
+                  ? parseFloat(job.laborValue) || 0
+                  : job.laborMode === "sqft"
+                    ? (parseFloat(job.laborValue) || 0) * (parseFloat(job.sqft) || 0)
+                    : (parseFloat(job.revenue) || 0) * ((parseFloat(job.laborValue) || 0) / 100);
+                return (
+                  <div key={job.id} style={{ background: "#fff", border: "1px solid " + (intake.status === "ready" ? "#86efac" : "#fde68a"), borderRadius: 18, padding: 16, boxShadow: "0 14px 34px rgba(15,23,42,0.08)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "flex-start", flexWrap: "wrap", marginBottom: 14 }}>
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 18, fontWeight: 950, color: t.text, lineHeight: 1.15 }}>{job.builder || "No Customer"}</div>
+                        <div style={{ color: t.textSecondary, fontSize: 13, fontWeight: 700, marginTop: 3 }}>{job.address}</div>
+                        <div style={{ color: t.textMuted, fontSize: 12, marginTop: 3 }}>{job.date || "No date"} · {job.type || "Job"} · {job.jobCategory || "Uncategorized"}</div>
+                      </div>
+                      <span style={{ padding: "7px 10px", borderRadius: 999, background: intake.status === "ready" ? "#dcfce7" : "#fef3c7", color: intake.status === "ready" ? "#166534" : "#92400e", fontSize: 12, fontWeight: 950 }}>{intake.status === "ready" ? "🟢 Ready for Crew" : "🟡 " + intake.label}</span>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 10, marginBottom: 14 }}>
+                      <label style={{ display: "grid", gap: 5, fontSize: 11, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Sales Price
+                        <input type="number" defaultValue={job.revenue || ""} onBlur={(e) => onEditJob(job.id, { revenue: e.target.value })} placeholder="0.00" style={{ padding: "9px 10px", border: "1px solid " + t.border, borderRadius: 10, fontSize: 14, fontWeight: 800 }} />
+                      </label>
+                      <label style={{ display: "grid", gap: 5, fontSize: 11, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Square Footage
+                        <input type="number" defaultValue={job.sqft || ""} onBlur={(e) => onEditJob(job.id, { sqft: e.target.value })} placeholder="0" style={{ padding: "9px 10px", border: "1px solid " + t.border, borderRadius: 10, fontSize: 14, fontWeight: 800 }} />
+                      </label>
+                      <label style={{ display: "grid", gap: 5, fontSize: 11, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Labor Type
+                        <select defaultValue={job.laborMode || "percent"} onChange={(e) => onEditJob(job.id, { laborMode: e.target.value })} style={{ padding: "9px 10px", border: "1px solid " + t.border, borderRadius: 10, fontSize: 14, fontWeight: 800, background: "#fff" }}>
+                          <option value="percent">% of Sale</option>
+                          <option value="sqft">Per Sq Ft</option>
+                          <option value="flat">Flat Amount</option>
+                        </select>
+                      </label>
+                      <label style={{ display: "grid", gap: 5, fontSize: 11, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Labor Value
+                        <input type="number" step="0.01" defaultValue={job.laborValue || ""} onBlur={(e) => onEditJob(job.id, { laborValue: e.target.value })} placeholder="30" style={{ padding: "9px 10px", border: "1px solid " + t.border, borderRadius: 10, fontSize: 14, fontWeight: 800 }} />
+                      </label>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 14 }}>
+                      <div style={{ padding: 12, borderRadius: 14, background: "#f8fafc", border: "1px solid " + t.border }}><div style={{ fontSize: 11, color: t.textMuted, fontWeight: 900, textTransform: "uppercase" }}>Revenue</div><div style={{ fontSize: 18, fontWeight: 950, color: t.text }}>{moneyFmt(job.revenue)}</div></div>
+                      <div style={{ padding: 12, borderRadius: 14, background: "#f8fafc", border: "1px solid " + t.border }}><div style={{ fontSize: 11, color: t.textMuted, fontWeight: 900, textTransform: "uppercase" }}>Labor Preview</div><div style={{ fontSize: 18, fontWeight: 950, color: "#dc2626" }}>{moneyFmt(laborPreview)}</div></div>
+                      <div style={{ padding: 12, borderRadius: 14, background: getJobWorkOrderPhoto(job) ? "#f0fdf4" : "#fffbeb", border: "1px solid " + (getJobWorkOrderPhoto(job) ? "#bbf7d0" : "#fde68a") }}><div style={{ fontSize: 11, color: t.textMuted, fontWeight: 900, textTransform: "uppercase" }}>Work Order</div><div style={{ fontSize: 14, fontWeight: 950, color: getJobWorkOrderPhoto(job) ? "#166534" : "#92400e" }}>{getJobWorkOrderPhoto(job) ? "Attached" : "Missing"}</div></div>
+                    </div>
+                    <div style={{ borderTop: "1px solid " + t.borderLight, paddingTop: 12, marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 950, color: t.text }}>Area Takeoff → Expected Materials</div>
+                          <div style={{ fontSize: 11, color: t.textMuted, marginTop: 2 }}>Separate each location so material is calculated from that area’s sqft and install type.</div>
+                        </div>
+                        <button type="button" onClick={() => addJobTakeoffArea(job)} style={{ border: "1px solid #bfdbfe", background: "#eff6ff", color: "#1d4ed8", borderRadius: 999, padding: "7px 11px", fontSize: 12, fontWeight: 850, fontFamily: "inherit", cursor: "pointer" }}>+ Add area</button>
+                      </div>
+                      <div style={{ display: "grid", gap: 8 }}>
+                        {takeoffAreas.map((area) => {
+                          const result = takeoffCalc.areaResults.find((row) => row.areaId === area.id);
+                          const materialOptions = area.materialType === "foam" ? foamTakeoffItems : fiberglassCoverageItems;
+                          return (
+                            <div key={area.id} style={{ border: "1px solid " + t.borderLight, borderRadius: 14, padding: 10, background: "#f8fafc" }}>
+                              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8, alignItems: "end" }}>
+                                <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Location
+                                  <input defaultValue={area.label} onBlur={(e) => updateJobTakeoffArea(job, area.id, { label: e.target.value || area.label })} style={areaInputStyle} />
+                                </label>
+                                <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Install
+                                  <select value={area.materialType} onChange={(e) => updateJobTakeoffArea(job, area.id, { materialType: e.target.value, materialItemId: "" })} style={areaInputStyle}>
+                                    <option value="fiberglass">Fiberglass</option>
+                                    <option value="foam">Foam</option>
+                                  </select>
+                                </label>
+                                <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Material
+                                  <select value={area.materialItemId || ""} onChange={(e) => updateJobTakeoffArea(job, area.id, { materialItemId: e.target.value })} style={areaInputStyle}>
+                                    <option value="">Select material…</option>
+                                    {materialOptions.map((item) => <option key={item.id} value={item.id}>{item.name}{item.sqftPerTube ? ` · ${item.sqftPerTube} sqft/${item.unit}` : ""}</option>)}
+                                  </select>
+                                </label>
+                                <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Sqft
+                                  <input type="number" inputMode="decimal" defaultValue={area.sqft || ""} onBlur={(e) => updateJobTakeoffArea(job, area.id, { sqft: e.target.value })} placeholder="0" style={areaInputStyle} />
+                                </label>
+                              </div>
+                              {area.materialType === "foam" && (
+                                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8, marginTop: 8 }}>
+                                  <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Foam type
+                                    <select value={area.foamType || "openCell"} onChange={(e) => updateJobTakeoffArea(job, area.id, { foamType: e.target.value })} style={areaInputStyle}><option value="openCell">Open cell</option><option value="closedCell">Closed cell</option></select>
+                                  </label>
+                                  <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Install inches
+                                    <input type="number" inputMode="decimal" step="0.1" defaultValue={area.installedInches || ""} onBlur={(e) => updateJobTakeoffArea(job, area.id, { installedInches: e.target.value })} placeholder="4" style={areaInputStyle} />
+                                  </label>
+                                  <label style={{ display: "grid", gap: 5, fontSize: 10.5, fontWeight: 900, color: t.textMuted, textTransform: "uppercase" }}>Overspray inches
+                                    <input type="number" inputMode="decimal" step="0.1" defaultValue={area.oversprayInches || "1"} onBlur={(e) => updateJobTakeoffArea(job, area.id, { oversprayInches: e.target.value })} placeholder="1" style={areaInputStyle} />
+                                  </label>
+                                </div>
+                              )}
+                              <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
+                                <div style={{ fontSize: 11, color: result ? t.textSecondary : "#92400e", fontWeight: 750 }}>
+                                  {result ? (result.materialType === "foam" ? `${Math.round(result.boardFeet).toLocaleString()} board feet · ${result.qty} set(s)` : `${result.qty} ${result.unit} expected · ${result.coverageSqft} sqft/${result.unit}`) : "Fill sqft + material to calculate expected usage"}
+                                </div>
+                                <button type="button" onClick={() => removeJobTakeoffArea(job, area.id)} style={{ border: "1px solid #fecaca", background: "#fff1f2", color: "#dc2626", borderRadius: 999, padding: "5px 9px", fontSize: 11, fontWeight: 850, fontFamily: "inherit", cursor: "pointer" }}>Remove</button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div style={{ marginTop: 8, padding: "9px 10px", borderRadius: 12, background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e3a8a", fontSize: 12, fontWeight: 800 }}>
+                        Calculated: {takeoffCalc.totalSqft.toLocaleString()} sqft · {Math.round(takeoffCalc.totalBoardFeet).toLocaleString()} board feet · {Object.keys(takeoffCalc.expectedMaterials).length} expected material line{Object.keys(takeoffCalc.expectedMaterials).length === 1 ? "" : "s"}
+                      </div>
+                      {takeoffCalc.warnings.length > 0 && <div style={{ marginTop: 7, color: "#92400e", fontSize: 11, fontWeight: 750 }}>{takeoffCalc.warnings.join(" ")}</div>}
+                    </div>
+                    <div style={{ borderTop: "1px solid " + t.borderLight, paddingTop: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
+                        <div style={{ fontSize: 13, fontWeight: 950, color: t.text }}>Expected vs Actual Materials</div>
+                        <div style={{ fontSize: 11, color: t.textMuted }}>Enter expected usage here; crews’ actual logs compare automatically.</div>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 8 }}>
+                        {inventoryItems.filter((item) => !item.isPieces).slice(0, 18).map((item) => {
+                          const expected = parseFloat(expectedMaterials[item.id]) || 0;
+                          const actual = parseFloat(actualMaterials[item.id]) || 0;
+                          const delta = Math.round((actual - expected) * 100) / 100;
+                          return (
+                            <div key={item.id} style={{ display: "grid", gridTemplateColumns: "minmax(0,1fr) 74px 74px", gap: 6, alignItems: "center", padding: "7px 8px", border: "1px solid " + (actual > expected && expected > 0 ? "#fecaca" : t.borderLight), borderRadius: 10, background: actual > expected && expected > 0 ? "#fef2f2" : "#fff" }}>
+                              <div style={{ minWidth: 0 }}><div style={{ fontSize: 12, fontWeight: 850, color: t.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{item.name}</div><div style={{ fontSize: 10, color: t.textMuted }}>{item.unit}{delta ? ` · Δ ${delta}` : ""}</div></div>
+                              <input type="number" step="0.01" defaultValue={expected || ""} onBlur={(e) => updateExpectedMaterialQty(job, item.id, e.target.value)} placeholder="Exp" style={{ width: "100%", padding: "6px 7px", border: "1px solid " + t.border, borderRadius: 8, fontSize: 12 }} />
+                              <div style={{ fontSize: 12, fontWeight: 900, color: actual > expected && expected > 0 ? "#dc2626" : t.textSecondary, textAlign: "right" }}>{actual || "—"}</div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {expectedRows.length > 0 && <div style={{ marginTop: 8, fontSize: 11, color: t.textMuted }}>{expectedRows.length} material lines have expected or actual usage.</div>}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
         {view === "foamPricing" && <FoamPricingCalculatorView />}
 
         {featureFlags.diagnostics && view === "diagnostics" && (
@@ -9033,7 +9899,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     const loaded = getTruckInventoryDisplayRows(ti);
                     const secondaryLoaded = getTruckInventoryDisplayRows(tsi);
                     const formatTruckInventoryLine = (item) => {
-                      if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(item.id)) {
+                      if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(item.id)) {
                         const gallonsPerBbl = ["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48;
                         return `${Math.round((item.qty || 0) * gallonsPerBbl)} gal`;
                       }
@@ -9648,7 +10514,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       const loadedItems = getTruckInventoryDisplayRows(ti);
                       const secondaryLoadedItems = getTruckInventoryDisplayRows(tsi);
                       const formatTruckRowQty = (item) => {
-                        if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(item.id)) {
+                        if (["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(item.id)) {
                           const gallonsPerBbl = ["cc_a","cc_b","env_cc_b"].includes(item.id) ? 50 : 48;
                           return `${Math.round((item.qty || 0) * gallonsPerBbl)} gal`;
                         }
@@ -9699,7 +10565,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               {/* ── Value Summary tab ── */}
               {invTab === "admin" && invAdminTab === "summary" && (() => {
                 const getQty = (itemId) => (inventory || []).find(r => r.itemId === itemId)?.qty || 0;
-                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+                const isFoamId = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
                 const getManufacturer = (item) => {
                   const cat = item.category || "";
                   if (item.unit === "bbl") return "Foam";
@@ -9891,8 +10757,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
       )}
 
       {showAddJob && (
-        <Modal title="Add Job" onClose={() => setShowAddJob(false)} footer={<Button onClick={handleAddJob} disabled={!jobForm.address.trim()} style={{ width: "100%" }}>Add Job to Schedule</Button>}>
+        <Modal title="Add Job" onClose={() => { if (!addJobSaving) setShowAddJob(false); }} footer={<Button onClick={handleAddJob} disabled={addJobSaving} style={{ width: "100%" }}>{addJobSaving ? "Adding Job..." : "Add Job to Schedule"}</Button>}>
           <div className="compact-form">
+          {addJobError && <div style={{ marginBottom: 12, padding: "10px 12px", borderRadius: 10, background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c", fontSize: 12.5, fontWeight: 800, lineHeight: 1.35 }}>⚠️ Add job failed: {addJobError}</div>}
           <div style={{ marginBottom: "12px", display: "flex", gap: 8 }}>
             <button onClick={openTakeoffImport} style={{ flex: 1, padding: "10px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: "8px", color: "#1d4ed8", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>📋 Import from Takeoff</button>
             <label style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px", background: scanningWorkOrder ? "#f0fdf4" : "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: "8px", color: scanningWorkOrder ? "#15803d" : "#16a34a", fontWeight: 600, fontSize: 13, cursor: scanningWorkOrder ? "not-allowed" : "pointer", fontFamily: "inherit" }}>
@@ -9900,6 +10767,11 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               <input type="file" accept="image/*,application/pdf" onChange={handleScanWorkOrder} disabled={scanningWorkOrder} style={{ display: "none" }} />
             </label>
           </div>
+          {jobForm.scannedWorkOrderName && (
+            <div style={{ margin: "-4px 0 12px", padding: "8px 10px", borderRadius: 9, background: "#ecfdf5", border: "1px solid #bbf7d0", color: "#166534", fontSize: 12, fontWeight: 750 }}>
+              📎 Work order photo will attach to the job card: {jobForm.scannedWorkOrderName}
+            </div>
+          )}
           {/* Builder / Customer with typeahead */}
           <div style={{ marginBottom: "16px", position: "relative" }}>
             <label style={{ display: "block", fontSize: "12px", fontWeight: 500, color: t.textSecondary, marginBottom: "5px" }}>Builder / Customer</label>
@@ -9997,7 +10869,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                 <div style={{ marginBottom: 12 }}>
                   <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Labor Mode</label>
                   <div style={{ display: "flex", gap: 8 }}>
-                    {[["percent","% of Revenue"],["sqft","Per Sq Ft"]].map(([v,l]) => (
+                    {[["percent","% of Revenue"],["sqft","Per Sq Ft"],["flat","Flat $"]].map(([v,l]) => (
                       <button key={v} onClick={() => setJobForm({ ...jobForm, laborMode: v })} style={{ flex: 1, padding: "8px", borderRadius: 6, border: "1px solid " + (jobForm.laborMode === v ? t.accent : t.border), background: jobForm.laborMode === v ? t.accentBg : "#fff", color: jobForm.laborMode === v ? t.accent : t.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
                     ))}
                   </div>
@@ -10048,7 +10920,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
         const { truck: hTruck, calMonth, calYear, selectedDate } = truckHistoryView;
         const monthNames = ["January","February","March","April","May","June","July","August","September","October","November","December"];
         const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+        const isFoam = (id) => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
         const fmtQty = (itemId, qty) => isFoam(itemId) ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + (INVENTORY_ITEMS.find(i => i.id === itemId)?.unit || "");
         const toCST = (ts) => new Date(ts).toLocaleDateString("en-CA", { timeZone: "America/Chicago" }); // returns YYYY-MM-DD in CST
 
@@ -10287,7 +11159,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                     <div style={{ marginBottom: 12 }}>
                       <label style={{ display: "block", fontSize: 12, fontWeight: 500, color: t.textSecondary, marginBottom: 5 }}>Labor Mode</label>
                       <div style={{ display: "flex", gap: 8 }}>
-                        {[["percent","% of Revenue"],["sqft","Per Sq Ft"]].map(([v,l]) => (
+                        {[["percent","% of Revenue"],["sqft","Per Sq Ft"],["flat","Flat $"]].map(([v,l]) => (
                           <button key={v} onClick={() => setEditForm({ ...editForm, laborMode: v })} style={{ flex: 1, padding: "8px", borderRadius: 6, border: "1px solid " + (editForm.laborMode === v ? t.accent : t.border), background: editForm.laborMode === v ? t.accentBg : "#fff", color: editForm.laborMode === v ? t.accent : t.textMuted, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
                         ))}
                       </div>
@@ -10690,7 +11562,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                       {Object.entries(calViewJob.materialsUsed || {}).map(([itemId, qty]) => {
                         const item = INVENTORY_ITEMS.find(i => i.id === itemId);
                         if (!item) return null;
-                        const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(itemId);
+                        const isFoamId = ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(itemId);
                         const display = isFoamId ? Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(itemId) ? 50 : 48)) + " gal" : qty + " " + item.unit;
                         return <span key={itemId} style={{ fontSize: 12, background: t.accentBg, color: t.accent, padding: "3px 9px", borderRadius: 6, fontWeight: 600 }}>{item.name}: {display}</span>;
                       })}
@@ -10698,7 +11570,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
                   </div>
                 )}
                 {(calViewJob.dailyMaterialLogs || []).map((log, idx) => {
-                  const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_b","accufoam_a","accufoam_b"].includes(id);
+                  const isFoamId = id => ["oc_a","oc_b","cc_a","cc_b","env_oc_a","env_oc_b","env_cc_a","env_cc_b","accufoam_a","accufoam_b","accufoam_cc_a","accufoam_cc_b"].includes(id);
                   const bblToGal = (qty, id) => Math.round(qty * (["cc_a","cc_b","env_cc_b"].includes(id) ? 50 : 48));
                   const isEditing = editMatLogIdx === idx;
                   const editTruckId = resolveMaterialLogTruckIdForEdit({
@@ -10772,6 +11644,7 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
               const laborCost = (() => {
                 if (!calViewJob.laborValue) return 0;
                 if (calViewJob.laborMode === "sqft" && calViewJob.sqft) return parseFloat(calViewJob.laborValue) * parseFloat(calViewJob.sqft);
+                if (calViewJob.laborMode === "flat") return parseFloat(calViewJob.laborValue) || 0;
                 if (calViewJob.laborMode === "percent") return rev * (parseFloat(calViewJob.laborValue) / 100);
                 return 0;
               })();
@@ -10841,2502 +11714,9 @@ function AdminDashboard({  adminName, trucks, jobs, updates, jobUpdates, tickets
     </div>
   );
 }
-// ════════════════════════════════════════════════════════
-// ─── QUOTE / TAKEOFF MODULE ──────────────────────────
-// ════════════════════════════════════════════════════════
-
-const Q_COMPANY = { name: "Insulation Services of Tulsa", tagline: "Serving Northeastern Oklahoma", phone: "1 (918) 232-9055" };
-const Q_SALESMAN_INFO = {
-  "Johnny": { fullName: "Johnny Casper", phone: "918-550-2396", email: "Johnny@istulsa.com" },
-  "Jordan": { fullName: "Jordan Beard", phone: "918-625-7820", email: "Jordan@istulsa.com" },
-  "Skip":   { fullName: "Skip Owen",    phone: "918-219-7890", email: "Skip@istulsa.com" },
-};
-const Q_LOCATIONS = [
-  { id: "band_joist",       label: "Band Joist Blocking",            short: "Band Joist",       type: "area",    group: "Porch / Blocking" },
-  { id: "ext_walls_house",  label: "Boxed Exterior Walls of House",  short: "Ext Walls House",  type: "wall",    group: "Walls" },
-  { id: "ext_walls_garage", label: "Boxed Exterior Walls of Garage", short: "Ext Walls Garage", type: "wall",    group: "Walls" },
-  { id: "garage_common",    label: "Garage Common Wall",             short: "Garage Common",    type: "wall",    group: "Walls" },
-  { id: "open_attic_walls", label: "Open Attic Walls",               short: "Attic Walls",      type: "wall",    group: "Walls" },
-  { id: "ext_slopes",       label: "Boxed Exterior Slopes",          short: "Ext Slopes",       type: "slope",   group: "Attic" },
-  { id: "ext_kneewall",     label: "Boxed Exterior Kneewall",        short: "Ext Kneewall",     type: "wall",    group: "Attic" },
-  { id: "attic_slopes",     label: "Open Attic Slopes",              short: "Attic Slopes",     type: "area",    group: "Attic" },
-  { id: "attic_kneewall",   label: "Open Attic Kneewall",            short: "Attic Kneewall",   type: "wall",    group: "Attic" },
-  { id: "flat_ceiling",     label: "Flat Ceiling",                   short: "Flat Ceiling",     type: "area",    group: "Attic" },
-  { id: "attic_area_house", label: "Open Attic Area of House",       short: "Attic House",      type: "area",    group: "Attic" },
-  { id: "attic_area_garage",label: "Open Attic Area of Garage",      short: "Attic Garage",     type: "area",    group: "Attic" },
-  { id: "gable_end",        label: "Gable End",                      short: "Gable End",        type: "area",    group: "Roofline" },
-  { id: "porch",            label: "Porch",                          short: "Porch",            type: "area",    group: "Porch / Blocking" },
-  { id: "porch_blocking",   label: "Porch Blocking",                 short: "Porch Blocking",   type: "area",    group: "Porch / Blocking" },
-  { id: "roofline",         label: "Roofline",                       short: "Roofline",         type: "roofline",group: "Roofline" },
-  { id: "roofline_garage",  label: "Roofline of Garage",             short: "Roofline Garage",  type: "roofline",group: "Roofline" },
-  { id: "roofline_house",   label: "Roofline of House",              short: "Roofline House",   type: "roofline",group: "Roofline" },
-  { id: "custom",           label: "Custom",                         short: "Custom",           type: "area",    group: "Other" },
-];
-const Q_PITCH_FACTORS = { "Flat (0/12)":1.0,"1/12":1.003,"2/12":1.014,"3/12":1.031,"4/12":1.054,"5/12":1.083,"6/12":1.118,"7/12":1.158,"8/12":1.202,"9/12":1.25,"10/12":1.302,"11/12":1.357,"12/12":1.414 };
-const Q_WALL_HEIGHTS = [
-  { label: "8' walls (10.00 sq ft each)",  sqftPer: 10    },
-  { label: "9' walls (11.25 sq ft each)",  sqftPer: 11.25 },
-  { label: "10' walls (12.50 sq ft each)", sqftPer: 12.5  },
-  { label: "11' walls (13.75 sq ft each)", sqftPer: 13.75 },
-  { label: "12' walls (15.00 sq ft each)", sqftPer: 15    },
-];
-const Q_GROUP_ORDER = ["Walls","Attic","Porch / Blocking","Roofline","Other"];
-const Q_STATUS_CONFIG = {
-  draft:   { label: "Draft",   color: "#6b7280", bg: "#f3f4f6" },
-  quoted:  { label: "Quoted",  color: "#1a56db", bg: "#eef2ff" },
-  pending: { label: "Pending", color: "#b45309", bg: "#fef3c7" },
-  sold:    { label: "Sold",    color: "#15803d", bg: "#dcfce7" },
-  lost:    { label: "Lost",    color: "#b91c1c", bg: "#fee2e2" },
-};
-
-// ── Quote PDF helpers ──────────────────────────────────
-function qSharePdfBlob(blob, filename) {
-  if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], filename, { type: "application/pdf" })] })) {
-    navigator.share({ files: [new File([blob], filename, { type: "application/pdf" })], title: filename }).catch(err => { if (err.name !== "AbortError") alert("Share failed: " + err.message); });
-  } else {
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-}
-
-
-// ── Real QuoteView from ist-quote-builder (verbatim port) ──────────
-
-
-var COMPANY = {
-  name: "Insulation Services of Tulsa",
-  tagline: "Serving Northeastern Oklahoma",
-  phone: "1 (918) 232-9055",
-};
-
-var SALESMAN_INFO = {
-  "Johnny": { fullName: "Johnny Casper", phone: "918-550-2396", email: "Johnny@istulsa.com" },
-  "Jordan": { fullName: "Jordan Beard", phone: "918-625-7820", email: "Jordan@istulsa.com" },
-  "Skip": { fullName: "Skip Owen", phone: "918-219-7890", email: "Skip@istulsa.com" },
-};
-
-var LOCATIONS = [
-  { id: "band_joist",       label: "Band Joist Blocking",           short: "Band Joist",        type: "area",    group: "Porch / Blocking" },
-  { id: "ext_walls_house",  label: "Boxed Exterior Walls of House", short: "Ext Walls House",   type: "wall",    group: "Walls" },
-  { id: "ext_walls_garage", label: "Boxed Exterior Walls of Garage",short: "Ext Walls Garage",  type: "wall",    group: "Walls" },
-  { id: "garage_common",    label: "Garage Common Wall",            short: "Garage Common",     type: "wall",    group: "Walls" },
-  { id: "open_attic_walls", label: "Open Attic Walls",              short: "Attic Walls",       type: "wall",    group: "Walls" },
-  { id: "ext_slopes",       label: "Boxed Exterior Slopes",         short: "Ext Slopes",        type: "slope",   group: "Attic" },
-  { id: "ext_kneewall",     label: "Boxed Exterior Kneewall",       short: "Ext Kneewall",      type: "wall",    group: "Attic" },
-  { id: "attic_slopes",     label: "Open Attic Slopes",             short: "Attic Slopes",      type: "area",    group: "Attic" },
-  { id: "attic_kneewall",   label: "Open Attic Kneewall",           short: "Attic Kneewall",    type: "wall",    group: "Attic" },
-  { id: "flat_ceiling",     label: "Flat Ceiling",                  short: "Flat Ceiling",      type: "area",    group: "Attic" },
-  { id: "attic_area_house", label: "Open Attic Area of House",      short: "Attic House",       type: "area",    group: "Attic" },
-  { id: "attic_area_garage",label: "Open Attic Area of Garage",     short: "Attic Garage",      type: "area",    group: "Attic" },
-  { id: "gable_end",        label: "Gable End",                     short: "Gable End",         type: "area",    group: "Roofline" },
-  { id: "porch",            label: "Porch",                         short: "Porch",             type: "area",    group: "Porch / Blocking" },
-  { id: "porch_blocking",   label: "Porch Blocking",                short: "Porch Blocking",    type: "area",    group: "Porch / Blocking" },
-  { id: "roofline",         label: "Roofline",                      short: "Roofline",          type: "roofline",group: "Roofline" },
-  { id: "roofline_garage",  label: "Roofline of Garage",            short: "Roofline Garage",   type: "roofline",group: "Roofline" },
-  { id: "roofline_house",   label: "Roofline of House",             short: "Roofline House",    type: "roofline",group: "Roofline" },
-  { id: "custom",           label: "Custom",                        short: "Custom",            type: "area",    group: "Other" },
-];
-
-var FIBERGLASS_MATERIALS = [
-  "Blown Fiberglass", "R11 Fiberglass Batts", "R13 Fiberglass Batts", "R15 Fiberglass Batts",
-  "R19 Fiberglass Batts", "R22 Blown Fiberglass", "R26 Blown Fiberglass", "R30 Fiberglass Batts", "R38 Fiberglass Batts",
-  "Blown Cellulose", "Blown Rockwool", "Rockwool", '6" Rockwool', "Lambswool",
-];
-
-var OPEN_CELL_MATERIALS = [];
-[0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6].forEach(function(n){ OPEN_CELL_MATERIALS.push(n+'" Open Cell Foam'); });
-
-var CLOSED_CELL_MATERIALS = [];
-[0.5,1,1.5,2,2.5,3,3.5,4,4.5,5,5.5,6].forEach(function(n){ CLOSED_CELL_MATERIALS.push(n+'" Closed Cell Foam'); });
-
-var ALL_MATERIALS = FIBERGLASS_MATERIALS.concat(OPEN_CELL_MATERIALS).concat(CLOSED_CELL_MATERIALS);
-
-var PITCH_FACTORS = {"Flat (0/12)":1.0,"1/12":1.003,"2/12":1.014,"3/12":1.031,"4/12":1.054,"5/12":1.083,"6/12":1.118,"7/12":1.158,"8/12":1.202,"9/12":1.25,"10/12":1.302,"11/12":1.357,"12/12":1.414};
-
-var WALL_HEIGHTS = [
-  {label:"8' walls (10.00 sq ft each)",sqftPer:10},{label:"9' walls (11.25 sq ft each)",sqftPer:11.25},
-  {label:"10' walls (12.50 sq ft each)",sqftPer:12.5},{label:"11' walls (13.75 sq ft each)",sqftPer:13.75},
-  {label:"12' walls (15.00 sq ft each)",sqftPer:15},
-];
-
-var GROUP_ORDER = ["Walls","Attic","Porch / Blocking","Roofline","Other"];
-
-var C = {
-  bg:"linear-gradient(135deg, #e8eef8 0%, #dde6f5 40%, #cdd9f0 100%)",
-  bgSolid:"#e8eef8",
-  card:"rgba(255,255,255,0.65)",
-  cardHover:"rgba(255,255,255,0.8)",
-  glass:"rgba(255,255,255,0.6)",
-  glassBorder:"rgba(255,255,255,0.8)",
-  glassStrong:"rgba(255,255,255,0.75)",
-  accent:"#2563eb",
-  accentHover:"#1d4ed8",
-  accentBg:"rgba(37,99,235,0.08)",
-  accentGlow:"0 0 20px rgba(37,99,235,0.2)",
-  text:"#0f172a",
-  textSec:"#475569",
-  dim:"#94a3b8",
-  border:"rgba(0,0,0,0.08)",
-  borderLight:"rgba(0,0,0,0.04)",
-  input:"rgba(255,255,255,0.7)",
-  inputBorder:"rgba(0,0,0,0.12)",
-  danger:"#dc2626",
-  dangerBg:"rgba(220,38,38,0.06)",
-  green:"#16a34a",
-  blue:"#2563eb",
-  shadow:"0 4px 24px rgba(0,0,0,0.08), inset 0 1px 0 rgba(255,255,255,0.9)",
-  shadowMd:"0 8px 32px rgba(0,0,0,0.12), inset 0 1px 0 rgba(255,255,255,0.9)",
-};
-
-/* ──────── STORAGE HELPERS (Firebase) ──────── */
-
-async function saveJob(savedBy, jobName, jobData) {
-  try {
-    const q = query(collection(db, "takeoffJobs"), where("job_name","==",jobName), where("saved_by","==",savedBy));
-    const snap = await getDocs(q);
-    if (!snap.empty) {
-      await updateDoc(snap.docs[0].ref, { job_data: jobData, updated_at: new Date().toISOString() });
-    } else {
-      await addDoc(collection(db, "takeoffJobs"), { job_name: jobName, saved_by: savedBy, job_data: jobData, updated_at: new Date().toISOString(), created_at: new Date().toISOString() });
-    }
-    return { error: null };
-  } catch(e) { return { error: e }; }
-}
-async function loadJobs(savedBy) {
-  try {
-    const q = query(collection(db, "takeoffJobs"), where("saved_by","==",savedBy));
-    const snap = await getDocs(q);
-    const data = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(d => d.job_name !== "__autosave__").sort((a,b) => (b.updated_at||"").localeCompare(a.updated_at||""));
-    return { data, error: null };
-  } catch(e) { return { data: [], error: e }; }
-}
-async function loadAllJobs() {
-  try {
-    const results = [];
-    for (const member of TEAM_MEMBERS) {
-      const r = await loadJobs(member);
-      if (r.data) results.push(...r.data);
-    }
-    return results;
-  } catch(e) { return []; }
-}
-async function deleteJob(id) {
-  try { await deleteDoc(doc(db, "takeoffJobs", id)); return { error: null }; }
-  catch(e) { return { error: e }; }
-}
-async function saveAutosave(savedBy, data) {
-  try {
-    await setDoc(doc(db, "takeoffAutosave", savedBy), { job_data: data, updated_at: new Date().toISOString() }, { merge: true });
-    return { error: null };
-  } catch(e) { return { error: e }; }
-}
-async function loadAutosave(savedBy) {
-  try {
-    const snap = await getDoc(doc(db, "takeoffAutosave", savedBy));
-    if (!snap.exists()) return null;
-    return snap.data().job_data;
-  } catch(e) { return null; }
-}
-
-/* ──────── UI COMPONENTS ──────── */
-
-var glassInput={width:"100%",padding:"10px 12px",background:"rgba(255,255,255,0.7)",border:"1px solid rgba(0,0,0,0.1)",borderRadius:8,color:"#0f172a",fontSize:15,fontFamily:"'Inter',sans-serif",outline:"none",boxSizing:"border-box",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",transition:"border-color 0.15s, box-shadow 0.15s"};
-var _numpadBlurTimer=null;
-var _numpadActiveSet=null;
-function _numpadOpen(setShow){
-  clearTimeout(_numpadBlurTimer);
-  if(_numpadActiveSet&&_numpadActiveSet!==setShow){_numpadActiveSet(false);}
-  _numpadActiveSet=setShow;
-  setShow(true);
-}
-function _numpadClose(setShow){
-  _numpadBlurTimer=setTimeout(function(){
-    if(_numpadActiveSet===setShow){_numpadActiveSet=null;}
-    setShow(false);
-  },120);
-}
-function QV_Input(p){
-  var isNum=!p.type||p.type==="number";
-  var sp=React.useState(false),showPad=sp[0],setShowPad=sp[1];
-  function padPress(v){
-    var cur=String(p.value||"");
-    if(v==="⌫"){p.onChange(cur.slice(0,-1));}
-    else if(v==="."&&cur.includes(".")){return;}
-    else{p.onChange(cur+v);}
-  }
-  var padNums=["7","8","9","4","5","6","1","2","3",".","0","⌫"];
-  return(<div style={{position:"relative"}}>
-    <label style={{fontSize:11,fontWeight:600,color:C.textSec,marginBottom:5,display:"block",textTransform:"uppercase",letterSpacing:"0.08em"}}>{p.label}</label>
-    <input className={p.pulse?"ist-pulse":""} style={Object.assign({},glassInput,{caretColor:isNum?"transparent":"auto"})}
-      onFocus={function(e){e.target.style.borderColor=C.accent;e.target.style.boxShadow="0 0 0 3px rgba(37,99,235,0.15)";if(isNum)_numpadOpen(setShowPad);}}
-      onBlur={function(e){e.target.style.borderColor="rgba(0,0,0,0.1)";e.target.style.boxShadow="none";if(isNum)_numpadClose(setShowPad);}}
-      readOnly={isNum} inputMode={isNum?"none":undefined}
-      type={isNum?"text":p.type} value={p.value}
-      onChange={isNum?function(){}:function(e){p.onChange(e.target.value);}}
-      placeholder={p.placeholder} step={p.step}/>
-    {isNum&&showPad&&ReactDOM.createPortal(
-      (<div onMouseDown={function(e){e.preventDefault();}} style={{position:"fixed",zIndex:9999,bottom:0,left:0,right:0,background:"#f1f5f9",boxShadow:"0 -2px 16px rgba(0,0,0,0.18)",borderTop:"2px solid #2563eb",padding:"10px 16px 24px"}}>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:8,maxWidth:400,margin:"0 auto 8px"}}>
-          {padNums.map(function(v){return(<button key={v} onMouseDown={function(e){e.preventDefault();padPress(v);}} style={{padding:"14px 0",borderRadius:10,border:"1px solid #cbd5e1",background:v==="⌫"?"#fee2e2":"#fff",color:v==="⌫"?"#dc2626":"#0f172a",fontSize:18,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif",boxShadow:"0 1px 3px rgba(0,0,0,0.1)"}}>{v}</button>);})}
-        </div>
-        <button onMouseDown={function(e){e.preventDefault();clearTimeout(_numpadBlurTimer);_numpadActiveSet=null;setShowPad(false);}} style={{display:"block",maxWidth:400,width:"100%",margin:"0 auto",padding:"13px",borderRadius:10,border:"none",background:"#2563eb",color:"#fff",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif",letterSpacing:"0.06em",textTransform:"uppercase"}}>Done</button>
-      </div>),
-      document.body
-    )}
-  </div>);}
-
-
-function AppSelect(p){return(<div><label style={{fontSize:11,fontWeight:600,color:C.textSec,marginBottom:5,display:"block",textTransform:"uppercase",letterSpacing:"0.08em"}}>{p.label}</label><select className={p.pulse?"ist-pulse":""} style={Object.assign({},glassInput,{WebkitAppearance:"none"})} onFocus={function(e){e.target.style.borderColor=C.accent;e.target.style.boxShadow="0 0 0 3px rgba(37,99,235,0.15)";}} onBlur={function(e){e.target.style.borderColor="rgba(0,0,0,0.1)";e.target.style.boxShadow="none";}} value={p.value} onChange={function(e){p.onChange(e.target.value);}}>{p.options.map(function(o){var v=typeof o==="string"?o:o.value;var l=typeof o==="string"?o:o.label;return(<option key={v} value={v} style={{background:"#fff",color:"#0f172a"}}>{l}</option>);})}</select></div>);}
-
-function Row(p){return <div style={{display:"flex",gap:10,marginBottom:10}}>{p.children}</div>;}
-function Col(p){return <div style={{flex:1}}>{p.children}</div>;}
-function StepLabel(p){return(<label style={{fontSize:11,fontWeight:700,color:C.accent,marginBottom:5,display:"block",textTransform:"uppercase",letterSpacing:"0.08em"}}>{p.children}</label>);}
-
-function ToggleButtons(p){return(<div style={{display:"flex",gap:2,background:"rgba(0,0,0,0.05)",padding:3,borderRadius:8,marginBottom:12,border:"1px solid rgba(0,0,0,0.07)"}}>{p.options.map(function(o){return(<button key={o.id} onClick={function(){p.setMode(o.id);}} style={{flex:1,padding:"8px 6px",borderRadius:6,fontSize:12,fontWeight:600,cursor:"pointer",border:p.mode===o.id?"1px solid rgba(37,99,235,0.3)":"1px solid transparent",fontFamily:"'Inter',sans-serif",textTransform:"uppercase",letterSpacing:"0.04em",background:p.mode===o.id?"rgba(255,255,255,0.9)":"transparent",color:p.mode===o.id?C.accent:C.textSec,boxShadow:p.mode===o.id?"0 1px 4px rgba(0,0,0,0.1)":"none",transition:"all 0.15s"}}>{o.label}</button>);})}</div>);}
-
-function GreenBtn(p){return(<button onClick={p.onClick} className={p.pulse?"ist-pulse":""} style={{width:"100%",padding:"13px 20px",borderRadius:8,border:"1px solid rgba(37,99,235,0.3)",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"'Inter',sans-serif",textTransform:"uppercase",letterSpacing:"0.06em",background:"rgba(37,99,235,0.12)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",color:"#1d4ed8",marginTop:p.mt||0,boxShadow:"0 2px 12px rgba(37,99,235,0.15), inset 0 1px 0 rgba(255,255,255,0.8)",transition:"all 0.15s"}} onMouseOver={function(e){e.currentTarget.style.background="rgba(37,99,235,0.2)";e.currentTarget.style.boxShadow="0 4px 20px rgba(37,99,235,0.25), inset 0 1px 0 rgba(255,255,255,0.9)";}} onMouseOut={function(e){e.currentTarget.style.background="rgba(37,99,235,0.12)";e.currentTarget.style.boxShadow="0 2px 12px rgba(37,99,235,0.15), inset 0 1px 0 rgba(255,255,255,0.8)";}}>{p.children}</button>);}
-
-/* ──────── MEASUREMENTS ──────── */
-
-var CAVITY_WIDTHS=[{value:"",label:"— Cavity Width —"},{value:"2x4",label:"2x4"},{value:"2x6",label:"2x6"},{value:"2x8",label:"2x8"}];
-
-function WallMeasurement(p){
-  var s1=useState(p.lhOnly?"lh":"count"),mode=s1[0],setMode=s1[1];
-  // sqft direct mode
-  var sd=useState(""),ds=sd[0],setDs=sd[1];
-  var s2=useState(""),wc=s2[0],setWc=s2[1];
-  var s3=useState("0"),wi=s3[0],setWi=s3[1];
-  var s4=useState(""),ln=s4[0],setLn=s4[1];
-  var s5=useState(""),ht=s5[0],setHt=s5[1];
-  var s6=useState(""),cw=s6[0],setCw=s6[1];
-  var sq=mode==="count"?(parseInt(wc)||0)*(WALL_HEIGHTS[parseInt(wi)]?WALL_HEIGHTS[parseInt(wi)].sqftPer:0):(parseFloat(ln)||0)*(parseFloat(ht)||0);
-  function notify(sqftVal,wiVal,wcVal,lnVal,htVal,modeVal,cwVal){
-    var heightLabel=null;var dimStr="";
-    var m=modeVal||mode;
-    if(m==="count"){var h=WALL_HEIGHTS[parseInt(wiVal!==undefined?wiVal:wi)];if(h)heightLabel=h.label;var cavities=parseInt(wcVal!==undefined?wcVal:wc)||0;if(cavities>0&&heightLabel){heightLabel=cavities+" cavities @ "+heightLabel;dimStr=heightLabel;}}
-    else{var l=lnVal!==undefined?lnVal:ln;var ht2=htVal!==undefined?htVal:ht;if(l&&ht2)dimStr=l+"×"+ht2;}
-    var cavity=cwVal!==undefined?cwVal:cw;
-    p.onSqftChange(sqftVal,heightLabel,cavity||null,dimStr||null);
-  }
-  return(<div>
-    <ToggleButtons mode={mode} setMode={function(v){setMode(v);}} options={p.lhOnly?[{id:"lh",label:"L × H"},{id:"sqft",label:"Sq Ft"}]:[{id:"count",label:"Wall Count"},{id:"lh",label:"L × H"},{id:"sqft",label:"Sq Ft"}]}/>
-    {mode==="count"&&(<Row><Col><QV_Input pulse={p.pulse} label="# of Cavities" value={wc} placeholder="0" onChange={function(v){setWc(v);var s=(parseInt(v)||0)*(WALL_HEIGHTS[parseInt(wi)]?WALL_HEIGHTS[parseInt(wi)].sqftPer:0);notify(s,wi,v,ln,ht,"count",cw);}}/></Col><Col><AppSelect pulse={p.pulse} label="Wall Height" value={wi} onChange={function(v){setWi(v);var s=(parseInt(wc)||0)*(WALL_HEIGHTS[parseInt(v)]?WALL_HEIGHTS[parseInt(v)].sqftPer:0);notify(s,v,wc,ln,ht,"count",cw);}} options={WALL_HEIGHTS.map(function(w,i){return{value:String(i),label:w.label};})}/></Col></Row>)}
-    {mode==="lh"&&(<Row><Col><QV_Input pulse={p.pulse} label="Length (ft)" value={ln} placeholder="0" onChange={function(v){setLn(v);notify((parseFloat(v)||0)*(parseFloat(ht)||0),wi,wc,v,ht,"lh",cw);}}/></Col><Col><QV_Input pulse={p.pulse} label="Height (ft)" value={ht} placeholder="0" onChange={function(v){setHt(v);notify((parseFloat(ln)||0)*(parseFloat(v)||0),wi,wc,ln,v,"lh",cw);}}/></Col></Row>)}
-    {mode==="sqft"&&(<div style={{marginBottom:10}}><QV_Input pulse={p.pulse} label="Total Sq Ft" value={ds} placeholder="0" onChange={function(v){setDs(v);p.onSqftChange(parseFloat(v)||0,null,null,v?v+" sf":null);}}/></div>)}
-    {mode!=="sqft"&&<div style={{marginBottom:8}}><AppSelect pulse={p.pulse} label="Cavity Width" value={cw} onChange={function(v){setCw(v);notify(sq,wi,wc,ln,ht,mode,v);}} options={CAVITY_WIDTHS}/></div>}
-    {(sq>0||parseFloat(ds)>0)&&(<div style={{fontSize:13,color:C.accent,fontWeight:600,marginBottom:8}}>{Math.round(mode==="sqft"?parseFloat(ds)||0:sq)+" sq ft"+(cw&&mode!=="sqft"?" · "+cw:"")}</div>)}
-  </div>);
-}
-
-function AreaMeasurement(p){
-  var s1=useState("dims"),mode=s1[0],setMode=s1[1];
-  var s2=useState(""),ln=s2[0],setLn=s2[1];
-  var s3=useState(""),wd=s3[0],setWd=s3[1];
-  var s4=useState(""),ds=s4[0],setDs=s4[1];
-  var sq=mode==="dims"?(parseFloat(ln)||0)*(parseFloat(wd)||0):(parseFloat(ds)||0);
-  return(<div>
-    <ToggleButtons mode={mode} setMode={setMode} options={[{id:"dims",label:"L × W"},{id:"sqft",label:"Sq Ft"}]}/>
-    {mode==="dims"?(<Row><Col><QV_Input pulse={p.pulse} label="Length (ft)" value={ln} placeholder="0" onChange={function(v){setLn(v);var sq2=(parseFloat(v)||0)*(parseFloat(wd)||0);p.onSqftChange(sq2,null,null,(v&&wd)?v+"×"+wd:null);}}/></Col><Col><QV_Input pulse={p.pulse} label="Width (ft)" value={wd} placeholder="0" onChange={function(v){setWd(v);var sq2=(parseFloat(ln)||0)*(parseFloat(v)||0);p.onSqftChange(sq2,null,null,(ln&&v)?ln+"×"+v:null);}}/></Col></Row>):(<div style={{marginBottom:10}}><QV_Input pulse={p.pulse} label="Total Sq Ft" value={ds} placeholder="0" onChange={function(v){setDs(v);p.onSqftChange(parseFloat(v)||0,null,null,v?v+" sf":null);}}/></div>)}
-    {sq>0&&(<div style={{fontSize:13,color:C.accent,fontWeight:600,marginBottom:8}}>{Math.round(sq)+" sq ft"}</div>)}
-  </div>);
-}
-
-function LocationGrid(p){
-  var groups=GROUP_ORDER.filter(function(g){return LOCATIONS.some(function(l){return l.group===g&&l.id!=="custom";});});
-  return(<div style={{marginBottom:4}}>
-    {groups.map(function(g){
-      var locs=LOCATIONS.filter(function(l){return l.group===g&&l.id!=="custom";});
-      return(<div key={g} style={{marginBottom:10}}>
-        <div style={{fontSize:10,fontWeight:700,color:C.dim,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:5}}>{g}</div>
-        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-          {locs.map(function(loc){
-            var active=p.value===loc.id;
-            return(<button key={loc.id} onClick={function(){p.onChange(loc.id);}} className={(p.pulse&&!p.value)?"ist-pulse":active?"ist-pulse-selected":""}
-              style={{padding:"8px 13px",borderRadius:8,border:active?"2px solid "+C.accent:"1px solid rgba(0,0,0,0.08)",background:active?"rgba(37,99,235,0.1)":"rgba(255,255,255,0.6)",color:active?C.accent:C.text,fontSize:13,fontWeight:active?700:500,cursor:"pointer",fontFamily:"'Inter',sans-serif",transition:"all 0.12s",lineHeight:1.2,backdropFilter:"blur(8px)",boxShadow:active?"0 0 0 3px rgba(37,99,235,0.1)":"0 1px 3px rgba(0,0,0,0.06)"}}>
-              {loc.short}
-            </button>);
-          })}
-        </div>
-      </div>);
-    })}
-    <button onClick={function(){p.onChange("custom");}}
-      style={{padding:"8px 13px",borderRadius:8,border:p.value==="custom"?"2px solid "+C.accent:"1px dashed rgba(0,0,0,0.2)",background:p.value==="custom"?"rgba(37,99,235,0.08)":"rgba(255,255,255,0.4)",color:p.value==="custom"?C.accent:C.dim,fontSize:13,fontWeight:500,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>
-      + Custom
-    </button>
-  </div>);
-}
-
-function StepBar(p){
-  var steps=p.steps;
-  return(<div style={{display:"flex",alignItems:"center",gap:0,marginBottom:18}}>
-    {steps.map(function(s,i){
-      var done=i<p.current;var active=i===p.current;
-      var bg=done?C.accent:active?C.accent:"transparent";
-      var col=done||active?"#fff":C.dim;
-      var borderCol=done||active?C.accent:C.border;
-      return(<div key={i} style={{display:"flex",alignItems:"center",flex:i<steps.length-1?1:"none"}}>
-        <div style={{display:"flex",alignItems:"center",gap:7,padding:"7px 12px",borderRadius:20,background:bg,border:"1.5px solid "+borderCol,transition:"all 0.15s"}}>
-          <span style={{fontSize:12,fontWeight:800,color:col}}>{done?"✓":(i+1)}</span>
-          <span style={{fontSize:12,fontWeight:600,color:col,whiteSpace:"nowrap"}}>{s}</span>
-        </div>
-        {i<steps.length-1&&(<div style={{flex:1,height:2,background:done?C.accent:C.borderLight,margin:"0 4px"}}/>)}
-      </div>);
-    })}
-  </div>);
-}
-
-function MeasurementForm(p){
-  var mats=p.tab==="opencell"?OPEN_CELL_MATERIALS:p.tab==="closedcell"?CLOSED_CELL_MATERIALS:FIBERGLASS_MATERIALS;
-  var isFoam=p.tab==="opencell"||p.tab==="closedcell";
-  var hp=p.hasPrice;
-  // Allow external lid/cl state (for split layout)
-  var s1=useState(""),_lid=s1[0],_setLid=s1[1];
-  var s2=useState(""),_cl=s2[0],_setCl=s2[1];
-  var lid=p.lid!==undefined?p.lid:_lid;
-  var setLid=p.setLid||_setLid;
-  var cl=p.cl!==undefined?p.cl:_cl;
-  var setCl=p.setCl||_setCl;
-  var s3=useState(mats[0]||""),mat=s3[0],setMat=s3[1];
-  var s4=useState(0),sqft=s4[0],setSqft=s4[1];
-  var s4b=useState(null),wallHeightLabel=s4b[0],setWallHeightLabel=s4b[1];
-  var s4c=useState(null),cavityWidth=s4c[0],setCavityWidth=s4c[1];
-  var s4d=useState(null),dimStr=s4d[0],setDimStr=s4d[1];
-  var s5=useState(""),price=s5[0],setPrice=s5[1];
-  var s6=useState("Flat (0/12)"),pitch=s6[0],setPitch=s6[1];
-  var s7=useState(0),mk=s7[0],setMk=s7[1];
-  var s8=useState(false),isRemoval=s8[0],setIsRemoval=s8[1];
-  var s9=useState(""),matNote=s9[0],setMatNote=s9[1];
-  var s10=useState(""),tmpMat=s10[0],setTmpMat=s10[1];
-  var loc=LOCATIONS.find(function(x){return x.id===lid;});
-  var locLabel=loc?(loc.id==="custom"?cl:loc.label):"";
-  var locGroup=loc?(loc.id==="custom"?"Other":loc.group):"Other";
-  var needsPitch=loc&&loc.type==="roofline"&&(!hp||isFoam);
-  var measType=loc?(loc.type==="wall"?"wall":loc.type==="slope"?"slope":"area"):null;
-  var pf=needsPitch?(PITCH_FACTORS[pitch]||1):1;
-  var adj=sqft*pf;var fin=Math.round(adj);
-  var ss={width:"100%",padding:"10px 12px",background:C.input,border:"1px solid "+C.inputBorder,borderRadius:6,color:C.text,fontSize:14,fontFamily:"'Inter',sans-serif",outline:"none",boxSizing:"border-box",WebkitAppearance:"none",transition:"border-color 0.15s"};
-  var tabLabel=p.tab==="opencell"?"Open Cell":p.tab==="closedcell"?"Closed Cell":"Fiberglass";
-  // Step tracking
-  var stepLabels = hp ? ["Location","Material","Measure","Price"] : ["Location","Measure","Material","Add"];
-  var stepCurrent = !lid ? 0 : (fin<=0) ? 1 : (!hp&&!matNote.trim()) ? 2 : 3;
-  React.useEffect(function(){
-    setSqft(0);setWallHeightLabel(null);setCavityWidth(null);setDimStr(null);setMk(function(k){return k+1;});setMatNote("");setTmpMat("");
-  },[lid]);
-  React.useEffect(function(){
-    if(document.getElementById("ist-pulse-style"))return;
-    var s=document.createElement("style");s.id="ist-pulse-style";
-    s.textContent="@keyframes ist-pulse{0%{box-shadow:0 0 0 0 rgba(37,99,235,0.9),0 0 0 0 rgba(37,99,235,0.5)}60%{box-shadow:0 0 0 6px rgba(37,99,235,0.3),0 0 0 12px rgba(37,99,235,0)}100%{box-shadow:0 0 0 0 rgba(37,99,235,0),0 0 0 0 rgba(37,99,235,0)}}.ist-pulse{animation:ist-pulse 1.3s ease-in-out infinite !important;border-radius:8px;outline:2px solid rgba(37,99,235,0.6);outline-offset:1px;}.ist-pulse-selected{animation:ist-pulse 1.3s ease-in-out infinite !important;}";
-    document.head.appendChild(s);
-  },[]);
-  function handleAdd(){
-    var pr=hp?(parseFloat(price)||0):0;if(fin<=0||!locLabel)return;if(hp&&pr<=0)return;if(!hp&&!matNote.trim()){alert("Please select a material first.");return;}
-    var useMat=hp?mat:"(material TBD)";
-    var desc=hp?("Install "+mat.toLowerCase()+" in "+locLabel.toLowerCase()):(locLabel+" — "+fin.toLocaleString()+" sq ft");
-    p.onAdd({type:isFoam?"Foam":"Fiberglass",material:useMat,location:locLabel,locationId:loc?loc.id:"custom",group:locGroup,sqft:fin,pitch:needsPitch?pitch:null,pricePerUnit:pr,total:hp?Math.ceil(fin*pr):0,description:desc,isRemoval:!hp&&isRemoval,wallHeightLabel:(!hp&&wallHeightLabel)||null,cavityWidth:(!hp&&cavityWidth)||null,matNote:(!hp&&matNote.trim())||null,dimStr:dimStr||null});
-    setSqft(0);setWallHeightLabel(null);setCavityWidth(null);setDimStr(null);setPrice("");setPitch("Flat (0/12)");setMk(function(k){return k+1;});setIsRemoval(false);setMatNote("");setTmpMat("");
-  }
-  return(<div style={{background:"rgba(255,255,255,0.65)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderRadius:12,padding:18,border:"1px solid rgba(255,255,255,0.8)",boxShadow:"0 4px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.9)"}}>
-    <StepBar steps={stepLabels} current={stepCurrent}/>
-    {/* STEP 1: Location grid */}
-    {!p.hideLocation&&(<div style={{marginBottom:16}}>
-      <div style={{fontSize:11,fontWeight:700,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{"① Location"}</div>
-      <LocationGrid pulse={!hp&&stepCurrent===0} value={lid} onChange={function(v){setLid(v);setSqft(0);setMk(function(k){return k+1;});}}/>
-      {lid==="custom"&&(<div style={{marginTop:8}}><QV_Input label="Custom Location Name" value={cl} onChange={setCl} type="text" placeholder="e.g. Bonus room walls"/></div>)}
-    </div>)}
-    {loc&&(<div>
-      {hp&&(<div style={{marginBottom:14}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{"② Material"}{!mat&&(<span style={{color:C.danger,marginLeft:4}}>{"*"}</span>)}</div>
-        {(function(){
-          var HPBTNS=[
-            {id:"R11",label:"R11",value:"R11 Fiberglass Batts",sub:null},
-            {id:"R13",label:"R13",value:null,sub:[{id:"x15",label:"x15",value:"R13 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R13 x24 Fiberglass Batts"}]},
-            {id:"R19",label:"R19",value:null,sub:[{id:"x15",label:"x15",value:"R19 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R19 x24 Fiberglass Batts"}]},
-            {id:"R30",label:"R30",value:null,sub:[{id:"x15",label:"x15",value:"R30 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R30 x24 Fiberglass Batts"}]},
-            {id:"opencell",label:"Open Cell",value:null,sub:["2\"","3\"","4\"","5\"","6\""].map(function(v){return{id:v,label:v,value:v+' Open Cell Foam'};})},
-            {id:"closedcell",label:"Closed Cell",value:null,sub:["1\"","2\"","3\""].map(function(v){return{id:v,label:v,value:v+' Closed Cell Foam'};})},
-            {id:"blownfg",label:"Blown Fiberglass",value:null,sub:["R13","R15","R19","R22","R26","R30","R38","R44","R49","R60"].map(function(r){return{id:r,label:r,value:"Blown Fiberglass "+r};})},
-            {id:"blowncel",label:"Blown Cellulose",value:null,sub:["R13","R15","R19","R22","R26","R30","R38","R44","R49","R60"].map(function(r){return{id:r,label:r,value:"Blown Cellulose "+r};})},
-          ];
-          var hpBtnStyle=function(active){return{padding:"8px 13px",borderRadius:8,border:active?"2px solid "+C.accent:"1px solid rgba(0,0,0,0.08)",background:active?"rgba(37,99,235,0.1)":"rgba(255,255,255,0.6)",color:active?C.accent:C.text,fontSize:13,fontWeight:active?700:500,cursor:"pointer",fontFamily:"'Inter',sans-serif",transition:"all 0.12s",backdropFilter:"blur(8px)",boxShadow:active?"0 0 0 3px rgba(37,99,235,0.1)":"0 1px 3px rgba(0,0,0,0.06)"};};
-          var activePrimary=HPBTNS.find(function(b){return mat&&(b.value===mat||b.sub&&b.sub.some(function(s){return s.value===mat;}));});
-          var activePrimaryId=activePrimary?activePrimary.id:"";
-          return React.createElement("div",null,
-            React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}},
-              HPBTNS.map(function(b){
-                var active=activePrimaryId===b.id;
-                return React.createElement("button",{key:b.id,onClick:function(){if(b.value){setMat(b.value);}else{setMat("");}setTmpMat(b.id);},style:hpBtnStyle(active)},b.label);
-              })
-            ),
-            activePrimary&&activePrimary.sub&&React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginTop:4,paddingLeft:8,borderLeft:"3px solid "+C.accent}},
-              activePrimary.sub.map(function(s){
-                var subActive=mat===s.value;
-                return React.createElement("button",{key:s.id,onClick:function(){setMat(s.value);},style:hpBtnStyle(subActive)},s.label);
-              })
-            )
-          );
-        })()}
-        {mat&&(<div style={{marginTop:6,fontSize:12,color:C.accent,fontWeight:600}}>{"✓ "+mat}</div>)}
-      </div>)}
-      <div style={{marginBottom:4}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{(hp?"③":"②")+" Measurements"}</div>
-      </div>
-      {measType==="wall"?(<WallMeasurement key={"w-"+mk} pulse={!hp&&stepCurrent===1} lhOnly={lid==="ext_kneewall"||lid==="attic_kneewall"} onSqftChange={function(s,h,cw,ds){setSqft(s);setWallHeightLabel(h||null);setCavityWidth(cw||null);setDimStr(ds||null);}}/>):measType==="slope"?(<WallMeasurement key={"w-"+mk} pulse={!hp&&stepCurrent===1} onSqftChange={function(s,h,cw,ds){setSqft(s);setDimStr(ds||null);}} lhOnly/>):(<AreaMeasurement key={"a-"+mk} pulse={!hp&&stepCurrent===1} onSqftChange={function(s,h,cw,ds){setSqft(s);setDimStr(ds||null);}}/>)}
-      {needsPitch&&(<div style={{marginBottom:10}}><AppSelect label="Roof Pitch" value={pitch} onChange={setPitch} options={Object.keys(PITCH_FACTORS)}/></div>)}
-      {!hp&&(<div style={{marginBottom:12}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{"③ Material"}{!matNote.trim()&&(<span style={{color:C.danger,marginLeft:4}}>{"*"}</span>)}</div>
-        {(function(){
-          var BTNS=[
-            {id:"R11",label:"R11",value:"R11 Fiberglass Batts",sub:null},
-            {id:"R13",label:"R13",value:null,sub:[{id:"x15",label:"x15",value:"R13 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R13 x24 Fiberglass Batts"}]},
-            {id:"R19",label:"R19",value:null,sub:[{id:"x15",label:"x15",value:"R19 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R19 x24 Fiberglass Batts"}]},
-            {id:"R30",label:"R30",value:null,sub:[{id:"x15",label:"x15",value:"R30 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R30 x24 Fiberglass Batts"}]},
-            {id:"opencell",label:"Open Cell",value:null,sub:["1\"","2\"","3\"","4\"","5\"","6\"","7\"","8\"","9\"","10\""].map(function(v){return{id:v,label:v,value:v+' Open Cell Foam'};})},
-            {id:"closedcell",label:"Closed Cell",value:null,sub:["1\"","1.5\"","2\"","2.5\"","3\"","3.5\"","4\"","4.5\"","5\"","5.5\"","6\""].map(function(v){return{id:v,label:v,value:v+' Closed Cell Foam'};})},
-            {id:"blownfg",label:"Blown Fiberglass",value:null,sub:["R13","R15","R19","R22","R26","R30","R38","R44","R49","R60"].map(function(r){return{id:r,label:r,value:"Blown Fiberglass "+r};})},
-            {id:"blowncel",label:"Blown Cellulose",value:null,sub:["R13","R15","R19","R22","R26","R30","R38","R44","R49","R60"].map(function(r){return{id:r,label:r,value:"Blown Cellulose "+r};})},
-            {id:"removal",label:"Removal",value:"Removal",sub:null,isRemoval:true},
-          ];
-          var btnStyle=function(active,rem){return{padding:"8px 13px",borderRadius:8,border:active?(rem?"2px solid "+C.danger:"2px solid "+C.accent):"1px solid rgba(0,0,0,0.08)",background:active?(rem?"rgba(220,38,38,0.1)":"rgba(37,99,235,0.1)"):"rgba(255,255,255,0.6)",color:active?(rem?C.danger:C.accent):C.text,fontSize:13,fontWeight:active?700:500,cursor:"pointer",fontFamily:"'Inter',sans-serif",transition:"all 0.12s",backdropFilter:"blur(8px)",boxShadow:active?(rem?"0 0 0 3px rgba(220,38,38,0.1)":"0 0 0 3px rgba(37,99,235,0.1)"):"0 1px 3px rgba(0,0,0,0.06)"};};
-          var matPulse=stepCurrent===2;
-          var activeBtn=BTNS.find(function(b){return b.id===tmpMat;});
-          var subPulse=matPulse&&activeBtn&&activeBtn.sub&&!matNote.trim();
-          return React.createElement("div",null,
-            React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}},
-              BTNS.map(function(b){
-                var active=tmpMat===b.id;
-                var shouldPulse=matPulse&&!tmpMat;
-                return React.createElement("button",{key:b.id,className:shouldPulse||active?"ist-pulse":"",onClick:function(){
-                  setTmpMat(b.id);
-                  if(b.value){setMatNote(b.value);}else{setMatNote("");}
-                  setIsRemoval(!!b.isRemoval);
-                },style:btnStyle(active,b.isRemoval)},b.label);
-              })
-            ),
-            activeBtn&&activeBtn.sub&&React.createElement("div",{style:{display:"flex",flexWrap:"wrap",gap:6,marginTop:4,paddingLeft:8,borderLeft:"3px solid "+C.accent}},
-              activeBtn.sub.map(function(s){
-                var subActive=matNote===s.value;
-                return React.createElement("button",{key:s.id,className:subPulse||subActive?"ist-pulse":"",onClick:function(){setMatNote(s.value);},style:btnStyle(subActive)},s.label);
-              })
-            )
-          );
-        })()}
-        {matNote.trim()&&(<div style={{marginTop:8,fontSize:12,color:C.accent,fontWeight:600}}>{"✓ "+matNote}</div>)}
-      </div>)}
-      {hp&&(<div style={{marginBottom:14}}>
-        <div style={{fontSize:11,fontWeight:700,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{(hp?"④":"③")+" Price"}</div>
-        <QV_Input label="Price per Sq Ft" value={price} onChange={setPrice} placeholder="$0.00" step="0.01"/>
-      </div>)}
-      {fin>0&&(<div style={{background:C.accentBg,borderRadius:6,padding:12,marginBottom:12,fontSize:13,color:C.textSec,border:"1px solid "+C.borderLight}}>
-        <div style={{fontWeight:600,color:C.text,marginBottom:4,fontSize:14}}>{hp?("Install "+mat.toLowerCase()+" in "+locLabel.toLowerCase()):(locLabel+" — "+fin.toLocaleString()+" sq ft")}</div>
-        <div>{"Total: "}<span style={{color:C.text,fontWeight:600}}>{fin.toLocaleString()+" sq ft"}</span>{needsPitch&&sqft!==adj&&(<span>{" (adj. from "+Math.round(sqft)+" w/ "+pitch+")"}</span>)}</div>
-        {hp&&(parseFloat(price)||0)>0&&(<div>{"Line Total: "}<span style={{color:C.accent,fontWeight:700}}>{"$"+Math.ceil(fin*(parseFloat(price)||0)).toLocaleString()+".00"}</span></div>)}
-      </div>)}
-      {!hp&&fin>0&&false&&(<label style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",marginBottom:8,cursor:"pointer"}}>
-        <input type="checkbox" checked={isRemoval} onChange={function(e){setIsRemoval(e.target.checked);}} style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
-        <span style={{fontSize:13,fontWeight:600,color:C.text}}>{"Removal"}</span>
-      </label>)}
-      <GreenBtn pulse={!hp&&stepCurrent===3} onClick={handleAdd}>{"+ "+(hp?"Add to Quote":"Add Measurement")}</GreenBtn>
-    </div>)}
-  </div>);
-}
-
-function MaterialTabs(p){return(<div style={{display:"flex",gap:0,borderRadius:6,overflow:"hidden",border:"1px solid "+C.border,marginBottom:16}}>{[{id:"fiberglass",label:"FIBERGLASS"},{id:"opencell",label:"OPEN CELL"},{id:"closedcell",label:"CLOSED CELL"}].map(function(t){return(<button key={t.id} onClick={function(){p.setActiveTab(t.id);}} style={{flex:1,padding:"12px 4px",border:"none",cursor:"pointer",fontFamily:"'Inter',sans-serif",fontSize:11,fontWeight:700,letterSpacing:"0.04em",textTransform:"uppercase",background:p.activeTab===t.id?C.accent:C.card,color:p.activeTab===t.id?"#fff":C.dim}}>{t.label}</button>);})}</div>);}
-
-function getSavedCustomers(salesman){try{return JSON.parse(localStorage.getItem("ist-customers-"+salesman)||"[]");}catch(e){return[];}}
-function setSavedCustomers(salesman,list){localStorage.setItem("ist-customers-"+salesman,JSON.stringify(list));}
-
-function SavedDropdown({label, icon, color, bg, items, onSelect, onDelete}){
-  var s1=useState(false),open=s1[0],setOpen=s1[1];
-  var s2=useState(""),q=s2[0],setQ=s2[1];
-  var sorted=items.filter(function(c){return!q||c.name.toLowerCase().indexOf(q.toLowerCase())>=0;}).sort(function(a,b){return a.name.localeCompare(b.name);});
-  return(
-    <div style={{flex:1,position:"relative"}}>
-      {open&&<div onClick={function(){setOpen(false);setQ("");}} style={{position:"fixed",inset:0,zIndex:998}}/>}
-      <button onClick={function(){setOpen(!open);}} style={{width:"100%",padding:"9px 12px",borderRadius:6,border:"1px solid "+color,background:open?color:bg,color:open?"#fff":color,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif",display:"flex",justifyContent:"space-between",alignItems:"center",gap:4}}>
-        <span>{icon} {label} ({items.length})</span><span style={{fontSize:11}}>{open?"▲":"▼"}</span>
-      </button>
-      {open&&(
-        <div style={{position:"absolute",top:"calc(100% + 4px)",left:0,right:0,background:"rgba(255,255,255,0.92)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",border:"1px solid rgba(0,0,0,0.1)",borderRadius:8,boxShadow:"0 8px 32px rgba(0,0,0,0.15)",zIndex:9999,minWidth:200}}>
-          <input autoFocus value={q} onChange={function(e){setQ(e.target.value);}} placeholder={"Search "+label+"..."} style={{width:"100%",padding:"8px 12px",border:"none",borderBottom:"1px solid #e5e7eb",borderRadius:"8px 8px 0 0",fontSize:13,fontFamily:"'Inter',sans-serif",boxSizing:"border-box",outline:"none"}}/>
-          <div style={{maxHeight:220,overflowY:"auto"}}>
-            {sorted.length===0
-              ?<div style={{padding:"12px",fontSize:13,color:"#9ca3af"}}>No {label.toLowerCase()} saved</div>
-              :sorted.map(function(c){return(
-                <div key={c.name} onClick={function(){onSelect(c);setOpen(false);setQ("");}} style={{padding:"10px 12px",borderBottom:"1px solid #f3f4f6",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
-                    <div style={{fontSize:13,fontWeight:700,color:"#111"}}>{c.name}</div>
-                    {c.address&&<div style={{fontSize:11,color:"#6b7280"}}>{c.address}</div>}
-                    {c.phone&&<div style={{fontSize:11,color:"#6b7280"}}>{c.phone}</div>}
-                  </div>
-                  <button onClick={function(e){e.stopPropagation();onDelete(c.name);}} style={{padding:"3px 7px",borderRadius:4,border:"1px solid #fca5a5",background:"#fef2f2",color:"#dc2626",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif",flexShrink:0,marginLeft:8}}>✕</button>
-                </div>
-              );})}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-function CustomerInfo(p){
-  var user=p.currentUser||"default";
-  var s1=useState(false),showForm=s1[0],setShowForm=s1[1];
-  var s2=useState(""),search=s2[0],setSearch=s2[1];
-  var s3=useState(false),showDrop=s3[0],setShowDrop=s3[1];
-  var s4=useState(getSavedCustomers(user)),saved=s4[0],setSaved=s4[1];
-  var s5=useState("Individual"),custType=s5[0],setCustType=s5[1];
-
-  var s4=useState(getSavedCustomers(user)),saved=s4[0],setSaved=s4[1];
-  var s5=useState("Individual"),custType=s5[0],setCustType=s5[1];
-
-  var builders=saved.filter(function(c){return(c.type||"Individual")==="Builder";});
-  var individuals=saved.filter(function(c){return(c.type||"Individual")==="Individual";});
-
-  function load(c){p.setCustName(c.name||"");p.setCustAddr(c.address||"");p.setCustPhone(c.phone||"");p.setCustEmail(c.email||"");p.setJobAddr(c.jobAddress||"");setCustType(c.type||"Individual");}
-
-  function del(name){
-    if(!confirm("Remove "+name+"?"))return;
-    var list=getSavedCustomers(user).filter(function(c){return c.name!==name;});
-    setSavedCustomers(user,list);setSaved(list);
-  }
-
-  function save(){
-    if(!p.custName.trim()){alert("Enter a customer name first.");return;}
-    var entry={name:p.custName.trim(),address:p.custAddr,phone:p.custPhone,email:p.custEmail,jobAddress:p.jobAddr,type:custType};
-    var list=getSavedCustomers(user);
-    var idx=list.findIndex(function(c){return c.name.toLowerCase()===entry.name.toLowerCase();});
-    if(idx>=0){if(!confirm("Update saved info for "+entry.name+"?"))return;list[idx]=entry;}else{list.push(entry);}
-    setSavedCustomers(user,list);setSaved(list);
-    alert(entry.name+" saved!");
-  }
-
-  var s6=useState(false),open=s6[0],setOpen=s6[1];
-  return(<div style={{padding:"0 16px 12px"}}>
-    <div style={{background:"rgba(255,255,255,0.65)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderRadius:12,border:"1px solid rgba(255,255,255,0.8)",boxShadow:"0 4px 24px rgba(0,0,0,0.07), inset 0 1px 0 rgba(255,255,255,0.9)",marginBottom:10,overflow:"visible"}}>
-      <button onClick={function(){setOpen(!open);}} style={{width:"100%",padding:"10px 14px",background:"#1e293b",display:"flex",justifyContent:"space-between",alignItems:"center",borderRadius:open?"8px 8px 0 0":"8px",border:"none",cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>
-        <span style={{fontSize:12,fontWeight:800,color:"#fff",textTransform:"uppercase",letterSpacing:0.8}}>👤 Customer Info</span>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          {p.custName&&<span style={{fontSize:13,fontWeight:600,color:"#93c5fd"}}>{p.custName}</span>}
-          <span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>{open?"▲":"▼"}</span>
-        </div>
-      </button>
-
-      {open&&<>{/* Two dropdowns side by side */}
-      <div style={{padding:"10px 12px",display:"flex",gap:8,borderBottom:"1px solid "+C.border}}>
-        <SavedDropdown label="Builders" icon="🏗️" color="#2563eb" bg="#eff6ff" items={builders} onSelect={load} onDelete={del}/>
-        <SavedDropdown label="Individuals" icon="👤" color="#7c3aed" bg="#f5f3ff" items={individuals} onSelect={load} onDelete={del}/>
-      </div>
-
-      {/* Always-visible form */}
-      <div style={{padding:14}}>
-        <div style={{marginBottom:10}}><QV_Input label="Customer Name" value={p.custName} onChange={p.setCustName} type="text" placeholder="John Doe"/></div>
-        <div style={{marginBottom:10}}>
-          <QV_Input label="Address" value={p.custAddr} onChange={p.setCustAddr} type="text" placeholder="123 Main St, Tulsa OK"/>
-          <button onClick={function(){var addr=(p.custAddr||"").trim();if(!addr){alert("Enter an address first.");return;}window.open("https://assessor.tulsacounty.org/Property/Search?terms="+encodeURIComponent(addr),"_blank");}} style={{marginTop:6,padding:"6px 12px",borderRadius:6,border:"1px solid #2563eb",background:"#eff6ff",color:"#2563eb",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>Look Up on Tulsa County Assessor</button>
-        </div>
-        <Row><Col><QV_Input label="Phone" value={p.custPhone} onChange={p.setCustPhone} type="tel" placeholder="(918) 555-0000"/></Col><Col><QV_Input label="Email" value={p.custEmail} onChange={p.setCustEmail} type="email" placeholder="john@email.com"/></Col></Row>
-        <div style={{marginTop:10}}><QV_Input label="Job Site (if different)" value={p.jobAddr} onChange={p.setJobAddr} type="text" placeholder="456 Oak Ave"/></div>
-
-        {/* Save controls — optional */}
-        <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid "+C.border}}>
-          <label style={{fontSize:10,fontWeight:700,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.08em",display:"block",marginBottom:6}}>Save to List (Optional)</label>
-          <div style={{display:"flex",gap:8}}>
-            {["Builder","Individual"].map(function(type){return(
-              <button key={type} onClick={function(){setCustType(type);}} style={{flex:1,padding:"7px",borderRadius:6,border:"1px solid "+(custType===type?(type==="Builder"?"#2563eb":"#7c3aed"):C.border),background:custType===type?(type==="Builder"?"#eff6ff":"#f5f3ff"):"transparent",color:custType===type?(type==="Builder"?"#2563eb":"#7c3aed"):C.dim,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>
-                {type==="Builder"?"🏗️ Builder":"👤 Individual"}
-              </button>
-            );})}
-            <button onClick={save} style={{flex:1,padding:"7px",borderRadius:6,border:"1px solid #16a34a",background:"#f0fdf4",color:"#16a34a",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>💾 Save</button>
-            <button onClick={function(){if(confirm("Clear?")){p.setCustName("");p.setCustAddr("");p.setCustPhone("");p.setCustEmail("");p.setJobAddr("");}}} style={{padding:"7px 12px",borderRadius:6,border:"1px solid "+C.danger,background:"transparent",color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>✕</button>
-          </div>
-        </div>
-      </div>
-      </>}
-    </div>
-  </div>);
-}
-
-function groupMeasurements(items){var g={};items.forEach(function(m){var k=m.group||"Other";if(!g[k])g[k]=[];g[k].push(m);});return g;}
-
-/* ──────── PRINT / DOWNLOAD FUNCTIONS ──────── */
-
-function buildSalesmanBlock(salesman){
-  var s=SALESMAN_INFO[salesman];if(!s)return "";
-  return '<div style="margin-top:30px;display:inline-block;padding:10px 16px;background:#f5f5f5;border:2px solid #222;border-radius:6px"><div style="font-size:9px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Your Sales Representative</div><div style="font-size:16px;font-weight:800;color:#111;margin-bottom:4px">'+s.fullName+'</div><div style="font-size:13px;color:#111;font-weight:600;margin-bottom:2px">📞 '+s.phone+'</div><div style="font-size:13px;color:#111;font-weight:600">✉ '+s.email+'</div></div>';
-}
-
-function buildTakeOffHtml(customer,jobNotes,measurements,salesman,quoteOpts){
-  var groups=groupMeasurements(measurements);var sorted=GROUP_ORDER.filter(function(g){return groups[g];});
-  var total=measurements.reduce(function(s,m){return s+m.sqft;},0);
-  var today=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
-  var notesHtml=jobNotes?'<div style="margin-bottom:20px;padding:12px 14px;background:#f9f9f9;border:1px solid #ddd;border-radius:6px"><div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px">Job Notes</div><div style="font-size:13px;color:#333;white-space:pre-wrap;line-height:1.5">'+jobNotes.replace(/</g,"&lt;").replace(/>/g,"&gt;")+'</div></div>':"";
-  var ghtml=sorted.map(function(gn){var gt=groups[gn].reduce(function(s,m){return s+m.sqft;},0);
-    var rows=groups[gn].map(function(item){return '<tr style="border-bottom:1px solid #e0e0e0"><td style="padding:8px 10px;font-size:13px;color:#333">'+item.location+'</td><td style="padding:8px 10px;font-size:13px;color:#333;text-align:right;font-weight:600">'+item.sqft.toLocaleString()+' sf</td></tr>';}).join("");
-    return '<div style="margin-bottom:20px"><div style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:#f5f5f5;border:1px solid #ddd;border-bottom:2px solid #333;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#333"><span>'+gn+'</span><span>'+gt.toLocaleString()+' sq ft</span></div><table style="width:100%;border-collapse:collapse"><tbody>'+rows+'</tbody></table></div>';}).join("");
-  var si=SALESMAN_INFO[salesman];
-  var salesHtml=si?'<div style="text-align:right"><div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Your Sales Rep</div><div style="font-size:15px;font-weight:800;color:#111;margin-bottom:2px">'+si.fullName+'</div><div style="font-size:13px;color:#111;font-weight:600;margin-bottom:1px">'+si.phone+'</div><div style="font-size:13px;color:#111;font-weight:600">'+si.email+'</div></div>':'';
-  var totalRow=measurements.length>0?'<div style="margin-top:24px;padding-top:16px;border-top:2px solid #111;display:flex;justify-content:space-between;align-items:center"><div style="font-size:14px;font-weight:800;text-transform:uppercase;color:#111">Total</div><div style="font-size:18px;font-weight:800;color:#111">'+total.toLocaleString()+' sq ft</div></div>':'';
-  return '<div style="font-family:Arial,sans-serif;color:#1a1a1a;padding:24px;max-width:100%;margin:0;width:100%;box-sizing:border-box">'+
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px;padding-bottom:16px;border-bottom:3px solid #111"><div><h1 style="font-size:22px;font-weight:800;color:#111;margin-bottom:2px">'+COMPANY.name+'</h1><p style="font-size:12px;color:#888">'+COMPANY.tagline+'</p></div><div style="text-align:right"><div style="font-size:18px;font-weight:800;color:#111;text-transform:uppercase">Take Off</div><div style="font-size:12px;color:#888;margin-top:2px">'+today+'</div></div></div>'+
-    '<div style="display:flex;justify-content:space-between;margin-bottom:24px;padding-bottom:16px;border-bottom:1px solid #ddd"><div style="flex:1"><div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Customer</div><div style="font-size:15px;font-weight:600">'+(customer.name||"—")+'</div><div style="font-size:13px;color:#666">'+(customer.address||"")+'</div><div style="font-size:13px;color:#666">'+(customer.phone||"")+'</div><div style="font-size:13px;color:#666">'+(customer.email||"")+'</div></div><div style="flex:1"><div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Job Site</div><div style="font-size:15px;font-weight:600">'+(customer.jobAddress||customer.address||"—")+'</div></div>'+salesHtml+'</div>'+
-    notesHtml+
-    ghtml+totalRow+
-    (function(){
-      if(!quoteOpts||quoteOpts.length===0)return"";
-      var rows=quoteOpts.map(function(opt,idx){
-        var lines=[];
-        // Line items with price per sq ft
-        if(opt.items&&opt.items.length>0){
-          opt.items.forEach(function(item){
-            if(!item.sqft||!item.pricePerUnit)return;
-            lines.push('<div style="display:flex;justify-content:space-between;align-items:flex-start;padding:5px 0;border-bottom:1px solid #eee"><span style="font-size:13px;color:#333">'+item.location+(item.description?' <span style="color:#666;font-size:11px">('+item.description+')</span>':'')+'</span><span style="font-size:13px;font-weight:700;color:#333;text-align:right;white-space:nowrap;margin-left:12px">'+item.sqft.toLocaleString()+' sf @ $'+parseFloat(item.pricePerUnit).toFixed(2)+'/sf = $'+Math.ceil(item.sqft*item.pricePerUnit).toLocaleString()+'</span></div>');
-          });
-          if(lines.length>0)lines.push('<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:2px solid #d1d5db;margin-bottom:4px"><span style="font-size:12px;font-weight:700;color:#666">Total before adders</span><span style="font-size:13px;font-weight:800;color:#111">$'+(opt.overrideTotal?parseFloat(opt.overrideTotal).toLocaleString():opt.items.reduce(function(s,i){return s+i.total;},0).toLocaleString())+'</span></div>');
-        }
-        if(opt.pso)lines.push('<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee"><span style="font-size:13px;color:#333">PSO Credit Attic</span><span style="font-size:13px;font-weight:700;color:#dc2626">-$600</span></div>');
-        if(opt.psoKw)lines.push('<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee"><span style="font-size:13px;color:#333">PSO Credit KW</span><span style="font-size:13px;font-weight:700;color:#dc2626">-$525</span></div>');
-        if(opt.extraLabor&&opt.extraLaborAmt)lines.push('<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee"><span style="font-size:13px;color:#333">Extra Labor</span><span style="font-size:13px;font-weight:700;color:#333">$'+parseFloat(opt.extraLaborAmt).toFixed(0)+'</span></div>');
-        if(opt.tripCharge&&opt.tripChargeAmt)lines.push('<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee"><span style="font-size:13px;color:#333">Trip Charge</span><span style="font-size:13px;font-weight:700;color:#333">$'+parseFloat(opt.tripChargeAmt).toFixed(0)+'</span></div>');
-        if(opt.energySeal&&opt.energySealAmt)lines.push('<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee"><span style="font-size:13px;color:#333">Energy Seal & Plates</span><span style="font-size:13px;font-weight:700;color:#333">$'+parseFloat(opt.energySealAmt).toFixed(0)+'</span></div>');
-        if(opt.dumpster&&opt.dumpsterAmt)lines.push('<div style="display:flex;justify-content:space-between;padding:5px 0;border-bottom:1px solid #eee"><span style="font-size:13px;color:#333">Dumpster</span><span style="font-size:13px;font-weight:700;color:#333">$'+parseFloat(opt.dumpsterAmt).toFixed(0)+'</span></div>');
-        if(lines.length===0)return"";
-        var header=quoteOpts.length>1?'<div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">'+opt.name+'</div>':"";
-        return header+lines.join("");
-      }).join("");
-      if(!rows)return"";
-      return '<div style="margin-top:24px;padding:14px 16px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px"><div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:10px">⚠ Internal Adders — Do Not Share With Customer</div>'+rows+'</div>';
-    })()+
-    '<div style="margin-top:20px;padding-top:16px;border-top:1px solid #ddd;font-size:11px;color:#999;text-align:center">'+COMPANY.name+' &bull; '+COMPANY.phone+'<br/>Helping Oklahoma stay energy efficient—one home at a time.</div></div>';
-}
-
-function sharePdfBlob(blob,filename){
-  if(navigator.share&&navigator.canShare&&navigator.canShare({files:[new File([blob],filename,{type:"application/pdf"})]})){
-    navigator.share({files:[new File([blob],filename,{type:"application/pdf"})],title:filename}).catch(function(err){
-      if(err.name!=="AbortError")alert("Share failed: "+err.message);
-    });
-  }else{
-    var url=URL.createObjectURL(blob);
-    var a=document.createElement("a");a.href=url;a.download=filename;a.click();
-    setTimeout(function(){URL.revokeObjectURL(url);},1000);
-  }
-}
-
-function buildQuotePdf(customer,opts,salesman,outputMode,showProductInfo){
-  // outputMode: "blob" -> returns Promise<Blob>, "save" -> downloads directly
-  return import("jspdf").then(function(mod){
-    var jsPDF=mod.jsPDF||mod.default;
-    var doc=new jsPDF({unit:"pt",format:"letter"});
-    var W=612,M=36,x=M,RW=W-M*2;
-    var si=SALESMAN_INFO[salesman];
-    var today=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
-    var qn="IST-"+Date.now().toString(36).toUpperCase();
-    var optsWithItems=opts.filter(function(o){return o.items&&o.items.length>0;});
-    // Brand colors
-    var NAVY=[15,30,70],BLUE=[37,99,235],LIGHTBLUE=[219,234,254],GRAY=[100,116,139],LIGHTGRAY=[248,250,252],WHITE=[255,255,255],BLACK=[15,23,42];
-
-    // ── HEADER BAND ──
-    doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]);
-    doc.rect(0,0,W,72,"F");
-    // Accent stripe
-    doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);
-    doc.rect(0,68,W,4,"F");
-    // Company name
-    doc.setTextColor(WHITE[0],WHITE[1],WHITE[2]);
-    doc.setFontSize(20);doc.setFont("helvetica","bold");
-    doc.text("INSULATION SERVICES OF TULSA",M,30);
-    // Tagline
-    doc.setFontSize(9);doc.setFont("helvetica","normal");
-    doc.setTextColor(180,200,240);
-    doc.text("Serving Northeastern Oklahoma  •  1 (918) 232-9055",M,46);
-    // QUOTE label top right
-    doc.setTextColor(LIGHTBLUE[0],LIGHTBLUE[1],LIGHTBLUE[2]);
-    doc.setFontSize(11);doc.setFont("helvetica","bold");
-    doc.text("QUOTE",W-M,24,{align:"right"});
-    doc.setFontSize(8);doc.setFont("helvetica","normal");doc.setTextColor(180,200,240);
-    doc.text(qn,W-M,36,{align:"right"});
-    doc.text(today,W-M,48,{align:"right"});
-
-    var y=90;
-
-    // ── INFO CARDS ──
-    var cardH=80;var col=RW/3+4;
-    // Card 1: Prepared For
-    doc.setFillColor(LIGHTGRAY[0],LIGHTGRAY[1],LIGHTGRAY[2]);
-    doc.roundedRect(x,y,col-8,cardH,4,4,"F");
-    doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);doc.rect(x,y,4,cardH,"F");
-    doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);doc.setFontSize(7);doc.setFont("helvetica","bold");
-    doc.text("PREPARED FOR",x+12,y+13);
-    doc.setTextColor(BLACK[0],BLACK[1],BLACK[2]);doc.setFontSize(11);doc.setFont("helvetica","bold");
-    doc.text(customer.name||"—",x+12,y+27,{maxWidth:col-24});
-    doc.setFontSize(8);doc.setFont("helvetica","normal");doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-    var cy=y+40;
-    if(customer.address){var al=doc.splitTextToSize(customer.address,col-24);doc.text(al,x+12,cy);cy+=al.length*11;}
-    if(customer.phone){doc.text(customer.phone,x+12,cy);cy+=11;}
-    if(customer.email){doc.text(customer.email,x+12,cy);}
-
-    // Card 2: Job Site
-    var c2x=x+col;
-    doc.setFillColor(LIGHTGRAY[0],LIGHTGRAY[1],LIGHTGRAY[2]);
-    doc.roundedRect(c2x,y,col-8,cardH,4,4,"F");
-    doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);doc.rect(c2x,y,4,cardH,"F");
-    doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);doc.setFontSize(7);doc.setFont("helvetica","bold");
-    doc.text("JOB SITE",c2x+12,y+13);
-    doc.setTextColor(BLACK[0],BLACK[1],BLACK[2]);doc.setFontSize(10);doc.setFont("helvetica","bold");
-    var jsAddr=customer.jobAddress||customer.address||"—";
-    var jsal=doc.splitTextToSize(jsAddr,col-24);
-    doc.text(jsal,c2x+12,y+27);
-    doc.setFontSize(8);doc.setFont("helvetica","normal");doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-    doc.text("Valid for 30 days from quote date",c2x+12,y+66);
-
-    // Card 3: Sales Rep
-    var c3x=x+col*2;
-    if(si){
-      doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]);
-      doc.roundedRect(c3x,y,col-8,cardH,4,4,"F");
-      doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);doc.rect(c3x,y,4,cardH,"F");
-      doc.setTextColor(LIGHTBLUE[0],LIGHTBLUE[1],LIGHTBLUE[2]);doc.setFontSize(7);doc.setFont("helvetica","bold");
-      doc.text("YOUR SALES REP",c3x+12,y+13);
-      doc.setTextColor(WHITE[0],WHITE[1],WHITE[2]);doc.setFontSize(11);doc.setFont("helvetica","bold");
-      doc.text(si.fullName,c3x+12,y+27);
-      doc.setFontSize(8);doc.setFont("helvetica","normal");doc.setTextColor(180,200,240);
-      doc.text(si.phone,c3x+12,y+40);
-      doc.text(si.email,c3x+12,y+53);
-    }
-
-    y+=cardH+20;
-
-    // ── OPTIONS ──
-    optsWithItems.forEach(function(opt,oi){
-      var sortedItems=opt.items.slice().sort(function(a,b){
-        var aFoam=a.type==="Foam"||/foam/i.test(a.material||"");
-        var bFoam=b.type==="Foam"||/foam/i.test(b.material||"");
-        if(aFoam&&!bFoam)return -1;if(!aFoam&&bFoam)return 1;
-        var aR=parseInt((a.material||"").match(/R(\d+)/i)||[0,0])||0;
-        var bR=parseInt((b.material||"").match(/R(\d+)/i)||[0,0])||0;
-        return aR-bR;
-      });
-
-      if(optsWithItems.length>1){
-        if(y>680){doc.addPage();y=40;}
-        doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);doc.rect(x,y,RW,22,"F");
-        doc.setTextColor(WHITE[0],WHITE[1],WHITE[2]);doc.setFontSize(11);doc.setFont("helvetica","bold");
-        doc.text(opt.name.toUpperCase(),x+10,y+15);
-        y+=30;
-      }
-
-      // Table header
-      doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]);doc.rect(x,y,RW,18,"F");
-      doc.setTextColor(LIGHTBLUE[0],LIGHTBLUE[1],LIGHTBLUE[2]);doc.setFontSize(8);doc.setFont("helvetica","bold");
-      doc.text("SCOPE OF WORK",x+10,y+12);
-      y+=18;
-
-      // Rows
-      var allItems=sortedItems.slice();
-      if(opt.energySeal)allItems.push({description:"Energy seal and plates per city code."});
-      (opt.customItems||[]).forEach(function(ci){allItems.push({description:ci.description,customPrice:parseFloat(ci.price)||0});});
-      allItems.forEach(function(item,i){
-        if(y>710){doc.addPage();y=40;}
-        doc.setFont("helvetica","normal");doc.setFontSize(9.5);
-        var desc=doc.splitTextToSize(item.description||"",RW-26);
-        var rowH=Math.max(20,desc.length*13+10);
-        // Alternating bg
-        doc.setFillColor(i%2===0?248:255,i%2===0?250:255,i%2===0?252:255);
-        doc.rect(x,y,RW,rowH,"F");
-        // Left accent dot centered vertically
-        doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);
-        doc.circle(x+7,y+rowH/2,2.5,"F");
-        doc.setTextColor(BLACK[0],BLACK[1],BLACK[2]);
-        doc.text(desc,x+16,y+13,{lineHeightFactor:1.4});
-        // Bottom border
-        doc.setDrawColor(226,232,240);doc.setLineWidth(0.4);doc.line(x,y+rowH,x+RW,y+rowH);
-        y+=rowH;
-      });
-
-      // Total section
-      var lineTotal=opt.items.reduce(function(s,i){return s+(i.total||0);},0);
-      var psoCredit=((opt.pso||false)?600:0)+((opt.psoKw||false)?525:0);
-      var el=opt.extraLabor?(parseFloat(opt.extraLaborAmt)||0):0;
-      var tc=opt.tripCharge?(parseFloat(opt.tripChargeAmt)||0):0;
-      var es=opt.energySeal?(parseFloat(opt.energySealAmt)||0):0;
-      var du=opt.dumpster?(parseFloat(opt.dumpsterAmt)||0):0;
-      var ciTotal=(opt.customItems||[]).reduce(function(s,x){return s+(parseFloat(x.price)||0);},0);
-      var sub=lineTotal+el+tc+es+du+ciTotal;
-      var total=opt.overrideTotal!==""?(parseFloat(opt.overrideTotal)||0):(sub-psoCredit);
-
-      y+=8;
-      // PSO credits
-      if(opt.pso||opt.psoKw){
-        doc.setFontSize(9);doc.setFont("helvetica","normal");
-        doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-        doc.text("Subtotal",x,y);doc.text("$"+Math.ceil(sub).toLocaleString(),W-M,y,{align:"right"});y+=14;
-        if(opt.pso){doc.setTextColor(180,30,30);doc.text("Less PSO Credit — Attic",x,y);doc.text("-$600",W-M,y,{align:"right"});y+=14;}
-        if(opt.psoKw){doc.setTextColor(180,30,30);doc.text("Less PSO Credit — Kneewall",x,y);doc.text("-$525",W-M,y,{align:"right"});y+=14;}
-        doc.setDrawColor(220,220,230);doc.setLineWidth(0.5);doc.line(x,y,W-M,y);
-        y+=8;
-      }
-
-      // Total box
-      if(y>700){doc.addPage();y=40;}
-      doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);
-      doc.roundedRect(W-M-160,y,160,34,4,4,"F");
-      doc.setTextColor(WHITE[0],WHITE[1],WHITE[2]);doc.setFontSize(18);doc.setFont("helvetica","bold");
-      doc.text("$"+Math.ceil(total).toLocaleString(),W-M-80,y+22,{align:"center"});
-      y+=50;
-    });
-
-    y+=8;
-
-    // ── PRODUCT INFO (bottom of last page) ──
-    if(showProductInfo){
-      var colW=(RW-16)/2;
-      var leftX=M,rightX=M+colW+16;
-      var py=y;
-
-      // ── FIBERGLASS BOX ──
-      var FG_TITLE="Johns Manville & CertainTeed";
-      var FG_SUB="";
-      var FG_INTRO="IST uses a mix of both brands based on availability. They are virtually identical in performance and quality:";
-      var FG_BULLETS=["Formaldehyde-free with built-in kraft paper vapor retarder","Available in R-11 through R-49 for walls, floors, and attics","Class A fire rated — won't rot, mildew, or deteriorate","GREENGUARD Gold Certified for indoor air quality","Reduces sound transmission between rooms","Pre-cut batts for standard 16\" and 24\" framing"];
-      var FG_FOOTER="Both meet the same ASTM C665 industry standards — no difference in protection regardless of which brand is installed.";
-
-      // ── FOAM BOX ──
-      var FM_TITLE="Enverge® Spray Foam Systems";
-      var FM_SUB="";
-      var FM_BULLETS=["OPEN CELL — EasySeal .5:  R-3.8/in · 0.5 lb/ft³ · air barrier at 3.5\" · UL Certified · ENERGY STAR® qualified","CLOSED CELL — NexSeal:  R-7.2/in (R-28 @ 4\") · 2.1 lb/ft³ · adds structural rigidity · built-in Class II vapor retarder at 1.6\"","Both: Class 1 (Class A) fire rated — Flame Spread <25, Smoke Developed <450","Both: Low VOC — CA Section 01350 compliant · Fungi resistant (ASTM C-1338)","Both: Service temp range: -40°F to 180°F (220°F intermittent)","Closed cell water absorption <0.3% by volume — moisture resistant"];
-
-      function drawProductBox(bx,by,bw,title,sub,intro,bullets,footer){
-        var lh=10;var fs=7;
-        doc.setFont("helvetica","normal");doc.setFontSize(fs);
-        var introLines=intro?doc.splitTextToSize(intro,bw-16).length:0;
-        var bulletLines=bullets.reduce(function(n,b){return n+doc.splitTextToSize(b,bw-24).length;},0);
-        var footerLines=footer?doc.splitTextToSize(footer,bw-16).length:0;
-        var bh=8+10+7+4+(introLines?introLines*lh+5:0)+(bulletLines*lh+bullets.length*2)+(footerLines?footerLines*lh+8:0)+8;
-        doc.setFillColor(248,250,255);doc.roundedRect(bx,by,bw,bh,4,4,"F");
-
-        doc.setDrawColor(210,220,240);doc.setLineWidth(0.4);doc.roundedRect(bx,by,bw,bh,4,4,"S");
-        var ty=by+9;
-        doc.setFont("helvetica","bold");doc.setFontSize(8.5);doc.setTextColor(NAVY[0],NAVY[1],NAVY[2]);
-        doc.text(title,bx+9,ty);ty+=10;
-        if(sub){doc.setFont("helvetica","bold");doc.setFontSize(fs);doc.setTextColor(BLUE[0],BLUE[1],BLUE[2]);doc.text(sub,bx+9,ty);ty+=7;}
-        if(intro){
-          doc.setFont("helvetica","italic");doc.setFontSize(fs);doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-          var il=doc.splitTextToSize(intro,bw-16);doc.text(il,bx+9,ty);ty+=il.length*lh+5;
-        }
-        doc.setFont("helvetica","normal");doc.setFontSize(fs);doc.setTextColor(BLACK[0],BLACK[1],BLACK[2]);
-        bullets.forEach(function(b){
-          var bl=doc.splitTextToSize(b,bw-24);
-          doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);doc.circle(bx+14,ty-2,1.5,"F");
-          doc.text(bl,bx+20,ty);ty+=bl.length*lh+2;
-        });
-        if(footer){
-          ty+=3;doc.setDrawColor(210,220,240);doc.setLineWidth(0.3);doc.line(bx+9,ty,bx+bw-9,ty);ty+=6;
-          doc.setFont("helvetica","italic");doc.setFontSize(6.5);doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-          var fl=doc.splitTextToSize(footer,bw-16);doc.text(fl,bx+9,ty);
-        }
-        return by+bh;
-      }
-
-      // Section label
-      doc.setFont("helvetica","bold");doc.setFontSize(8);doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-      doc.text("PRODUCT INFORMATION",leftX,py+10);
-      doc.setDrawColor(BLUE[0],BLUE[1],BLUE[2]);doc.setLineWidth(0.5);doc.line(leftX,py+13,x+RW,py+13);
-      py+=20;
-      drawProductBox(leftX,py,colW,FG_TITLE,FG_SUB,FG_INTRO,FG_BULLETS,FG_FOOTER);
-      drawProductBox(rightX,py,colW,FM_TITLE,FM_SUB,"",FM_BULLETS,"");
-    }
-
-    // ── FOOTER ──
-    doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]);
-    doc.rect(0,756,W,36,"F");
-    doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);doc.rect(0,756,W,3,"F");
-    doc.setTextColor(180,200,240);doc.setFontSize(8);doc.setFont("helvetica","normal");
-    doc.text("Insulation Services of Tulsa  •  1 (918) 232-9055  •  Helping Oklahoma stay energy efficient — one home at a time.",W/2,771,{align:"center"});
-    doc.setTextColor(100,130,180);doc.setFontSize(7);
-    doc.text("Licensed & Insured  •  Proudly serving Tulsa and Northeastern Oklahoma",W/2,782,{align:"center"});
-
-    var filename="Quote"+(customer.jobAddress||customer.address?" - "+(customer.jobAddress||customer.address):"")+".pdf";
-    if(outputMode==="save"){doc.save(filename);return null;}
-    return doc.output("blob");
-  });
-}
-
-function shareQuote(customer,opts,salesman,showProductInfo){
-  buildQuotePdf(customer,opts,salesman,"blob",showProductInfo).then(function(blob){
-    if(blob){
-      var filename="Quote"+(customer.jobAddress||customer.address?" - "+(customer.jobAddress||customer.address):"")+".pdf";
-      sharePdfBlob(blob,filename);
-    }
-  }).catch(function(err){alert("PDF error: "+err.message);});
-}
-
-function buildTakeOffPdf(customer,jobNotes,measurements,salesman,quoteOpts,outputMode){
-  return import("jspdf").then(function(mod){
-    var jsPDF=mod.jsPDF||mod.default;
-    var doc=new jsPDF({unit:"pt",format:"letter"});
-    var W=612,M=36,x=M,RW=W-M*2;
-    var today=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});
-    var NAVY=[15,30,70],BLUE=[37,99,235],LIGHTBLUE=[219,234,254],GRAY=[100,116,139],WHITE=[255,255,255],BLACK=[15,23,42];
-
-    // ── HEADER ──
-    doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]);doc.rect(0,0,W,56,"F");
-    doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);doc.rect(0,52,W,4,"F");
-    doc.setTextColor(WHITE[0],WHITE[1],WHITE[2]);doc.setFontSize(16);doc.setFont("helvetica","bold");
-    doc.text("INSULATION SERVICES OF TULSA",M,30);
-    doc.setFontSize(9);doc.setFont("helvetica","normal");doc.setTextColor(180,200,240);
-    doc.text((customer.name||"")+(customer.jobAddress||customer.address?" — "+(customer.jobAddress||customer.address):""),M,46);
-    doc.setTextColor(LIGHTBLUE[0],LIGHTBLUE[1],LIGHTBLUE[2]);doc.setFontSize(9);doc.setFont("helvetica","bold");
-    doc.text("TAKE OFF  •  "+today,W-M,38,{align:"right"});
-
-    var y=72;
-
-    // ── MEASUREMENTS TABLE ──
-    var hasMeasurements=measurements&&measurements.some(function(r){return parseFloat(r.sqft)>0;});
-    if(hasMeasurements){
-      // Columns: LOCATION | MATERIAL | SQ FT | $/SQ FT
-      var c1=x+10,c2=x+180,c3=x+340,c4=x+420;
-      doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]);doc.rect(x,y,RW,18,"F");
-      doc.setTextColor(LIGHTBLUE[0],LIGHTBLUE[1],LIGHTBLUE[2]);doc.setFontSize(8);doc.setFont("helvetica","bold");
-      doc.text("LOCATION",c1,y+12);doc.text("MATERIAL",c2,y+12);doc.text("SQ FT",c3,y+12);doc.text("$/SQ FT",c4,y+12);
-      y+=18;
-      // Group by location+material+cavityWidth
-      var groups2=[];
-      measurements.forEach(function(r){
-        var sqft=parseFloat(r.sqft)||0;if(!sqft)return;
-        var matLabel=(r.matNote&&r.matNote.trim())||r.material||"";
-        var key=(r.locationId||r.location)+"|"+matLabel+"|"+(r.cavityWidth||"");
-        var g=groups2.find(function(gg){return gg.key===key;});
-        if(g){g.entries.push(r);g.totalSqft+=sqft;}
-        else groups2.push({key:key,location:(r.location||"")+(r.cavityWidth?" ("+r.cavityWidth+")":""),material:matLabel,pricePerUnit:r.pricePerUnit,entries:[r],totalSqft:sqft});
-      });
-      // Sort: foam first (no R-number), then by R-value, attics last
-      var atticLocIds=["attic_area_garage","attic_area_house"];
-      function takeoffR(g){var m=String(g.material||"");var n=m.match(/(\d+)/);return n?parseInt(n[1],10):0;}
-      function isFoamG(g){return /foam|open cell|closed cell/i.test(g.material||"");}
-      function isAtticG(g){return atticLocIds.some(function(id){return (g.entries[0]&&g.entries[0].locationId===id);});}
-      groups2.sort(function(a,b){
-        var aAttic=isAtticG(a),bAttic=isAtticG(b);
-        if(aAttic!==bAttic) return aAttic?1:-1;
-        var aFoam=isFoamG(a),bFoam=isFoamG(b);
-        if(aFoam!==bFoam) return aFoam?-1:1;
-        return takeoffR(a)-takeoffR(b);
-      });
-
-      groups2.forEach(function(g,gi){
-        var DIM_H=14;
-        // Measure how many lines the location text needs
-        doc.setFont("helvetica","bold");doc.setFontSize(9.5);
-        var locLines=doc.splitTextToSize(g.location,164).length;
-        var ROW_H=Math.max(20,locLines*12+8);
-        var groupH=ROW_H+g.entries.length*DIM_H+4;
-        if(y+groupH>720){doc.addPage();y=40;}
-        doc.setFillColor(gi%2===0?242:250,gi%2===0?246:252,gi%2===0?255:255);
-        doc.rect(x,y,RW,groupH,"F");
-        doc.setFillColor(BLUE[0],BLUE[1],BLUE[2]);doc.rect(x,y,3,groupH,"F");
-        // Header row
-        doc.setTextColor(BLACK[0],BLACK[1],BLACK[2]);doc.setFont("helvetica","bold");doc.setFontSize(9.5);
-        doc.text(g.location,c1+4,y+13,{maxWidth:164,lineHeightFactor:1.4});
-        doc.text(g.material,c2,y+13,{maxWidth:154});
-        doc.text(g.totalSqft.toLocaleString(),c3,y+13);
-        var ppu=parseFloat(g.pricePerUnit)||0;
-        if(ppu)doc.text("$"+ppu.toFixed(2),c4,y+13);
-        y+=ROW_H;
-        // Individual dim entries
-        g.entries.forEach(function(r){
-          doc.setFont("helvetica","normal");doc.setFontSize(8.5);doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);
-          var dimLabel=r.dimStr||(r.wallHeightLabel)||"";
-          var sqftLabel=(parseFloat(r.sqft)||0).toLocaleString()+" sf";
-          doc.text(dimLabel?dimLabel+" = "+sqftLabel:sqftLabel,c1+12,y+10);
-          y+=DIM_H;
-        });
-        doc.setDrawColor(210,220,240);doc.setLineWidth(0.5);doc.line(x,y+2,x+RW,y+2);
-        y+=6;
-      });
-    }
-
-    // ── JOB NOTES ──
-    if(jobNotes&&jobNotes.trim()){
-      y+=8;
-      var noteLines=doc.splitTextToSize(jobNotes.trim(),RW-24);
-      var noteBlockH=noteLines.length*13+20;
-      if(y+noteBlockH>720){doc.addPage();y=40;}
-      doc.setFillColor(249,249,249);doc.rect(x,y,RW,noteBlockH,"F");
-      doc.setDrawColor(200,210,230);doc.setLineWidth(0.5);doc.rect(x,y,RW,noteBlockH,"S");
-      doc.setFillColor(NAVY[0],NAVY[1],NAVY[2]);doc.rect(x,y,3,noteBlockH,"F");
-      doc.setTextColor(GRAY[0],GRAY[1],GRAY[2]);doc.setFontSize(8);doc.setFont("helvetica","bold");
-      doc.text("JOB NOTES",x+10,y+12);
-      doc.setFont("helvetica","normal");doc.setFontSize(9);doc.setTextColor(BLACK[0],BLACK[1],BLACK[2]);
-      doc.text(noteLines,x+10,y+24);
-      y+=noteBlockH+6;
-    }
-
-    var filename="TakeOff"+(customer.jobAddress||customer.address?" - "+(customer.jobAddress||customer.address):"")+".pdf";
-    if(outputMode==="save"){doc.save(filename);return null;}
-    return doc.output("blob");
-  });
-}
-
-function shareTakeOff(customer,jobNotes,measurements,salesman,quoteOpts){
-  buildTakeOffPdf(customer,jobNotes,measurements,salesman,quoteOpts,"blob").then(function(blob){
-    if(blob){
-      var filename="TakeOff"+(customer.jobAddress||customer.address?" - "+(customer.jobAddress||customer.address):"")+".pdf";
-      sharePdfBlob(blob,filename);
-    }
-  }).catch(function(err){alert("PDF error: "+err.message);});
-}
-
-function printTakeOff(customer,jobNotes,measurements,salesman,quoteOpts){
-  buildTakeOffPdf(customer,jobNotes,measurements,salesman,quoteOpts,"save").catch(function(err){alert("PDF error: "+err.message);});
-}
-
-function buildQuoteHtml(customer,opts,salesman){try{return _buildQuoteHtml(customer,opts,salesman);}catch(e){alert("Quote error: "+e.message);return "";}}
-function _buildQuoteHtml(customer,opts,salesman){
-  var today=new Date().toLocaleDateString("en-US",{year:"numeric",month:"long",day:"numeric"});var qn="IST-"+Date.now().toString(36).toUpperCase();
-  var si=SALESMAN_INFO[salesman];
-  var salesHtml=si?'<div style="flex:1;text-align:right"><div style="font-size:11px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:6px">Your Sales Rep</div><div style="font-size:15px;font-weight:800;color:#111;margin-bottom:3px">'+si.fullName+'</div><div style="font-size:13px;color:#111;font-weight:600;margin-bottom:1px">'+si.phone+'</div><div style="font-size:13px;color:#111;font-weight:600">'+si.email+'</div></div>':'';
-  var optsWithItems=opts.filter(function(o){return o.items.length>0;});
-  var optSections=optsWithItems.map(function(opt,oi){
-    var sortedItems=opt.items.slice().sort(function(a,b){
-      var aFoam=a.type==="Foam"||/foam/i.test(a.material||"");
-      var bFoam=b.type==="Foam"||/foam/i.test(b.material||"");
-      if(aFoam&&!bFoam)return -1;
-      if(!aFoam&&bFoam)return 1;
-      if(aFoam&&bFoam){
-        var aIn=parseFloat((a.material||"").match(/^([\d.]+)/)||[0,0])||0;
-        var bIn=parseFloat((b.material||"").match(/^([\d.]+)/)||[0,0])||0;
-        return aIn-bIn;
-      }
-      var aR=parseInt((a.material||"").match(/R(\d+)/i)||[0,0])||0;
-      var bR=parseInt((b.material||"").match(/R(\d+)/i)||[0,0])||0;
-      return aR-bR;
-    });
-    var rows=sortedItems.map(function(item,i){return '<tr style="border-bottom:1px solid #ddd"><td style="padding:6px 8px;font-size:13px">'+(i+1)+'</td><td style="padding:6px 8px;font-size:13px">'+item.description+'</td></tr>';}).join("");
-    var energySealRow=opt.energySeal?'<tr style="border-bottom:1px solid #ddd"><td style="padding:6px 8px;font-size:13px">'+(opt.items.length+1)+'</td><td style="padding:6px 8px;font-size:13px">Energy seal and plates per city code.</td></tr>':"";
-    var customRows=(opt.customItems||[]).map(function(ci,ci_i){return '<tr style="border-bottom:1px solid #ddd"><td style="padding:6px 8px;font-size:13px">'+(opt.items.length+(opt.energySeal?1:0)+ci_i+1)+'</td><td style="padding:6px 8px;font-size:13px">'+ci.description+'</td></tr>';}).join("");
-    var lineTotal=opt.items.reduce(function(s,i){return s+i.total;},0);
-    var psoCredit=((opt.pso||false)?600:0)+((opt.psoKw||false)?525:0);
-    var el=opt.extraLabor?(parseFloat(opt.extraLaborAmt)||0):0;
-    var tc=opt.tripCharge?(parseFloat(opt.tripChargeAmt)||0):0;
-    var es=opt.energySeal?(parseFloat(opt.energySealAmt)||0):0;
-    var du=opt.dumpster?(parseFloat(opt.dumpsterAmt)||0):0;
-    var ciTotal=(opt.customItems||[]).reduce(function(s,x){return s+(parseFloat(x.price)||0);},0);
-    var sub=lineTotal+el+tc+es+du+ciTotal;
-    var total=opt.overrideTotal!==""?(parseFloat(opt.overrideTotal)||0):(sub-psoCredit);
-    var header=optsWithItems.length>1?'<div style="font-size:16px;font-weight:800;color:#111;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid #111">'+opt.name+'</div>':"";
-    var totalLabel=optsWithItems.length>1?opt.name+" Total":"Total";
-    var totalHtml="";
-    var creditRows="";
-    if(opt.psoKw)creditRows+='<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px;font-weight:600;color:#dc2626;border-bottom:1px solid #ddd"><span>Less PSO Credit KW</span><span>-$525</span></div>';
-    if(opt.pso)creditRows+='<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px;font-weight:600;color:#dc2626;border-bottom:1px solid #ddd"><span>Less PSO Credit Attic</span><span>-$600</span></div>';
-    if(opt.pso||opt.psoKw){
-      totalHtml='<div style="display:flex;justify-content:flex-end;margin-bottom:'+(oi<optsWithItems.length-1?"20":"0")+'px"><div style="width:260px">'+
-        '<div style="display:flex;justify-content:space-between;padding:5px 0;font-size:14px;font-weight:600;color:#333"><span>Price</span><span>$'+Math.ceil(sub).toLocaleString()+'</span></div>'+
-        creditRows+
-        '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:18px;font-weight:800;color:#111"><span>'+totalLabel+'</span><span>$'+Math.ceil(total).toLocaleString()+'</span></div>'+
-        '</div></div>';
-    }else{
-      totalHtml='<div style="display:flex;justify-content:flex-end;margin-bottom:'+(oi<optsWithItems.length-1?"20":"0")+'px"><div style="width:260px"><div style="display:flex;justify-content:space-between;padding:8px 0;font-size:18px;font-weight:800;color:#111"><span>'+totalLabel+'</span><span>$'+Math.ceil(total).toLocaleString()+'</span></div></div></div>';
-    }
-    return header+'<table style="width:100%;border-collapse:collapse;margin-bottom:10px"><thead><tr style="background:#111"><th style="padding:7px 8px;font-size:11px;font-weight:700;text-transform:uppercase;text-align:left;color:#fff">#</th><th style="padding:7px 8px;font-size:11px;font-weight:700;text-transform:uppercase;text-align:left;color:#fff">Description</th></tr></thead><tbody>'+rows+energySealRow+customRows+'</tbody></table>'+totalHtml;
-  }).join("");
-  return '<div style="font-family:Arial,sans-serif;color:#1a1a1a;padding:24px;max-width:100%;margin:0;width:100%;box-sizing:border-box">'+
-    '<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:18px;padding-bottom:14px;border-bottom:3px solid #222"><div><h1 style="font-size:22px;font-weight:800;color:#111;margin-bottom:3px">'+COMPANY.name+'</h1><p style="font-size:12px;color:#666">'+COMPANY.tagline+'</p><p style="font-size:12px;color:#666">'+COMPANY.phone+'</p></div><div style="text-align:right"><div style="font-size:19px;font-weight:700;color:#111">QUOTE</div><div style="font-size:12px;color:#666;margin-top:3px">'+qn+'</div><div style="font-size:12px;color:#666">'+today+'</div></div></div>'+
-    '<div style="display:flex;gap:20px;margin-bottom:18px"><div style="flex:1"><div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Prepared For</div><div style="font-size:14px;font-weight:600">'+(customer.name||"—")+'</div><div style="font-size:12px;color:#666">'+(customer.address||"")+'</div><div style="font-size:12px;color:#666">'+(customer.phone||"")+'</div><div style="font-size:12px;color:#666">'+(customer.email||"")+'</div></div><div style="flex:1"><div style="font-size:10px;font-weight:700;color:#999;text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px">Project</div><div style="font-size:12px;color:#666">Job Site: '+(customer.jobAddress||customer.address||"—")+'</div><div style="font-size:12px;color:#666">Valid 30 days from quote date</div></div>'+salesHtml+'</div>'+
-    optSections+
-    '<div style="margin-top:14px;padding-top:12px;border-top:1px solid #ddd;font-size:11px;color:#999;text-align:center">'+COMPANY.name+' &bull; '+COMPANY.phone+'<br/>Helping Oklahoma stay energy efficient—one home at a time.</div></div>';
-}
-
-function generatePDF(customer,opts,salesman,showProductInfo){
-  buildQuotePdf(customer,opts,salesman,"save",showProductInfo).catch(function(err){alert("PDF error: "+err.message);});
-}
-
-function printQuoteAndTakeOff(customer,opts,salesman,jobNotes,measurements,quoteOpts,showProductInfo){
-  // Build both PDFs then merge pages into one jsPDF doc
-  Promise.all([
-    buildQuotePdf(customer,opts,salesman,"blob",showProductInfo),
-    buildTakeOffPdf(customer,jobNotes,measurements,salesman,quoteOpts,"blob")
-  ]).then(function(blobs){
-    // Open quote PDF first, then takeoff as separate share — or just share both
-    var quoteName="Quote"+(customer.jobAddress||customer.address?" - "+(customer.jobAddress||customer.address):"")+".pdf";
-    var takeoffName="TakeOff"+(customer.jobAddress||customer.address?" - "+(customer.jobAddress||customer.address):"")+".pdf";
-    var files=[];
-    if(blobs[0])files.push(new File([blobs[0]],quoteName,{type:"application/pdf"}));
-    if(blobs[1])files.push(new File([blobs[1]],takeoffName,{type:"application/pdf"}));
-    if(navigator.canShare&&navigator.canShare({files:files})){
-      navigator.share({files:files,title:"Quote & Take Off"}).catch(function(){});
-    } else {
-      // fallback: download both
-      files.forEach(function(f){
-        var url=URL.createObjectURL(f);var a=document.createElement("a");a.href=url;a.download=f.name;document.body.appendChild(a);a.click();setTimeout(function(){URL.revokeObjectURL(url);document.body.removeChild(a);},1000);
-      });
-    }
-  }).catch(function(err){alert("PDF error: "+err.message);});
-}
-
-/* ══════════ TAKE OFF ══════════ */
-
-function TakeOff(p){
-  var ls=useState(""),lid=ls[0],setLid=ls[1];
-  var cs=useState(""),cl=cs[0],setCl=cs[1];
-  function addM(item){
-    p.setMeasurements(function(prev){
-      return prev.concat([Object.assign({},item,{id:Date.now()+Math.random()})]);
-    });
-  }
-  function removeM(id){p.setMeasurements(function(prev){return prev.filter(function(m){return m.id!==id;});});}
-  var regularItems=p.measurements.filter(function(m){return !m.isRemoval;});
-  var removalItems=p.measurements.filter(function(m){return m.isRemoval;});
-  var groups=groupMeasurements(regularItems);var sorted=GROUP_ORDER.filter(function(g){return groups[g];});
-  var total=p.measurements.reduce(function(s,m){return s+m.sqft;},0);
-  var removalTotal=removalItems.reduce(function(s,m){return s+m.sqft;},0);
-  return(<div>
-    <CustomerInfo custName={p.custName} setCustName={p.setCustName} custAddr={p.custAddr} setCustAddr={p.setCustAddr} custPhone={p.custPhone} setCustPhone={p.setCustPhone} custEmail={p.custEmail} setCustEmail={p.setCustEmail} jobAddr={p.jobAddr} setJobAddr={p.setJobAddr} currentUser={p.currentUser}/>
-    {/* Row 1: Location (left) | Measurement inputs (right) */}
-    <div className="ist-2col" style={{marginBottom:0}}>
-      <div className="ist-col-form">
-        <div style={{padding:"0 16px 12px"}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>{"① Location"}</div>
-          <LocationGrid pulse={!lid} value={lid} onChange={function(v){setLid(v);}}/>
-          {lid==="custom"&&(<div style={{marginTop:8}}><QV_Input label="Custom Location Name" value={cl} onChange={setCl} type="text" placeholder="e.g. Bonus room walls"/></div>)}
-        </div>
-      </div>
-      <div className="ist-col-results">
-        <div style={{padding:"0 16px 12px"}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>{"② Measure & Add"}</div>
-          <MeasurementForm key={"to-takeoff"} lid={lid} setLid={setLid} cl={cl} setCl={setCl} tab={"fiberglass"} onAdd={addM} hasPrice={false} hideLocation/>
-        </div>
-      </div>
-    </div>
-
-    {/* Row 2: Job Notes (left) | Takeoff list (right) */}
-    <div className="ist-2col" style={{alignItems:"flex-start"}}>
-
-      {/* Left: Job Notes + Print/Share */}
-      <div className="ist-col-form">
-        <div style={{padding:"0 16px 12px"}}>
-          <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>{"Job Notes"}</div>
-          <textarea style={{width:"100%",padding:"10px 12px",background:C.input,border:"1px solid "+C.inputBorder,borderRadius:6,color:C.text,fontSize:14,fontFamily:"'Inter',sans-serif",outline:"none",boxSizing:"border-box",minHeight:80,resize:"vertical",transition:"border-color 0.15s"}} onFocus={function(e){e.target.style.borderColor=C.accent;}} onBlur={function(e){e.target.style.borderColor=C.inputBorder;}} value={p.jobNotes} onChange={function(e){p.setJobNotes(e.target.value);}} placeholder="e.g. 2-story, 4/12 pitch, no garage..."/>
-        </div>
-        <div style={{padding:"0 16px"}}>
-          <GreenBtn onClick={function(){var cust={name:p.custName,address:p.custAddr,phone:p.custPhone,email:p.custEmail,jobAddress:p.jobAddr||p.custAddr};printTakeOff(cust,p.jobNotes,p.measurements,p.currentUser,p.quoteOpts);}}>{"Print Take Off"}</GreenBtn>
-          <GreenBtn mt={8} onClick={function(){var cust={name:p.custName,address:p.custAddr,phone:p.custPhone,email:p.custEmail,jobAddress:p.jobAddr||p.custAddr};shareTakeOff(cust,p.jobNotes,p.measurements,p.currentUser,p.quoteOpts);}}>{"Share Take Off"}</GreenBtn>
-          {p.measurements.length>0&&(<>
-            <GreenBtn mt={8} onClick={p.onSendToQuote}>{"Send to Quote Builder"}</GreenBtn>
-            <GreenBtn mt={8} onClick={p.onSendToWorkOrder}>{"Send to Work Order"}</GreenBtn>
-            <button onClick={function(){if(confirm("Clear all measurements?"))p.setMeasurements([]);}} style={{width:"100%",marginTop:8,padding:"10px",borderRadius:6,border:"1px solid "+C.danger,background:"transparent",color:C.danger,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',sans-serif",textTransform:"uppercase"}}>{"Clear All"}</button>
-          </>)}
-        </div>
-      </div>
-
-      {/* Right: Takeoff list */}
-      <div className="ist-col-results">
-        <div style={{padding:"0 16px"}}>
-        {p.measurements.length>0&&(<div>
-          <div style={{fontSize:12,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:14}}>{"Take Off ("+p.measurements.length+" items · "+total.toLocaleString()+" sq ft)"}</div>
-          {sorted.map(function(gn){var gt=groups[gn].reduce(function(s,m){return s+m.sqft;},0);
-            return(<div key={gn} style={{marginBottom:16}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.dim,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+C.border}}>{gn}<span style={{color:C.accent,marginLeft:8}}>{gt.toLocaleString()+" sq ft"}</span></div>
-              <div style={{background:"rgba(255,255,255,0.06)",backdropFilter:"blur(12px)",WebkitBackdropFilter:"blur(12px)",borderRadius:10,border:"1px solid rgba(255,255,255,0.1)",overflow:"hidden",boxShadow:"0 4px 24px rgba(0,0,0,0.4)"}}>
-                {groups[gn].map(function(item,idx){return(<div key={item.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:idx<groups[gn].length-1?"1px solid "+C.borderLight:"none"}}>
-                  <div style={{flex:1}}>
-                    <div style={{fontSize:13,fontWeight:600,lineHeight:1.3,color:C.text}}>{item.location}</div>
-                    {item.wallHeightLabel&&(<div style={{fontSize:12,color:C.accent,marginTop:2,fontWeight:500}}>{"↳ "+item.wallHeightLabel}</div>)}
-                    {item.cavityWidth&&(<div style={{fontSize:12,color:C.textSec,marginTop:2,fontWeight:500}}>{"↳ "+item.cavityWidth+" cavity"}</div>)}
-                    {item.matNote&&(<div style={{fontSize:12,color:C.dim,marginTop:2}}>{"📋 "+item.matNote}</div>)}
-                    {item.pitch&&(<div style={{fontSize:12,color:C.dim,marginTop:2}}>{item.pitch}</div>)}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",gap:12,marginLeft:12}}><div style={{fontSize:14,fontWeight:700,color:C.text}}>{item.sqft.toLocaleString()+" sf"}</div><button onClick={function(){removeM(item.id);}} style={{background:"none",border:"none",color:C.danger,fontSize:11,cursor:"pointer",fontFamily:"'Inter',sans-serif",fontWeight:600}}>{"Remove"}</button></div>
-                </div>);})}
-              </div>
-            </div>);
-          })}
-          {removalItems.length>0&&(<div style={{marginBottom:16}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.danger,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8,paddingBottom:6,borderBottom:"1px solid "+C.danger}}>{"Removal"}<span style={{color:C.danger,marginLeft:8}}>{removalTotal.toLocaleString()+" sq ft"}</span></div>
-            <div style={{background:C.card,borderRadius:6,border:"1px solid "+C.danger,overflow:"hidden",boxShadow:C.shadow}}>
-              {removalItems.map(function(item,idx){return(<div key={item.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",borderBottom:idx<removalItems.length-1?"1px solid "+C.borderLight:"none"}}>
-                <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,lineHeight:1.3,color:C.text}}>{item.location}</div></div>
-                <div style={{display:"flex",alignItems:"center",gap:12,marginLeft:12}}><div style={{fontSize:14,fontWeight:700,color:C.text}}>{item.sqft.toLocaleString()+" sf"}</div><button onClick={function(){removeM(item.id);}} style={{background:"none",border:"none",color:C.danger,fontSize:11,cursor:"pointer",fontFamily:"'Inter',sans-serif",fontWeight:600}}>{"Remove"}</button></div>
-              </div>);})}
-            </div>
-          </div>)}
-        </div>)}
-        {p.measurements.length===0&&(<div style={{textAlign:"center",padding:"40px 16px",color:C.dim}}><div style={{fontSize:14}}>{"Start measuring — add locations above"}</div></div>)}
-        </div>
-      </div>
-    </div>{/* end row 2 */}
-  </div>);
-}
-
-/* ══════════ QUOTE BUILDER ══════════ */
-
-function newOption(name){return{name:name,items:[],pso:false,psoKw:false,extraLabor:false,extraLaborAmt:"",tripCharge:false,tripChargeAmt:"",energySeal:false,energySealAmt:"",dumpster:false,dumpsterAmt:"",customItems:[],overrideTotal:""};}
-
-function QuoteBuilderSection(p){
-  var s1=useState("fiberglass"),matTab=s1[0],setMatTab=s1[1];
-  var s2=useState(null),pricingId=s2[0],setPricingId=s2[1];
-  var s3=useState(""),pricingPrice=s3[0],setPricingPrice=s3[1];
-  var s12=useState(""),pricingMat=s12[0],setPricingMat=s12[1];
-  var s13=useState(0),activeIdx=s13[0],setActiveIdx=s13[1];
-  var s14=useState(false),editingName=s14[0],setEditingName=s14[1];
-  var ls=useState(""),lid=ls[0],setLid=ls[1];
-  var cs=useState(""),cl=cs[0],setCl=cs[1];
-
-  var opts=p.quoteOpts;var setOpts=p.setQuoteOpts;
-  if(activeIdx>=opts.length)setActiveIdx(0);
-  var opt=opts[activeIdx]||newOption("Option 1");
-
-  function updateOpt(changes){setOpts(function(prev){return prev.map(function(o,i){return i===activeIdx?Object.assign({},o,changes):o;});});}
-  function addItem(item){
-    var existing=opt.items.find(function(i){return i.description===item.description;});
-    if(existing){
-      var newSqft=existing.sqft+item.sqft;
-      var newTotal=Math.ceil(newSqft*existing.pricePerUnit);
-      updateOpt({items:opt.items.map(function(i){return i.id===existing.id?Object.assign({},i,{sqft:newSqft,total:newTotal}):i;}),overrideTotal:""});
-    }else{
-      updateOpt({items:opt.items.concat([Object.assign({},item,{id:Date.now()+Math.random()})]),overrideTotal:""});
-    }
-  }
-  function removeItem(id){updateOpt({items:opt.items.filter(function(i){return i.id!==id;}),overrideTotal:""});}
-
-  var unpriced=p.importedItems.filter(function(i){return!i.priced;});
-  var lineItemsTotal=opt.items.reduce(function(s,i){return s+i.total;},0);
-  var psoCredit=((opt.pso||false)?600:0)+((opt.psoKw||false)?525:0);
-  var extraLabor=opt.extraLabor?(parseFloat(opt.extraLaborAmt)||0):0;
-  var tripCharge=opt.tripCharge?(parseFloat(opt.tripChargeAmt)||0):0;
-  var energySeal=opt.energySeal?(parseFloat(opt.energySealAmt)||0):0;
-  var dumpster=opt.dumpster?(parseFloat(opt.dumpsterAmt)||0):0;
-  var customItemsTotal=(opt.customItems||[]).reduce(function(s,ci){return s+(parseFloat(ci.price)||0);},0);
-  var subtotal=lineItemsTotal-psoCredit+extraLabor+tripCharge+energySeal+dumpster+customItemsTotal;
-  var finalTotal=opt.overrideTotal!==""?(parseFloat(opt.overrideTotal)||0):subtotal;
-  var matSs={width:"100%",padding:"8px 10px",background:C.input,border:"1px solid "+C.inputBorder,borderRadius:6,color:C.text,fontSize:13,fontFamily:"'Inter',sans-serif",outline:"none",boxSizing:"border-box",WebkitAppearance:"none",marginBottom:8};
-
-  function handlePriceImport(item){var pr=parseFloat(pricingPrice)||0;if(pr<=0||!pricingMat)return;
-    var isRem=pricingMat==="Removal";
-    var desc=isRem?("Remove existing insulation from "+item.location.toLowerCase()+"."):("Install "+pricingMat.toLowerCase()+" in "+item.location.toLowerCase());
-    addItem(Object.assign({},item,{material:pricingMat,pricePerUnit:pr,total:Math.ceil(item.sqft*pr),description:desc}));
-    p.setImportedItems(function(prev){return prev.map(function(i){return i.id===item.id?Object.assign({},i,{priced:true}):i;});});
-    setPricingId(null);setPricingPrice("");setPricingMat("");}
-
-  function addOption(){setOpts(function(prev){return prev.concat([newOption("Option "+(prev.length+1))]);});setActiveIdx(opts.length);}
-  function removeOption(idx){if(opts.length<=1)return;setOpts(function(prev){return prev.filter(function(_,i){return i!==idx;});});if(activeIdx>=opts.length-1)setActiveIdx(Math.max(0,opts.length-2));}
-
-  var qs1=useState(false),locOpen=qs1[0],setLocOpen=qs1[1];
-  var cid1=useState(""),customDesc=cid1[0],setCustomDesc=cid1[1];
-  var cid2=useState(""),customPrice=cid2[0],setCustomPrice=cid2[1];
-  var accordionBtn=function(label,open,setOpen,badge){return(<button onClick={function(){setOpen(!open);}} style={{width:"100%",padding:"10px 14px",background:"#1e293b",display:"flex",justifyContent:"space-between",alignItems:"center",borderRadius:open?"8px 8px 0 0":"8px",border:"none",cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>
-    <span style={{fontSize:12,fontWeight:800,color:"#fff",textTransform:"uppercase",letterSpacing:0.8}}>{label}</span>
-    <div style={{display:"flex",alignItems:"center",gap:10}}>
-      {badge&&<span style={{fontSize:13,fontWeight:600,color:"#93c5fd"}}>{badge}</span>}
-      <span style={{fontSize:13,color:"rgba(255,255,255,0.6)"}}>{open?"▲":"▼"}</span>
-    </div>
-  </button>);};
-
-  return(<div>
-    <CustomerInfo custName={p.custName} setCustName={p.setCustName} custAddr={p.custAddr} setCustAddr={p.setCustAddr} custPhone={p.custPhone} setCustPhone={p.setCustPhone} custEmail={p.custEmail} setCustEmail={p.setCustEmail} jobAddr={p.jobAddr} setJobAddr={p.setJobAddr} currentUser={p.currentUser}/>
-
-    {/* ROW 1: Single collapsible — Location + Material & Measure side by side */}
-    <div style={{padding:"0 16px 12px"}}>
-      <div style={{background:"rgba(255,255,255,0.65)",backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",borderRadius:12,border:"1px solid rgba(255,255,255,0.8)",boxShadow:"0 4px 24px rgba(0,0,0,0.07)",overflow:"hidden"}}>
-        {accordionBtn("📐 Add Item",locOpen,setLocOpen,lid&&LOCATIONS.find(function(l){return l.id===lid;})?(LOCATIONS.find(function(l){return l.id===lid;}).label):(lid==="custom"?cl:null))}
-        {locOpen&&(<div className="ist-2col" style={{marginBottom:0}}>
-          <div className="ist-col-form">
-            <div style={{padding:"12px 14px"}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>{"① Location"}</div>
-              <LocationGrid value={lid} onChange={function(v){setLid(v);}}/>
-              {lid==="custom"&&(<div style={{marginTop:8}}><QV_Input label="Custom Location Name" value={cl} onChange={setCl} type="text" placeholder="e.g. Bonus room walls"/></div>)}
-            </div>
-          </div>
-          <div className="ist-col-results">
-            <div style={{padding:"12px 14px"}}>
-              <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:8}}>{"② Material & Measure"}</div>
-              <MeasurementForm key={"qb-"+activeIdx} lid={lid} setLid={setLid} cl={cl} setCl={setCl} tab={matTab} onAdd={function(item){addItem(item);setLocOpen(false);}} hasPrice={true} hideLocation/>
-            </div>
-          </div>
-        </div>)}
-      </div>
-    </div>
-
-    {/* ROW 2: Full-width quote summary */}
-    <div style={{padding:"0 16px"}}>
-
-    {/* OPTION TABS */}
-    <div style={{marginBottom:12}}>
-      <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap"}}>
-        {opts.map(function(o,idx){return(
-          <button key={idx} onClick={function(){setActiveIdx(idx);setPricingId(null);}}
-            style={{padding:"8px 14px",borderRadius:6,border:activeIdx===idx?"2px solid "+C.accent:"1px solid "+C.border,background:activeIdx===idx?C.accentBg:C.card,color:activeIdx===idx?C.accent:C.dim,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>
-            {o.name}{o.items.length>0?" ("+o.items.length+")":""}
-          </button>
-        );})}
-        <button onClick={addOption} style={{padding:"8px 12px",borderRadius:6,border:"1px dashed "+C.dim,background:"transparent",color:C.dim,fontSize:14,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{"+"}</button>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginLeft:8}}>
-          {editingName?(<div style={{display:"flex",gap:6}}>
-            <input style={{padding:"6px 10px",background:C.input,border:"1px solid "+C.accent,borderRadius:6,color:C.text,fontSize:13,fontFamily:"'Inter',sans-serif",outline:"none"}}
-              type="text" value={opt.name} onChange={function(e){updateOpt({name:e.target.value});}} autoFocus
-              onKeyDown={function(e){if(e.key==="Enter")setEditingName(false);}}/>
-            <button onClick={function(){setEditingName(false);}} style={{padding:"6px 10px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{"OK"}</button>
-          </div>):(<div style={{display:"flex",alignItems:"center",gap:8}}>
-            <button onClick={function(){setEditingName(true);}} style={{background:"none",border:"none",color:C.dim,fontSize:11,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{"Rename"}</button>
-            {opts.length>1&&(<button onClick={function(){if(confirm("Delete \""+opt.name+"\"?"))removeOption(activeIdx);}} style={{background:"none",border:"none",color:C.danger,fontSize:11,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{"Delete"}</button>)}
-          </div>)}
-        </div>
-      </div>
-    </div>
-
-    {/* FROM TAKE OFF */}
-    {unpriced.length>0&&(<div style={{marginBottom:16}}>
-      <div style={{fontSize:12,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:10}}>{"From Take Off — Price These ("+unpriced.length+")"}</div>
-      <div style={{background:C.card,borderRadius:6,border:"1px solid "+C.border,overflow:"hidden"}}>
-        {unpriced.map(function(item,idx){return(<div key={item.id} style={{padding:"12px 14px",borderBottom:idx<unpriced.length-1?"1px solid "+C.border:"none"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-            <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,color:C.text}}>{item.isRemoval?(<span><span style={{fontSize:10,fontWeight:700,color:C.danger,background:C.dangerBg,padding:"2px 6px",borderRadius:4,marginRight:6}}>{"REMOVAL"}</span>{item.location}</span>):item.location}</div><div style={{fontSize:12,color:C.dim,marginTop:2}}>{item.sqft.toLocaleString()+" sq ft"}{item.pitch?" · "+item.pitch:""}</div></div>
-            <div style={{display:"flex",alignItems:"center",gap:6,marginLeft:12}}>
-              {pricingId!==item.id&&(<button onClick={function(){setPricingId(item.id);setPricingMat(item.matNote||"");setPricingPrice("");}} style={{padding:"6px 14px",background:"transparent",border:"1px solid "+C.accent,borderRadius:6,color:C.accent,fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"'Inter',sans-serif",textTransform:"uppercase"}}>{"Price"}</button>)}
-              <button onClick={function(){p.setImportedItems(function(prev){return prev.filter(function(i){return i.id!==item.id;});});}} style={{padding:"4px 6px",background:"none",border:"none",color:C.danger,fontSize:11,cursor:"pointer",fontFamily:"'Inter',sans-serif",fontWeight:600}}>{"Remove"}</button>
-            </div>
-          </div>
-          {pricingId===item.id&&(function(){
-            var PMBTNS=[
-              {id:"R11",label:"R11",value:"R11 Fiberglass Batts",sub:null},
-              {id:"R13",label:"R13",value:null,sub:[{id:"x15",label:"x15",value:"R13 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R13 x24 Fiberglass Batts"}]},
-              {id:"R19",label:"R19",value:null,sub:[{id:"x15",label:"x15",value:"R19 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R19 x24 Fiberglass Batts"}]},
-              {id:"R30",label:"R30",value:null,sub:[{id:"x15",label:"x15",value:"R30 x15 Fiberglass Batts"},{id:"x24",label:"x24",value:"R30 x24 Fiberglass Batts"}]},
-              {id:"opencell",label:"Open Cell",value:null,sub:["2\"","3\"","4\"","5\"","6\""].map(function(v){return{id:v,label:v,value:v+' Open Cell Foam'};})},
-              {id:"closedcell",label:"Closed Cell",value:null,sub:["1\"","2\"","3\""].map(function(v){return{id:v,label:v,value:v+' Closed Cell Foam'};})},
-              {id:"blownfg",label:"Blown Fiberglass",value:null,sub:["R13","R15","R19","R22","R26","R30","R38","R44","R49","R60"].map(function(r){return{id:r,label:r,value:"Blown Fiberglass "+r};})},
-              {id:"blowncel",label:"Blown Cellulose",value:null,sub:["R13","R15","R19","R22","R26","R30","R38","R44","R49","R60"].map(function(r){return{id:r,label:r,value:"Blown Cellulose "+r};})},
-              {id:"removal",label:"Removal",value:"Removal",sub:null},
-            ];
-            var bs=function(active){return{padding:"7px 11px",borderRadius:8,border:active?"2px solid "+C.accent:"1px solid rgba(0,0,0,0.08)",background:active?"rgba(37,99,235,0.1)":"rgba(255,255,255,0.6)",color:active?C.accent:C.text,fontSize:12,fontWeight:active?700:500,cursor:"pointer",fontFamily:"'Inter',sans-serif",transition:"all 0.12s"};};
-            var activePrimary=PMBTNS.find(function(b){return pricingMat&&(b.value===pricingMat||(b.sub&&b.sub.some(function(s){return s.value===pricingMat;})));});
-            var activePrimaryId=activePrimary?activePrimary.id:"";
-            return(<div style={{marginTop:10,padding:12,background:C.bg,borderRadius:8,border:"1px solid "+C.border}}>
-              <div style={{fontSize:11,color:C.accent,fontWeight:600,marginBottom:8}}>{"Adding to: "+opt.name}</div>
-              <div style={{fontSize:10,fontWeight:700,color:C.textSec,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>{"Material"}{!pricingMat&&<span style={{color:C.danger,marginLeft:4}}>{"*"}</span>}</div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
-                {PMBTNS.map(function(b){
-                  var active=activePrimaryId===b.id;
-                  return(<button key={b.id} onClick={function(){if(b.value){setPricingMat(b.value);}else{setPricingMat("");}}} style={bs(active)}>{b.label}</button>);
-                })}
-              </div>
-              {activePrimary&&activePrimary.sub&&(<div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8,paddingLeft:8,borderLeft:"3px solid "+C.accent}}>
-                {activePrimary.sub.map(function(s){
-                  return(<button key={s.id} onClick={function(){setPricingMat(s.value);}} style={bs(pricingMat===s.value)}>{s.label}</button>);
-                })}
-              </div>)}
-              {pricingMat&&<div style={{fontSize:11,color:C.accent,fontWeight:600,marginBottom:8}}>{"✓ "+pricingMat}</div>}
-              <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                <div style={{flex:1}}><QV_Input label="$/sf" value={pricingPrice} onChange={setPricingPrice} placeholder="0.00" step="0.01"/></div>
-                <button onClick={function(){handlePriceImport(item);}} style={{padding:"8px 14px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontWeight:600,fontSize:12,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{"Add"}</button>
-                <button onClick={function(){setPricingId(null);setPricingPrice("");setPricingMat("");}} style={{padding:"8px 10px",background:"none",border:"1px solid "+C.dim,borderRadius:6,color:C.dim,fontSize:12,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{"Cancel"}</button>
-              </div>
-            </div>);
-          })()}
-        </div>);})}
-      </div>
-
-    </div>)}
-
-    {/* ADD MANUALLY */}
-    {/* QUOTE TOTAL — pinned card */}
-    {opt.items.length>0&&(<div style={{padding:"0 16px 16px"}}>
-      <div style={{background:C.accent,borderRadius:10,padding:"18px 22px",display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:"0 4px 16px rgba(37,99,235,0.18)"}}>
-        <div>
-          <div style={{fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.75)",textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:4}}>{opt.name+" · "+opt.items.length+" item"+(opt.items.length!==1?"s":"")}</div>
-          <div style={{fontSize:13,fontWeight:600,color:"rgba(255,255,255,0.85)"}}>{"Estimated Total"}</div>
-        </div>
-        <div style={{fontSize:38,fontWeight:900,color:"#fff",letterSpacing:"-0.02em"}}>
-          {"$"+(opt.overrideTotal!==""?(parseFloat(opt.overrideTotal)||0).toLocaleString():((opt.items.reduce(function(s,i){return s+i.total;},0)-((opt.pso||false)?600:0)-((opt.psoKw||false)?525:0)+(opt.extraLabor?(parseFloat(opt.extraLaborAmt)||0):0)+(opt.tripCharge?(parseFloat(opt.tripChargeAmt)||0):0)+(opt.energySeal?(parseFloat(opt.energySealAmt)||0):0)+(opt.dumpster?(parseFloat(opt.dumpsterAmt)||0):0))).toLocaleString())}
-        </div>
-      </div>
-    </div>)}
-    {/* ITEMS FOR ACTIVE OPTION */}
-    {opt.items.length>0&&(<div style={{padding:"0 16px 20px"}}>
-      <div style={{fontSize:12,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.1em",marginBottom:12}}>{opt.name+" — Items ("+opt.items.length+")"}</div>
-      <div style={{background:C.card,borderRadius:6,padding:16,border:"1px solid "+C.border,boxShadow:C.shadow}}>
-        {opt.items.map(function(item,idx){return(<div key={item.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:idx<opt.items.length-1?"1px solid "+C.border:"none"}}>
-          <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600,lineHeight:1.3,color:C.text}}>{item.description}</div><div style={{fontSize:12,color:C.dim,marginTop:2}}>{item.sqft.toLocaleString()+" sq ft"}{item.pitch?" · "+item.pitch:""}</div></div>
-          <div style={{marginLeft:12}}><button onClick={function(){removeItem(item.id);}} style={{background:"none",border:"none",color:C.danger,fontSize:11,cursor:"pointer",fontFamily:"'Inter',sans-serif",fontWeight:600}}>{"REMOVE"}</button></div>
-        </div>);})}
-
-        {/* ADJUSTMENTS */}
-        <div style={{paddingTop:12,marginTop:8,borderTop:"1px solid "+C.borderLight}}>
-          <label style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",cursor:"pointer"}}>
-            <input type="checkbox" checked={opt.pso} onChange={function(e){updateOpt({pso:e.target.checked,overrideTotal:""});}}
-              style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:600,color:C.text}}>{"PSO Credit Attic"}</span>
-            {opt.pso&&(<span style={{fontSize:13,fontWeight:700,color:C.danger,marginLeft:"auto"}}>{"-$600"}</span>)}
-          </label>
-          <label style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",cursor:"pointer"}}>
-            <input type="checkbox" checked={opt.psoKw||false} onChange={function(e){updateOpt({psoKw:e.target.checked,overrideTotal:""});}}
-              style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:600,color:C.text}}>{"PSO Credit KW"}</span>
-            {opt.psoKw&&(<span style={{fontSize:13,fontWeight:700,color:C.danger,marginLeft:"auto"}}>{"-$525"}</span>)}
-          </label>
-          <label style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",cursor:"pointer"}}>
-            <input type="checkbox" checked={opt.extraLabor} onChange={function(e){updateOpt({extraLabor:e.target.checked,overrideTotal:""});}}
-              style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:600,color:C.text}}>{"Extra Labor"}</span>
-            <span style={{fontSize:10,color:C.dim,fontStyle:"italic"}}>{"(not on quote)"}</span>
-            {opt.extraLabor&&(
-              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
-                <span style={{fontSize:13,color:C.text}}>{"$"}</span>
-                <input type="number" value={opt.extraLaborAmt} onChange={function(e){updateOpt({extraLaborAmt:e.target.value,overrideTotal:""});}}
-                  style={{width:80,padding:"4px 8px",background:C.bg,border:"1px solid "+C.borderLight,borderRadius:6,color:C.text,fontSize:13,fontWeight:600,fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}} placeholder="0" step="1"/>
-              </div>
-            )}
-          </label>
-          <label style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",cursor:"pointer"}}>
-            <input type="checkbox" checked={opt.tripCharge} onChange={function(e){updateOpt({tripCharge:e.target.checked,overrideTotal:""});}}
-              style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:600,color:C.text}}>{"Trip Charge"}</span>
-            <span style={{fontSize:10,color:C.dim,fontStyle:"italic"}}>{"(not on quote)"}</span>
-            {opt.tripCharge&&(
-              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
-                <span style={{fontSize:13,color:C.text}}>{"$"}</span>
-                <input type="number" value={opt.tripChargeAmt} onChange={function(e){updateOpt({tripChargeAmt:e.target.value,overrideTotal:""});}}
-                  style={{width:80,padding:"4px 8px",background:C.bg,border:"1px solid "+C.borderLight,borderRadius:6,color:C.text,fontSize:13,fontWeight:600,fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}} placeholder="0" step="1"/>
-              </div>
-            )}
-          </label>
-          <label style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",cursor:"pointer"}}>
-            <input type="checkbox" checked={opt.energySeal||false} onChange={function(e){updateOpt({energySeal:e.target.checked,overrideTotal:""});}}
-              style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:600,color:C.text}}>{"Energy Seal & Plates"}</span>
-            {opt.energySeal&&(
-              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
-                <span style={{fontSize:13,color:C.text}}>{"$"}</span>
-                <input type="number" value={opt.energySealAmt||""} onChange={function(e){updateOpt({energySealAmt:e.target.value,overrideTotal:""});}}
-                  style={{width:80,padding:"4px 8px",background:C.bg,border:"1px solid "+C.borderLight,borderRadius:6,color:C.text,fontSize:13,fontWeight:600,fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}} placeholder="0" step="1"/>
-              </div>
-            )}
-          </label>
-          {/* Dumpster — internal only, never on quote */}
-          <label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderTop:"1px solid "+C.borderLight,cursor:"pointer"}}>
-            <input type="checkbox" checked={opt.dumpster||false} onChange={function(e){updateOpt({dumpster:e.target.checked});}}
-              style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:600,color:C.text}}>{"Dumpster"}</span>
-            <span style={{fontSize:11,color:C.dim,marginLeft:2}}>{"(internal only)"}</span>
-            {opt.dumpster&&(
-              <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:4}}>
-                <span style={{fontSize:13,color:C.text}}>{"$"}</span>
-                <input type="number" value={opt.dumpsterAmt||""} onChange={function(e){updateOpt({dumpsterAmt:e.target.value});}}
-                  style={{width:80,padding:"4px 8px",background:C.bg,border:"1px solid "+C.borderLight,borderRadius:6,color:C.text,fontSize:13,fontWeight:600,fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}} placeholder="0" step="1"/>
-              </div>
-            )}
-          </label>
-          {/* Custom Line Items */}
-          <div style={{borderTop:"1px solid "+C.borderLight,paddingTop:10,marginTop:2}}>
-            <div style={{fontSize:11,fontWeight:700,color:C.accent,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:8}}>{"+ Custom Line Items"}</div>
-            {(opt.customItems||[]).map(function(ci){return(
-              <div key={ci.id} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6,padding:"8px 10px",background:C.accentBg,borderRadius:6,border:"1px solid "+C.borderLight}}>
-                <div style={{flex:1}}>
-                  <div style={{fontSize:13,color:C.text,fontWeight:500}}>{ci.description}</div>
-                  <div style={{fontSize:12,color:C.accent,fontWeight:700,marginTop:2}}>{"$"+(parseFloat(ci.price)||0).toLocaleString()}</div>
-                </div>
-                <button onClick={function(){updateOpt({customItems:(opt.customItems||[]).filter(function(x){return x.id!==ci.id;}),overrideTotal:""});}} style={{padding:"4px 10px",borderRadius:6,border:"1px solid "+C.danger,background:"transparent",color:C.danger,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{"✕"}</button>
-              </div>
-            );})}
-            <div style={{display:"flex",flexDirection:"column",gap:6}}>
-              <input type="text" value={customDesc} onChange={function(e){setCustomDesc(e.target.value);}} placeholder="e.g. Treat top of sheetrock with Sterifab"
-                onKeyDown={function(e){if(e.key==="Enter"&&customPrice){var d=customDesc.trim();var pr=parseFloat(customPrice)||0;if(d&&pr>0){updateOpt({customItems:(opt.customItems||[]).concat([{id:Date.now()+Math.random(),description:d,price:pr}]),overrideTotal:""});setCustomDesc("");setCustomPrice("");}}} }
-                style={{width:"100%",padding:"8px 10px",background:C.input,border:"1px solid "+C.inputBorder,borderRadius:6,color:C.text,fontSize:13,fontFamily:"'Inter',sans-serif",outline:"none",boxSizing:"border-box"}}/>
-              <div style={{display:"flex",gap:6}}>
-                <div style={{display:"flex",alignItems:"center",gap:4,flex:1}}>
-                  <span style={{fontSize:13,color:C.text,fontWeight:600}}>{"$"}</span>
-                  <input type="number" value={customPrice} onChange={function(e){setCustomPrice(e.target.value);}} placeholder="Price"
-                    style={{flex:1,padding:"8px 10px",background:C.input,border:"1px solid "+C.inputBorder,borderRadius:6,color:C.text,fontSize:13,fontFamily:"'Inter',sans-serif",outline:"none"}}/>
-                </div>
-                <button onClick={function(){var d=customDesc.trim();var pr=parseFloat(customPrice)||0;if(!d||pr<=0)return;updateOpt({customItems:(opt.customItems||[]).concat([{id:Date.now()+Math.random(),description:d,price:pr}]),overrideTotal:""});setCustomDesc("");setCustomPrice("");}}
-                  style={{padding:"8px 16px",background:C.accent,border:"none",borderRadius:6,color:"#fff",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif"}}>{"Add"}</button>
-              </div>
-            </div>
-          </div>
-
-          <label style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderTop:"1px solid "+C.borderLight,cursor:"pointer"}}>
-            <input type="checkbox" checked={p.showProductInfo||false} onChange={function(e){p.setShowProductInfo(e.target.checked);}} style={{width:18,height:18,accentColor:C.accent,cursor:"pointer"}}/>
-            <span style={{fontSize:13,fontWeight:600,color:C.text}}>{"Product Information"}</span>
-            <span style={{fontSize:11,color:C.dim,marginLeft:2}}>{"(adds spec sheet to PDF)"}</span>
-          </label>
-        </div>
-
-        {/* TOTAL */}
-        <div style={{paddingTop:12,marginTop:4,borderTop:"1px solid "+C.borderLight}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 0 0"}}>
-            <span style={{fontSize:18,fontWeight:800,color:C.text}}>{"TOTAL"}</span>
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontSize:16,fontWeight:800,color:C.text}}>{"$"}</span>
-              <input type="number" value={opt.overrideTotal!==""?opt.overrideTotal:subtotal.toFixed(0)} onChange={function(e){updateOpt({overrideTotal:e.target.value});}}
-                style={{width:110,padding:"6px 10px",background:C.bg,border:"1px solid "+C.borderLight,borderRadius:6,color:C.text,fontSize:18,fontWeight:800,fontFamily:"'Inter',sans-serif",outline:"none",textAlign:"right"}} step="1"/>
-            </div>
-          </div>
-          {opt.overrideTotal!==""&&parseFloat(opt.overrideTotal)!==subtotal&&(<div style={{fontSize:11,color:C.dim,textAlign:"right",marginTop:4}}>{"Calculated: $"+subtotal.toFixed(0)}</div>)}
-        </div>
-      </div>
-      <button onClick={function(){if(confirm("Clear items from "+opt.name+"?"))updateOpt({items:[]});}} style={{width:"100%",marginTop:8,padding:"10px",borderRadius:6,border:"1px solid "+C.danger,background:"transparent",color:C.danger,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif",textTransform:"uppercase"}}>{"Clear "+opt.name}</button>
-    </div>)}
-
-    {/* PRINT/SHARE */}
-    {opts.some(function(o){return o.items.length>0;})&&(<div style={{marginBottom:16}}>
-      <GreenBtn onClick={function(){generatePDF({name:p.custName,address:p.custAddr,phone:p.custPhone,email:p.custEmail,jobAddress:p.jobAddr},opts,p.currentUser,p.showProductInfo||false);}}>{"Print Quote"}</GreenBtn>
-      <GreenBtn mt={8} onClick={function(){shareQuote({name:p.custName,address:p.custAddr,phone:p.custPhone,email:p.custEmail,jobAddress:p.jobAddr},opts,p.currentUser,p.showProductInfo||false);}}>{"Share Quote"}</GreenBtn>
-      <GreenBtn mt={8} onClick={function(){var cust={name:p.custName,address:p.custAddr,phone:p.custPhone,email:p.custEmail,jobAddress:p.jobAddr};printQuoteAndTakeOff(cust,opts,p.currentUser,p.jobNotes,p.measurements,opts,p.showProductInfo||false);}}>{"Print Quote and Take Off"}</GreenBtn>
-    </div>)}
-
-    {opt.items.length===0&&unpriced.length===0&&(<div style={{textAlign:"center",padding:"40px 16px",color:C.dim}}><div style={{fontSize:14}}>{"Use Take Off to measure first, or add items manually"}</div></div>)}
-    </div>{/* end bottom section */}
-  </div>);
-}
-
-/* ══════════ TEAM ══════════ */
-
-var TEAM_MEMBERS = ["Johnny", "Skip", "Jordan"];
-
-/* ══════════ SAVED JOBS PANEL ══════════ */
-
-function SavedJobsPanel(p) {
-  var s1 = useState([]), jobs = s1[0], setJobs = s1[1];
-  var s2 = useState(false), loading = s2[0], setLoading = s2[1];
-  var s3 = useState(""), saveName = s3[0], setSaveName = s3[1];
-  var s4 = useState(false), showSave = s4[0], setShowSave = s4[1];
-  var s5 = useState(""), status = s5[0], setStatus = s5[1];
-  var s6 = useState({}), openSections = s6[0], setOpenSections = s6[1];
-
-  function refreshJobs() {
-    setLoading(true);
-    loadAllJobs().then(function(data) {
-      setJobs(data || []);
-      setLoading(false);
-    });
-  }
-
-  useEffect(function() { refreshJobs(); }, []);
-
-  function handleSave() {
-    var name = saveName.trim();
-    if (!name) { setStatus("⚠️ Enter a job name first."); return; }
-    setStatus("Saving...");
-    var jobData = {
-      custName: p.custName, custAddr: p.custAddr, custPhone: p.custPhone, custEmail: p.custEmail, jobAddr: p.jobAddr, jobNotes: p.jobNotes,
-      measurements: p.measurements, quoteOpts: p.quoteOpts, importedItems: p.importedItems, section: p.section,
-    };
-    saveJob(p.currentUser, name, jobData).then(function(ok) {
-      if (ok) {
-        setStatus("✓ Saved: " + name);
-        setSaveName("");
-        setShowSave(false);
-        refreshJobs();
-        setTimeout(function() { setStatus(""); }, 3000);
-      } else {
-        setStatus("❌ Save failed — check your connection and try again.");
-        setTimeout(function() { setStatus(""); }, 4000);
-      }
-    }).catch(function(e) {
-      setStatus("❌ Error: " + (e.message || "Unknown error"));
-      setTimeout(function() { setStatus(""); }, 4000);
-    });
-  }
-
-  function handleLoad(job) {
-    if (!confirm("Load \"" + job.job_name + "\"? This will replace your current work.")) return;
-    var d = job.job_data || {};
-    p.setCustName(d.custName || "");
-    p.setCustAddr(d.custAddr || "");
-    p.setCustPhone(d.custPhone || "");
-    p.setCustEmail(d.custEmail || "");
-    p.setJobAddr(d.jobAddr || "");
-    p.setJobNotes(d.jobNotes || "");
-    p.setMeasurements(d.measurements || []);
-    if (d.quoteOpts) p.setQuoteOpts(d.quoteOpts);
-    else if (d.quoteItems && d.quoteItems.length > 0) p.setQuoteOpts([Object.assign(newOption("Option 1"),{items:d.quoteItems})]);
-    else p.setQuoteOpts([newOption("Option 1")]);
-    p.setImportedItems(d.importedItems || []);
-    setStatus("Loaded: " + job.job_name);
-    setTimeout(function() { setStatus(""); }, 2000);
-  }
-
-  function handleDelete(job) {
-    if (!confirm("Delete \"" + job.job_name + "\"?")) return;
-    deleteJob(job.id).then(function() { refreshJobs(); });
-  }
-
-  var hasWork = p.measurements.length > 0 || p.quoteOpts.some(function(o){return o.items.length>0;}) || (p.custName && p.custName.trim().length > 0) || (p.importedItems && p.importedItems.length > 0);
-
-  return (
-    <div style={{ padding: "0 16px 16px" }}>
-      {hasWork && (
-        <div style={{ marginBottom: 12 }}>
-          {!showSave ? (
-            <button onClick={function() { setShowSave(true); setSaveName(p.custName || ""); }}
-              style={{ width: "100%", padding: "11px 16px", borderRadius: 6, border: "1px solid " + C.accent, background: "transparent", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Inter', sans-serif", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-              {"Save Current Job"}
-            </button>
-          ) : (
-            <div style={{ background: C.card, borderRadius: 6, padding: 14, border: "1px solid " + C.accent, boxShadow: C.shadowMd }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.accent, textTransform: "uppercase", marginBottom: 8 }}>{"Save Job As"}</div>
-              <div style={{ display: "flex", gap: 8 }}>
-                <input style={{ flex: 1, padding: "8px 12px", background: C.input, border: "1px solid " + C.inputBorder, borderRadius: 6, color: C.text, fontSize: 14, fontFamily: "'Inter', sans-serif", outline: "none", transition: "border-color 0.15s" }}
-                  type="text" value={saveName} onChange={function(e) { setSaveName(e.target.value); }} placeholder="Job name (e.g. Smith Residence)" autoFocus
-                  onKeyDown={function(e) { if (e.key === "Enter") handleSave(); }}
-                  onFocus={function(e){e.target.style.borderColor=C.accent;}} onBlur={function(e){e.target.style.borderColor=C.inputBorder;}}
-                />
-                <button onClick={handleSave} style={{ padding: "8px 16px", background: C.accent, border: "none", borderRadius: 6, color: "#fff", fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>{"Save"}</button>
-                <button onClick={function() { setShowSave(false); }} style={{ padding: "8px 12px", background: "none", border: "1px solid " + C.dim, borderRadius: 6, color: C.dim, fontSize: 13, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>{"Cancel"}</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {status && (<div style={{ padding: "8px 12px", background: C.accentBg, border: "1px solid " + C.accent, borderRadius: 6, fontSize: 13, color: C.accent, fontWeight: 600, marginBottom: 12, textAlign: "center" }}>{status}</div>)}
-
-      {loading && (<div style={{ fontSize: 12, color: C.dim, textAlign: "center", padding: "16px 0" }}>{"Loading..."}</div>)}
-
-      {!loading && TEAM_MEMBERS.map(function(member) {
-        var memberJobs = jobs.filter(function(j) { return j.saved_by === member; });
-        var isOpen = openSections[member];
-        return (
-          <div key={member} style={{ marginBottom: 10 }}>
-            <button onClick={function() { setOpenSections(function(prev) { var n = Object.assign({}, prev); n[member] = !n[member]; return n; }); }}
-              style={{ width: "100%", padding: "12px 16px", borderRadius: isOpen ? "6px 6px 0 0" : 6, border: "1px solid " + C.border, background: C.card, color: C.text, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "'Inter', sans-serif", display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: C.shadow }}>
-              <span>{member + (memberJobs.length > 0 ? " (" + memberJobs.length + ")" : "")}</span>
-              <span style={{ fontSize: 14, color: C.dim }}>{isOpen ? "▲" : "▼"}</span>
-            </button>
-            {isOpen && (
-              <div style={{ background: C.card, borderRadius: "0 0 6px 6px", border: "1px solid " + C.border, borderTop: "none", overflow: "hidden" }}>
-                {memberJobs.length === 0 && (
-                  <div style={{ padding: "12px 14px", fontSize: 12, color: C.dim, textAlign: "center" }}>{"No saved jobs"}</div>
-                )}
-                {memberJobs.map(function(job, idx) {
-                  var date = new Date(job.updated_at).toLocaleDateString("en-US", { month: "short", day: "numeric" });
-                  var d = job.job_data || {};
-                  var measCount = (d.measurements || []).length;
-                  var quoteCount = d.quoteOpts ? d.quoteOpts.reduce(function(s,o){return s+(o.items?o.items.length:0);},0) : (d.quoteItems||[]).length;
-                  var info = [];
-                  if (measCount > 0) info.push(measCount + " measurements");
-                  if (quoteCount > 0) info.push(quoteCount + " quote items");
-                  return (
-                    <div key={job.id} style={{ padding: "12px 14px", borderBottom: idx < memberJobs.length - 1 ? "1px solid " + C.borderLight : "none" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{job.job_name}</div>
-                          <div style={{ fontSize: 11, color: C.dim, marginTop: 2 }}>
-                            {date + (info.length > 0 ? " · " + info.join(", ") : "")}
-                          </div>
-                        </div>
-                        <div style={{ display: "flex", gap: 6 }}>
-                          <button onClick={function() { handleLoad(job); }}
-                            style={{ padding: "6px 12px", background: C.accent, border: "none", borderRadius: 6, color: "#fff", fontWeight: 600, fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif", textTransform: "uppercase" }}>{"Load"}</button>
-                          <button onClick={function() { handleDelete(job); }}
-                            style={{ padding: "6px 8px", background: "none", border: "1px solid " + C.danger, borderRadius: 6, color: C.danger, fontSize: 11, cursor: "pointer", fontFamily: "'Inter', sans-serif" }}>{"Delete"}</button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-/* ══════════ LOGIN SCREEN ══════════ */
-
-function PasscodeInput(p) {
-  var s1 = useState(["","","",""]), digits = s1[0], setDigits = s1[1];
-  function handleChange(idx, val) {
-    if (val && !/^\d$/.test(val)) return;
-    var next = digits.slice();
-    next[idx] = val;
-    setDigits(next);
-    if (val && idx < 3) {
-      var el = document.getElementById("pin-" + p.id + "-" + (idx + 1));
-      if (el) el.focus();
-    }
-    if (val && idx === 3) {
-      var code = next.join("");
-      if (code.length === 4) setTimeout(function() { p.onSubmit(code); }, 100);
-    }
-  }
-  function handleKeyDown(idx, e) {
-    if (e.key === "Backspace" && !digits[idx] && idx > 0) {
-      var el = document.getElementById("pin-" + p.id + "-" + (idx - 1));
-      if (el) el.focus();
-    }
-  }
-  var boxStyle = { width: 48, height: 56, textAlign: "center", fontSize: 22, fontWeight: 700, fontFamily: "'Inter',sans-serif", border: "1px solid " + C.border, borderRadius: 6, outline: "none", background: C.card, color: C.text, transition: "border-color 0.15s", boxShadow: C.shadow };
-  return (
-    <div style={{ display: "flex", gap: 10, justifyContent: "center" }}>
-      {[0,1,2,3].map(function(idx) {
-        return (<input key={idx} id={"pin-" + p.id + "-" + idx} type="tel" inputMode="numeric" maxLength={1} value={digits[idx]}
-          onChange={function(e) { handleChange(idx, e.target.value); }}
-          onKeyDown={function(e) { handleKeyDown(idx, e); }}
-          onFocus={function(e) { e.target.style.borderColor = C.accent; }}
-          onBlur={function(e) { e.target.style.borderColor = C.border; }}
-          style={boxStyle} autoFocus={idx === 0}/>);
-      })}
-    </div>
-  );
-}
-
-function LoginScreen(p) {
-  var s1 = useState(""), selectedUser = s1[0], setSelectedUser = s1[1];
-  var s2 = useState("pick"), step = s2[0], setStep = s2[1];
-  var s3 = useState(false), loading = s3[0], setLoading = s3[1];
-  var s4 = useState(""), error = s4[0], setError = s4[1];
-  var s5 = useState(""), firstCode = s5[0], setFirstCode = s5[1];
-  var s6 = useState(0), pinKey = s6[0], setPinKey = s6[1];
-
-  function handlePickUser(name) {
-    setSelectedUser(name);
-    setLoading(true);
-    setError("");
-    loadPasscode(name).then(function(code) {
-      setLoading(false);
-      if (code) {
-        setStep("enter");
-      } else {
-        setStep("create");
-      }
-    });
-  }
-
-  function handleEnter(code) {
-    setLoading(true);
-    setError("");
-    loadPasscode(selectedUser).then(function(stored) {
-      setLoading(false);
-      if (code === stored) {
-        localStorage.setItem("ist-user", selectedUser);
-        p.onLogin(selectedUser);
-      } else {
-        setError("Incorrect passcode");
-        setPinKey(function(k) { return k + 1; });
-      }
-    });
-  }
-
-  function handleCreate(code) {
-    if (!firstCode) {
-      setFirstCode(code);
-      setStep("confirm");
-      setPinKey(function(k) { return k + 1; });
-      return;
-    }
-    if (code !== firstCode) {
-      setError("Passcodes don't match. Try again.");
-      setFirstCode("");
-      setStep("create");
-      setPinKey(function(k) { return k + 1; });
-      return;
-    }
-    setLoading(true);
-    setError("");
-    savePasscode(selectedUser, code).then(function() {
-      setLoading(false);
-      localStorage.setItem("ist-user", selectedUser);
-      p.onLogin(selectedUser);
-    });
-  }
-
-  function handleBack() {
-    setSelectedUser("");
-    setStep("pick");
-    setError("");
-    setFirstCode("");
-    setPinKey(function(k) { return k + 1; });
-  }
-
-  return (
-    <div style={{ fontFamily: "'Inter', sans-serif", position: "fixed", inset: 0, overflow: "hidden", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-        @keyframes kenburns { 0%{transform:scale(1.0) translate(0%,0%)} 50%{transform:scale(1.12) translate(-2%,-1%)} 100%{transform:scale(1.0) translate(0%,0%)} }
-        @keyframes authFadeIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
-        .kb-img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:center;animation:kenburns 20s ease-in-out infinite;transform-origin:center center}
-        .kb-overlay{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,rgba(0,0,0,0.35) 50%,rgba(0,0,0,0.65) 100%)}
-        .kb-content{animation:authFadeIn 0.45s cubic-bezier(0.16,1,0.3,1) both;position:relative;z-index:1;width:100%;max-width:340px;padding:20px}
-        .kb-btn{background:rgba(255,255,255,0.1)!important;backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.2)!important;color:#fff!important;box-shadow:0 4px 24px rgba(0,0,0,0.3)!important;transition:background 0.2s,transform 0.2s!important}
-        .kb-btn:hover{background:rgba(255,255,255,0.18)!important;transform:translateY(-2px)}
-      `}</style>
-      <img className="kb-img" src="/tulsa.jpg" alt="" />
-      <div className="kb-overlay" />
-      <div className="kb-content">
-      <div style={{ textAlign: "center", marginBottom: 32 }}>
-        <div style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.65)", letterSpacing: "0.18em", textTransform: "uppercase", marginBottom: 6 }}>{"Insulation Services of Tulsa"}</div>
-        <h1 style={{ fontSize: 28, fontWeight: 900, color: "#fff", letterSpacing: "0.04em", textTransform: "uppercase", margin: 0 }}>{"IST Takeoff"}</h1>
-        <div style={{ width: 36, height: 2, background: C.accent, margin: "10px auto 0", borderRadius: 1 }} />
-      </div>
-      <div style={{ width: "100%" }}>
-
-        {step === "pick" && (<div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 12, textAlign: "center" }}>{"Who's working?"}</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {TEAM_MEMBERS.map(function(name) {
-              return (
-                <button key={name} onClick={function() { handlePickUser(name); }} className="kb-btn"
-                  style={{ width: "100%", padding: "16px 20px", borderRadius: 10, fontSize: 16, fontWeight: 600, cursor: "pointer", fontFamily: "'Inter', sans-serif", textAlign: "center", border: "none" }}>
-                  {name}
-                </button>
-              );
-            })}
-          </div>
-        </div>)}
-
-        {step === "enter" && (<div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 6 }}>{selectedUser}</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 20 }}>{"Enter your passcode"}</div>
-          {loading ? (<div style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>{"Verifying..."}</div>) : (<PasscodeInput key={pinKey} id="enter" onSubmit={handleEnter}/>)}
-          {error && (<div style={{ marginTop: 12, fontSize: 13, color: C.danger, fontWeight: 600 }}>{error}</div>)}
-          <button onClick={handleBack} style={{ marginTop: 20, background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 12, cursor: "pointer", fontFamily: "'Inter',sans-serif", fontWeight: 600 }}>{"Back"}</button>
-        </div>)}
-
-        {step === "create" && (<div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 6 }}>{selectedUser}</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 20 }}>{"Create a 4-digit passcode"}</div>
-          {loading ? (<div style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>{"Loading..."}</div>) : (<PasscodeInput key={pinKey} id="create" onSubmit={handleCreate}/>)}
-          {error && (<div style={{ marginTop: 12, fontSize: 13, color: C.danger, fontWeight: 600 }}>{error}</div>)}
-          <button onClick={handleBack} style={{ marginTop: 20, background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 12, cursor: "pointer", fontFamily: "'Inter',sans-serif", fontWeight: 600 }}>{"Back"}</button>
-        </div>)}
-
-        {step === "confirm" && (<div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#fff", marginBottom: 6 }}>{selectedUser}</div>
-          <div style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.6)", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 20 }}>{"Confirm your passcode"}</div>
-          {loading ? (<div style={{ color: "rgba(255,255,255,0.6)", fontSize: 13 }}>{"Saving..."}</div>) : (<PasscodeInput key={pinKey} id="confirm" onSubmit={handleCreate}/>)}
-          {error && (<div style={{ marginTop: 12, fontSize: 13, color: C.danger, fontWeight: 600 }}>{error}</div>)}
-          <button onClick={handleBack} style={{ marginTop: 20, background: "none", border: "none", color: "rgba(255,255,255,0.5)", fontSize: 12, cursor: "pointer", fontFamily: "'Inter',sans-serif", fontWeight: 600 }}>{"Back"}</button>
-        </div>)}
-
-      </div>
-      </div>
-    </div>
-  );
-}
-
-/* ══════════ WORK ORDER ══════════ */
-function WorkOrderSection({measurements, quoteOpts, custName, custAddr, currentUser}) {
-  var today = new Date().toISOString().slice(0,10);
-
-  // WO number
-  var initWoNum = (function() {
-    try { var n = parseInt(localStorage.getItem("ist-wo-counter") || "0"); return n > 0 ? n : 1; } catch(e) { return 1; }
-  })();
-
-  var [woNum, setWoNum] = React.useState(String(initWoNum));
-  var [dateReady, setDateReady] = React.useState(today);
-  var [dateFinished, setDateFinished] = React.useState("");
-  var [doorCode, setDoorCode] = React.useState("");
-  var [builder, setBuilder] = React.useState(custName || "");
-  var [address, setAddress] = React.useState(custAddr || "");
-  var [addition, setAddition] = React.useState("");
-  var [salesman, setSalesman] = React.useState(currentUser || "");
-  var [notes, setNotes] = React.useState("");
-
-  // Sync builder/address/salesman if props change
-  React.useEffect(function() { setBuilder(custName || ""); }, [custName]);
-  React.useEffect(function() { setAddress(custAddr || ""); }, [custAddr]);
-  React.useEffect(function() { setSalesman(currentUser || ""); }, [currentUser]);
-
-  // Mat type mapping
-  function matTypeLabel(m) {
-    var id = m.locationId || "";
-    var map = {
-      "band_joist":       "BJ",
-      "ext_kneewall":     "BOXED KW",
-      "ext_slopes":       "BOXED SLOPES",
-      "ext_walls_garage": "GARAGE EXTERIOR",
-      "ext_walls_house":  "HOUSE EXTERIOR",
-      "flat_ceiling":     "FLAT CEILING",
-      "gable_end":        "GABLE",
-      "garage_common":    "COMMON WALL",
-      "attic_area_garage":"GARAGE ATTIC",
-      "attic_area_house": "HOUSE ATTIC",
-      "attic_kneewall":   "ATTIC KW",
-      "attic_slopes":     "OPEN SLOPES",
-      "open_attic_walls": "OPEN ATTIC WALLS",
-      "porch":            "PORCH",
-      "porch_blocking":   "PORCH BLOCK",
-      "roofline":         "RL",
-      "roofline_garage":  "GARAGE RL",
-      "roofline_house":   "HOUSE RL",
-      "custom":           m.customLocation || m.location || "CUSTOM",
-    };
-    return map[id] || (m.location || m.locationId || "OTHER").toUpperCase();
-  }
-
-  // Build initial mat rows from measurements
-  var wallIds = ["ext_walls_house","ext_walls_garage","garage_common","ext_kneewall","open_attic_walls","attic_kneewall"];
-
-  // Build a map of locationId → R-value (or inches for foam) from quote items
-  function buildRValueMap() {
-    var map = {};
-    var allItems = (quoteOpts || []).flatMap(function(o) { return o.items || []; });
-    allItems.forEach(function(item) {
-      if (!item.locationId || map[item.locationId]) return;
-      var mat = item.material || item.description || "";
-      // Foam: extract inches e.g. '3" Open Cell Foam' → '3"'
-      var foamMatch = mat.match(/^(\d+\.?\d*)"?\s*(Open Cell|Closed Cell)/i);
-      if (foamMatch) {
-        map[item.locationId] = foamMatch[1] + '"';
-        return;
-      }
-      // Fiberglass: extract R-value e.g. "R-13"
-      var rMatch = mat.match(/R-?(\d+)/i);
-      if (rMatch) map[item.locationId] = "R-" + rMatch[1];
-    });
-    return map;
-  }
-
-  function shortRValue(mat) {
-    if (!mat) return "";
-    // "R13 x15 Fiberglass Batts" → "13x15"
-    var batt = mat.match(/R(\d+)\s*x(\d+)/i);
-    if (batt) return batt[1]+"x"+batt[2];
-    // "R11 Fiberglass Batts" → "11"
-    var simple = mat.match(/^R(\d+)\s+Fiberglass/i);
-    if (simple) return simple[1];
-    // '4" Open Cell Foam' → '4" OC'
-    var oc = mat.match(/^([\d.]+)"\s*Open Cell/i);
-    if (oc) return oc[1]+'" OC';
-    // '3" Closed Cell Foam' → '3" CC'
-    var cc = mat.match(/^([\d.]+)"\s*Closed Cell/i);
-    if (cc) return cc[1]+'" CC';
-    // bare "Open Cell Foam" / "Closed Cell Foam"
-    if (/open cell/i.test(mat)) return "Open Cell";
-    if (/closed cell/i.test(mat)) return "Closed Cell";
-    // "Blown Fiberglass R30" → "BF R30"
-    var bfg = mat.match(/Blown Fiberglass\s*R?(\d+)/i);
-    if (bfg) return "BF R"+bfg[1];
-    // "Blown Cellulose R30" → "BC R30"
-    var bcel = mat.match(/Blown Cellulose\s*R?(\d+)/i);
-    if (bcel) return "BC R"+bcel[1];
-    return mat;
-  }
-
-  function buildMatRows(meas) {
-    var rMap = buildRValueMap();
-    var rows = (meas || []).map(function(m, i) {
-      var isWall = wallIds.includes(m.locationId || "");
-      var ht = "";
-      if (isWall && m.wallHeightLabel) {
-        var match = m.wallHeightLabel.match(/(\d+)['']/);
-        ht = match ? match[1] : m.wallHeightLabel.match(/(\d+)/)?.[1] || "";
-      }
-      var rawMat = (m.matNote && m.matNote.trim()) ? m.matNote.trim() : (rMap[m.locationId] || m.rValue || "");
-      var rValue = shortRValue(rawMat) || rawMat;
-      return {
-        id: "mr-" + i,
-        locationId: m.locationId || "",
-        matType: matTypeLabel(m),
-        wallHeight: ht,
-        rValue: rValue,
-        width: m.width || "",
-        sqft: m.sqft ? String(Math.round(m.sqft)) : "",
-        matOut: "",
-        matIn: "",
-        count: "",
-      };
-    });
-    var atticList=["attic_area_garage","attic_area_house"];
-    function getR(s){var m=String(s||"").match(/(\d+)/);return m?parseInt(m[1],10):0;}
-    function getR2(s){var m=String(s||"").match(/\d+x(\d+)/);return m?parseInt(m[1],10):0;}
-    var sorted=rows.slice().sort(function(a,b){
-      var aAttic=atticList.includes(a.locationId||"");
-      var bAttic=atticList.includes(b.locationId||"");
-      if(aAttic!==bAttic) return aAttic?1:-1;
-      var aR=getR(a.rValue),bR=getR(b.rValue);
-      if(aR!==bR) return aR-bR;
-      return getR2(a.rValue)-getR2(b.rValue);
-    });
-    return sorted;
-  }
-
-  var [matRows, setMatRows] = React.useState(function() { return buildMatRows(measurements); });
-
-  React.useEffect(function() {
-    setMatRows(buildMatRows(measurements));
-  }, [measurements]);
-
-  // Employees
-  var emptyEmp = function() { return {name:"",sqft:"",labor:""}; };
-  var [employees, setEmployees] = React.useState([emptyEmp(),emptyEmp(),emptyEmp(),emptyEmp(),emptyEmp()]);
-
-  // R-value summary costs
-  // Derive R-value categories from matNote on measurements
-  var rCats = (function() {
-    var seen = {}, order = [];
-    (measurements || []).forEach(function(m) {
-      var mat = (m.matNote || "").trim();
-      if (!mat) return;
-      var label = shortRValue(mat) || mat;
-      if (!seen[label]) { seen[label] = true; order.push(label); }
-    });
-    if (order.length === 0) return ["R-11","R-13","R-19","R-30","BW","E/S"];
-    return order.slice().sort(function(a,b){
-      var aR=parseInt((a).match(/(\d+)/)||[0,0])||0;
-      var bR=parseInt((b).match(/(\d+)/)||[0,0])||0;
-      return aR-bR;
-    });
-  })();
-
-  var [rCosts, setRCosts] = React.useState({});
-
-  // Sum sqft per matNote from measurements
-  function getRFootage(cat) {
-    return (measurements || []).reduce(function(sum, m) {
-      var label = shortRValue((m.matNote||"").trim()) || (m.matNote||"").trim();
-      if (label === cat) return sum + (parseFloat(m.sqft) || 0);
-      return sum;
-    }, 0);
-  }
-
-  var atticIds=["attic_area_garage","attic_area_house"];
-  function sortedMatRows(rows){
-    return rows.slice().sort(function(a,b){
-      var aAttic=atticIds.includes(a.locationId||"");
-      var bAttic=atticIds.includes(b.locationId||"");
-      if(aAttic!==bAttic) return aAttic?1:-1;
-      // Extract first number from short value e.g. "13x15" → 13, "Open Cell" → 0
-      var aR=parseInt((a.rValue||"").match(/(\d+)/)||[0,0])||0;
-      var bR=parseInt((b.rValue||"").match(/(\d+)/)||[0,0])||0;
-      if(aR!==bR) return aR-bR;
-      // Secondary sort by second number e.g. 13x15 vs 13x24
-      var aR2=parseInt(((a.rValue||"").match(/\d+x(\d+)/)||[0,0])[1])||0;
-      var bR2=parseInt(((b.rValue||"").match(/\d+x(\d+)/)||[0,0])[1])||0;
-      return aR2-bR2;
-    });
-  }
-
-  function totalLabor() {
-    return employees.reduce(function(s,e){ return s+(parseFloat(e.labor)||0); }, 0);
-  }
-
-  function updateMatRow(id, field, val) {
-    setMatRows(function(rows) { return rows.map(function(r){ return r.id===id ? Object.assign({},r,{[field]:val}) : r; }); });
-  }
-  function addMatRow() {
-    setMatRows(function(rows) { return rows.concat([{id:"mr-new-"+Date.now(),matType:"",rValue:"",width:"",sqft:"",matOut:"",matIn:"",count:""}]); });
-  }
-  function deleteMatRow(id) {
-    setMatRows(function(rows) { return rows.filter(function(r){ return r.id!==id; }); });
-  }
-  function updateEmp(i, field, val) {
-    setEmployees(function(emps) { return emps.map(function(e,idx){ return idx===i ? Object.assign({},e,{[field]:val}) : e; }); });
-  }
-
-  var iStyle = {fontFamily:"'Inter',sans-serif",fontSize:12,padding:"4px 6px",border:"1px solid "+C.inputBorder,borderRadius:4,background:C.input,color:C.text,width:"100%",boxSizing:"border-box"};
-  var thStyle = {padding:"6px 8px",fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",color:C.textSec,textAlign:"left",borderBottom:"2px solid "+C.border,whiteSpace:"nowrap"};
-  var tdStyle = {padding:"4px 6px",fontSize:12,verticalAlign:"middle"};
-
-  function handlePrint() {
-    var rSummaryRows = rCats.map(function(cat) {
-      var ft = getRFootage(cat);
-      return '<tr><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;">'+cat+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;text-align:right;">'+(ft?ft.toLocaleString():"")+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;text-align:right;">'+(rCosts[cat]?"$"+rCosts[cat]:"")+'</td></tr>';
-    }).join("");
-
-    var matRowsHtml = sortedMatRows(matRows).map(function(r) {
-      return '<tr><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;">'+r.matType+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;">'+r.rValue+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;color:'+(r.wallHeight?"#2563eb":"#999")+';">'+(r.wallHeight||r.width||"—")+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;text-align:right;">'+r.sqft+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;text-align:right;">'+r.matOut+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;text-align:right;">'+r.matIn+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;text-align:right;">'+r.count+'</td></tr>';
-    }).join("");
-
-    var empRowsHtml = employees.map(function(e) {
-      return '<tr><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;">'+e.name+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;text-align:right;">'+e.sqft+'</td><td style="padding:4px 8px;border:1px solid #ccc;font-size:12px;text-align:right;">'+(e.labor?"$"+e.labor:"")+'</td></tr>';
-    }).join("");
-
-    var TH = 'padding:4px 8px;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.06em;color:#dbeafe;text-align:left;background:#0f1e46;border:none;';
-    var TD = 'padding:3px 8px;font-size:11px;border-bottom:1px solid #e2e8f0;color:#0f172a;vertical-align:middle;';
-    var TD2 = 'padding:3px 8px;font-size:11px;border-bottom:1px solid #e2e8f0;color:#0f172a;text-align:right;vertical-align:middle;';
-    var matRowsHtmlThemed = sortedMatRows(matRows).map(function(r,i){
-      var bg = i%2===0?'#f8fafc':'#fff';
-      return '<tr style="background:'+bg+'"><td style="'+TD+'">'+r.matType+'</td><td style="'+TD+'">'+r.rValue+'</td><td style="'+TD+';color:'+(r.wallHeight?'#2563eb':'#94a3b8')+';">'+(r.wallHeight||r.width||'—')+'</td><td style="'+TD2+'">'+r.sqft+'</td><td style="'+TD2+'">'+r.matOut+'</td><td style="'+TD2+'">'+r.matIn+'</td><td style="'+TD2+'">'+r.count+'</td></tr>';
-    }).join('');
-    var empRowsHtmlThemed = employees.map(function(e,i){
-      var bg = i%2===0?'#f8fafc':'#fff';
-      return '<tr style="background:'+bg+'"><td style="'+TD+'">'+e.name+'</td><td style="'+TD2+'">'+e.sqft+'</td><td style="'+TD2+'">'+(e.labor?'$'+e.labor:'')+'</td></tr>';
-    }).join('');
-    var rSummaryRowsThemed = rCats.map(function(cat,i){
-      var bg = i%2===0?'#f8fafc':'#fff';
-      return '<tr style="background:'+bg+'"><td style="'+TD+'">'+cat+'</td><td style="'+TD2+'"></td><td style="'+TD2+'"></td></tr>';
-    }).join('');
-
-    var html = '<!DOCTYPE html><html><head><title>Work Order #'+woNum+'</title>'
-      +'<style>'
-      +'*{box-sizing:border-box;margin:0;padding:0;}'
-      +'body{font-family:\'Helvetica Neue\',Helvetica,Arial,sans-serif;background:#fff;color:#0f172a;}'
-      +'table{border-collapse:collapse;width:100%;}'
-      +'@media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}button{display:none !important;}@page{size:letter;margin:0.35in;}}'
-      +'</style></head><body>'
-
-      // ── HEADER BAND ──
-      +'<div style="background:#0f1e46;padding:10px 20px 8px;position:relative;">'
-      +'<div style="display:flex;justify-content:space-between;align-items:center;">'
-      +'<div>'
-      +'<div style="font-size:18px;font-weight:900;color:#fff;letter-spacing:0.04em;text-transform:uppercase;">Insulation Services of Tulsa</div>'
-      +'<div style="font-size:9px;color:#b4c8f0;margin-top:3px;letter-spacing:0.06em;">Serving Northeastern Oklahoma  •  1 (918) 232-9055</div>'
-      +'</div>'
-      +'<div style="text-align:right;">'
-      +'<div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#dbeafe;">Work Order</div>'
-      +'<div style="font-size:26px;font-weight:900;color:#fff;line-height:1.1;">#'+woNum+'</div>'
-      +'</div>'
-      +'</div>'
-      +'</div>'
-      // Blue accent stripe
-      +'<div style="height:4px;background:#2563eb;"></div>'
-
-      // ── JOB INFO CARDS ──
-      +'<div style="display:flex;gap:8px;padding:6px 20px 0;">'
-
-      // Card: Job Details
-      +'<div style="flex:2;background:#f8fafc;border-radius:6px;padding:6px 12px;border-left:4px solid #2563eb;">'
-      +'<div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-bottom:4px;">Job Details</div>'
-      +'<table style="width:100%;border:none;"><tr>'
-      +'<td style="font-size:10px;font-weight:700;color:#64748b;white-space:nowrap;padding:1px 8px 1px 0;">Date Ready</td>'
-      +'<td style="font-size:11px;color:#0f172a;padding:1px 12px 1px 0;">'+dateReady+'</td>'
-      +'<td style="font-size:10px;font-weight:700;color:#64748b;white-space:nowrap;padding:1px 8px 1px 0;">Date Finished</td>'
-      +'<td style="font-size:11px;color:#0f172a;padding:1px 0;">'+dateFinished+'</td>'
-      +'</tr><tr>'
-      +'<td style="font-size:10px;font-weight:700;color:#64748b;padding:1px 8px 1px 0;">Builder</td>'
-      +'<td style="font-size:11px;color:#0f172a;padding:1px 12px 1px 0;">'+builder+'</td>'
-      +'<td style="font-size:10px;font-weight:700;color:#64748b;padding:1px 8px 1px 0;">Addition</td>'
-      +'<td style="font-size:11px;color:#0f172a;padding:1px 0;">'+addition+'</td>'
-      +'</tr><tr>'
-      +'<td style="font-size:10px;font-weight:700;color:#64748b;padding:1px 8px 1px 0;">Address</td>'
-      +'<td style="font-size:11px;color:#0f172a;padding:1px 0;" colspan="3">'+address+'</td>'
-      +'</tr></table>'
-      +'</div>'
-
-      // Card: Assignment
-      +'<div style="flex:1;background:#f8fafc;border-radius:6px;padding:6px 12px;border-left:4px solid #2563eb;">'
-      +'<div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#64748b;margin-bottom:4px;">Assignment</div>'
-      +'<table style="width:100%;border:none;"><tr>'
-      +'<td style="font-size:10px;font-weight:700;color:#64748b;padding:1px 8px 1px 0;">Salesman</td>'
-      +'<td style="font-size:11px;color:#0f172a;">'+salesman+'</td>'
-      +'</tr><tr>'
-      +'<td style="font-size:10px;font-weight:700;color:#64748b;padding:1px 8px 1px 0;">Door Code</td>'
-      +'<td style="font-size:11px;color:#0f172a;">'+doorCode+'</td>'
-      +'</tr></table>'
-      +'</div>'
-      +'</div>'
-
-      // ── MATERIALS TABLE ──
-      +'<div style="padding:6px 20px 0;">'
-      +'<div style="font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#2563eb;margin-bottom:4px;">Materials</div>'
-      +'<table style="border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;">'
-      +'<thead><tr>'
-      +'<th style="'+TH+'">Mat Type</th>'
-      +'<th style="'+TH+'">R-Value</th>'
-      +'<th style="'+TH+'">Height</th>'
-      +'<th style="'+TH+';text-align:right;">Sq Ft</th>'
-      +'<th style="'+TH+';text-align:right;">Mat Out</th>'
-      +'<th style="'+TH+';text-align:right;">Mat In</th>'
-      +'<th style="'+TH+';text-align:right;">Count</th>'
-      +'</tr></thead>'
-      +'<tbody>'+matRowsHtmlThemed+'</tbody>'
-      +'</table>'
-      +'</div>'
-
-      // ── EMPLOYEES + R-VALUE SUMMARY ──
-      +'<div style="display:flex;gap:10px;padding:6px 20px 0;">'
-
-      // Employees
-      +'<div style="flex:1;">'
-      +'<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#2563eb;margin-bottom:6px;">Employees</div>'
-      +'<table style="border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;">'
-      +'<thead><tr>'
-      +'<th style="'+TH+'">Employee</th>'
-      +'<th style="'+TH+';text-align:right;">Sq Ft</th>'
-      +'<th style="'+TH+';text-align:right;">Labor ($)</th>'
-      +'</tr></thead>'
-      +'<tbody>'+empRowsHtmlThemed
-      +'<tr style="background:#0f1e46;">'
-      +'<td style="padding:6px 10px;font-size:12px;font-weight:700;color:#fff;">TOTAL</td>'
-      +'<td style="padding:6px 10px;"></td>'
-      +'<td style="padding:6px 10px;font-size:13px;font-weight:900;color:#fff;text-align:right;">$'+totalLabor().toFixed(2)+'</td>'
-      +'</tr>'
-      +'</tbody></table>'
-      +'</div>'
-
-      // R-Value Summary
-      +'<div style="flex:1;">'
-      +'<div style="font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#2563eb;margin-bottom:6px;">R-Value Summary</div>'
-      +'<table style="border-radius:6px;overflow:hidden;border:1px solid #e2e8f0;">'
-      +'<thead><tr>'
-      +'<th style="'+TH+'">R-Value</th>'
-      +'<th style="'+TH+';text-align:right;">Footage</th>'
-      +'<th style="'+TH+';text-align:right;">Cost</th>'
-      +'</tr></thead>'
-      +'<tbody>'+rSummaryRowsThemed+'</tbody>'
-      +'</table>'
-      +'</div>'
-      +'</div>'
-
-      +'<div style="text-align:center;font-size:10px;font-weight:700;color:#64748b;padding:8px 0;letter-spacing:0.06em;text-transform:uppercase;">Work Order Must Be Filled Out Completely</div>'
-
-      +'</body></html>';
-
-    var w = window.open("","_blank");
-    w.document.write(html);
-    w.document.close();
-    w.print();
-  }
-
-  var secHead = function(label) {
-    return React.createElement("div", {style:{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.08em",color:C.accent,marginBottom:8,marginTop:20,borderBottom:"1px solid "+C.border,paddingBottom:4}}, label);
-  };
-
-  var FI = function(props) {
-    return React.createElement("div", {style:{flex:1,minWidth:120}},
-      React.createElement("label", {style:{fontSize:11,fontWeight:600,color:C.textSec,display:"block",marginBottom:3}}, props.label),
-      React.createElement("input", {type:props.type||"text",value:props.value,onChange:function(e){props.onChange(e.target.value);},placeholder:props.placeholder||"",style:Object.assign({},iStyle,{width:"100%"})})
-    );
-  };
-
-  return React.createElement("div", {style:{maxWidth:900,margin:"0 auto",padding:"16px"}},
-    // Title + Print button
-    React.createElement("div", {style:{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}},
-      React.createElement("div", {style:{fontSize:16,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.06em",color:C.text}}, "Work Order"),
-      React.createElement("button", {onClick:handlePrint,style:{background:C.accent,color:"#fff",border:"none",borderRadius:6,padding:"8px 18px",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"'Inter',sans-serif",letterSpacing:"0.06em",textTransform:"uppercase"}}, "🖨 Print / PDF")
-    ),
-
-    // Header fields
-    secHead("Job Info"),
-    React.createElement("div", {style:{display:"flex",flexWrap:"wrap",gap:10,marginBottom:8}},
-      React.createElement(FI, {label:"WO #", value:woNum, onChange:function(v){setWoNum(v);try{localStorage.setItem("ist-wo-counter",v);}catch(e){}}}),
-      React.createElement(FI, {label:"Date Ready", type:"date", value:dateReady, onChange:setDateReady}),
-      React.createElement(FI, {label:"Date Finished", type:"date", value:dateFinished, onChange:setDateFinished}),
-      React.createElement(FI, {label:"Door Code", value:doorCode, onChange:setDoorCode})
-    ),
-    React.createElement("div", {style:{display:"flex",flexWrap:"wrap",gap:10,marginBottom:8}},
-      React.createElement(FI, {label:"Builder", value:builder, onChange:setBuilder}),
-      React.createElement(FI, {label:"Address", value:address, onChange:setAddress}),
-      React.createElement(FI, {label:"Addition", value:addition, onChange:setAddition}),
-      React.createElement(FI, {label:"Salesman", value:salesman, onChange:setSalesman})
-    ),
-
-    // Materials table
-    secHead("Materials"),
-    React.createElement("div", {style:{overflowX:"auto"}},
-      React.createElement("table", {style:{width:"100%",borderCollapse:"collapse",fontSize:12}},
-        React.createElement("thead", null,
-          React.createElement("tr", null,
-            ["MAT TYPE","R-VALUE","HEIGHT","SQ FT","MAT OUT","MAT IN","COUNT",""].map(function(h,i) {
-              return React.createElement("th", {key:i,style:thStyle}, h);
-            })
-          )
-        ),
-        React.createElement("tbody", null,
-          sortedMatRows(matRows).map(function(r) {
-            return React.createElement("tr", {key:r.id, style:{borderBottom:"1px solid "+C.borderLight}},
-              React.createElement("td", {style:tdStyle}, React.createElement("input", {value:r.matType,onChange:function(e){updateMatRow(r.id,"matType",e.target.value);},style:Object.assign({},iStyle,{width:110})})),
-              React.createElement("td", {style:tdStyle}, React.createElement("input", {value:r.rValue,onChange:function(e){updateMatRow(r.id,"rValue",e.target.value);},style:Object.assign({},iStyle,{width:70})})),
-              React.createElement("td", {style:tdStyle}, React.createElement("input", {value:r.wallHeight||r.width||"",onChange:function(e){updateMatRow(r.id,"wallHeight",e.target.value);},placeholder:"—",style:Object.assign({},iStyle,{width:80,color:r.wallHeight?"#2563eb":undefined})})),
-
-              React.createElement("td", {style:tdStyle}, React.createElement("input", {value:r.sqft,onChange:function(e){updateMatRow(r.id,"sqft",e.target.value);},style:Object.assign({},iStyle,{width:70})})),
-              React.createElement("td", {style:tdStyle}, React.createElement("input", {type:"number",value:r.matOut,onChange:function(e){updateMatRow(r.id,"matOut",e.target.value);},style:Object.assign({},iStyle,{width:70})})),
-              React.createElement("td", {style:tdStyle}, React.createElement("input", {type:"number",value:r.matIn,onChange:function(e){updateMatRow(r.id,"matIn",e.target.value);},style:Object.assign({},iStyle,{width:70})})),
-              React.createElement("td", {style:tdStyle}, React.createElement("input", {type:"number",value:r.count,onChange:function(e){updateMatRow(r.id,"count",e.target.value);},style:Object.assign({},iStyle,{width:60})})),
-              React.createElement("td", {style:tdStyle}, React.createElement("button", {onClick:function(){deleteMatRow(r.id);},style:{background:"none",border:"none",color:C.danger,fontSize:14,cursor:"pointer",fontWeight:700}}, "×"))
-            );
-          })
-        )
-      )
-    ),
-    React.createElement("button", {onClick:addMatRow,style:{marginTop:8,fontSize:11,fontWeight:700,background:"none",border:"1px dashed "+C.border,borderRadius:4,color:C.textSec,padding:"4px 14px",cursor:"pointer",fontFamily:"'Inter',sans-serif",textTransform:"uppercase",letterSpacing:"0.06em"}}, "+ Add Row"),
-
-    secHead("Notes"),
-    React.createElement("textarea", {value:notes,onChange:function(e){setNotes(e.target.value);},placeholder:"Job notes...",rows:3,style:{width:"100%",boxSizing:"border-box",padding:"8px",border:"1px solid "+C.inputBorder,borderRadius:6,fontSize:12,fontFamily:"'Inter',sans-serif",color:C.text,resize:"vertical"}}),
-
-
-    React.createElement("div",{style:{textAlign:"center",fontSize:11,fontWeight:700,letterSpacing:"0.05em",color:C.dim,marginTop:24,paddingTop:12,borderTop:"1px solid "+C.border}},"Work Order Must Be Filled Out Completely")
-  );
-}
-
-/* ══════════ MAIN APP ══════════ */
-
-function QuoteView({ onBack, adminName }) {
-  var currentUser = adminName;
-  var s1 = useState("takeoff"), sec = s1[0], setSec = s1[1];
-  var s2 = useState([]), meas = s2[0], setMeas = s2[1];
-  var s3 = useState([newOption("Option 1")]), qOpts = s3[0], setQOpts = s3[1];
-  var s4 = useState([]), ii = s4[0], setIi = s4[1];
-  var spi = useState(false), showProductInfo = spi[0], setShowProductInfo = spi[1];
-  var s5 = useState(""), cn = s5[0], setCn = s5[1];
-  var s6 = useState(""), ca = s6[0], setCa = s6[1];
-  var s7 = useState(""), cph = s7[0], setCph = s7[1];
-  var s8 = useState(""), ce = s8[0], setCe = s8[1];
-  var s9 = useState(""), ja = s9[0], setJa = s9[1];
-  var s11 = useState(""), jn = s11[0], setJn = s11[1];
-  var s10 = useState(true), initialLoad = s10[0], setInitialLoad = s10[1];
-
-  // Auto-save current session to Supabase
-  var autoSave = useCallback(function() {
-    if (!currentUser) return;
-    var data = { measurements: meas, quoteOpts: qOpts, importedItems: ii, custName: cn, custAddr: ca, custPhone: cph, custEmail: ce, jobAddr: ja, jobNotes: jn, section: sec };
-    saveAutosave(currentUser, data);
-  }, [meas, qOpts, ii, cn, ca, cph, ce, ja, jn, sec, currentUser]);
-
-  useEffect(function() {
-    if (initialLoad || !currentUser) return;
-    var timer = setTimeout(autoSave, 2000);
-    return function() { clearTimeout(timer); };
-  }, [autoSave, initialLoad, currentUser]);
-
-  // Load auto-saved session on login
-  useEffect(function() {
-    if (!currentUser) return;
-    loadAutosave(currentUser).then(function(data) {
-      if (data) {
-        if (data.measurements) setMeas(data.measurements);
-        if (data.quoteOpts) setQOpts(data.quoteOpts);
-        else if (data.quoteItems && data.quoteItems.length > 0) setQOpts([Object.assign(newOption("Option 1"),{items:data.quoteItems})]);
-        if (data.importedItems) setIi(data.importedItems);
-        if (data.custName) setCn(data.custName);
-        if (data.custAddr) setCa(data.custAddr);
-        if (data.custPhone) setCph(data.custPhone);
-        if (data.custEmail) setCe(data.custEmail);
-        if (data.jobAddr) setJa(data.jobAddr);
-        if (data.jobNotes) setJn(data.jobNotes);
-        if (data.section) setSec(data.section);
-      }
-      setInitialLoad(false);
-    });
-  }, [currentUser]);
-
-  useEffect(function(){
-    var saved=localStorage.getItem("ist-session");
-    if(saved){try{var obj=JSON.parse(saved);if(obj.user&&obj.ts&&(Date.now()-obj.ts)<7200000){setCurrentUser(obj.user);}}catch(e){}}
-  },[]);
-
-  
-
-  function sendToWorkOrder() { setSec("workorder"); }
-
-  function sendToQuote() {
-    if (meas.length === 0) return;
-    setIi(function(prev) { return prev.concat(meas.map(function(m) { return Object.assign({}, m, { priced: false }); })); });
-    setSec("quote");
-  }
-
-  function handleNewJob() {
-    var hasWork = meas.length > 0 || qOpts.some(function(o){return o.items.length>0;});
-    if (hasWork && !confirm("Start a new job? Make sure you've saved first.")) return;
-    setMeas([]); setQOpts([newOption("Option 1")]); setIi([]);
-    setCn(""); setCa(""); setCph(""); setCe(""); setJa(""); setJn("");
-    setSec("takeoff");
-  }
-
-  
-
-  var cp2 = { custName: cn, setCustName: setCn, custAddr: ca, setCustAddr: setCa, custPhone: cph, setCustPhone: setCph, custEmail: ce, setCustEmail: setCe, jobAddr: ja, setJobAddr: setJa, jobNotes: jn, setJobNotes: setJn };
-
-  return (
-    <div className="ist-app" style={{ fontFamily: "'Inter', sans-serif", color: C.text, paddingBottom: 32 }}><div style={{ maxWidth: 1140, margin: "0 auto" }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
-        html, body { background: linear-gradient(135deg, #e8eef8 0%, #dde6f5 40%, #cdd9f0 100%); margin: 0; min-height: 100vh; background-attachment: fixed; }
-        .ist-app { background: transparent; min-height: 100vh; }
-        .ist-app::before { content: ''; position: fixed; inset: 0; background: radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.5) 0%, transparent 70%); pointer-events: none; z-index: 0; }
-        .ist-app > * { position: relative; z-index: 1; }
-        .ist-2col { display: flex; flex-direction: column; }
-        .ist-col-form { min-width: 0; }
-        .ist-col-results { min-width: 0; }
-        @media (min-width: 768px) {
-          .ist-2col { flex-direction: row; align-items: flex-start; gap: 28px; padding: 16px 24px 0; }
-          .ist-col-form { flex: 0 0 400px; }
-          .ist-col-results { flex: 1 1 0; padding-top: 4px; }
-        }
-        @media (min-width: 1024px) { .ist-col-form { flex: 0 0 440px; } }
-        .ist-clear-btn-inner { max-width: 1140px; margin: 0 auto; }
-        input::placeholder, textarea::placeholder { color: rgba(100,116,139,0.5) !important; }
-        input, textarea, select { color-scheme: light; }
-        * { box-sizing: border-box; }
-      `}</style>
-
-      {/* HEADER */}
-      <div style={{ background: "rgba(255,255,255,0.55)", backdropFilter: "blur(32px)", WebkitBackdropFilter: "blur(32px)", padding: "18px 20px 0", borderBottom: "none", borderRadius: "0 0 24px 24px", textAlign: "center", position: "sticky", top: 0, zIndex: 100, boxShadow: "0 8px 40px rgba(180,200,240,0.25), inset 0 1px 0 rgba(255,255,255,0.9)" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-          
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={function(){if(window.confirm("Clear everything?")){setMeas([]);setQOpts([newOption("Option 1")]);setIi([]);setCn("");setCa("");setCph("");setCe("");setJa("");setJn("");setSec("takeoff");}}} style={{ background: "rgba(220,38,38,0.06)", border: "1px solid rgba(220,38,38,0.2)", borderRadius: 6, color: C.danger, fontSize: 10, cursor: "pointer", fontFamily: "'Inter', sans-serif", fontWeight: 700, textTransform: "uppercase", padding: "5px 10px", letterSpacing: "0.04em" }}>{"🗑 Clear"}</button>
-            
-          </div>
-        </div>
-        <button onClick={onBack} style={{ position: "absolute", left: 16, top: 16, background: "none", border: "none", color: "#2563eb", fontSize: 13, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>← Dispatch</button>
-        <h1 style={{ fontSize: 17, fontWeight: 800, color: C.text, letterSpacing: "0.05em", margin: 0, textTransform: "uppercase" }}>{"Insulation Services of Tulsa"}</h1>
-        <div style={{ fontSize: 10, color: C.dim, marginTop: 3, letterSpacing: "0.14em", textTransform: "uppercase" }}>{COMPANY.tagline}</div>
-
-        <div className="ist-nav-tabs" style={{ display: "flex", gap: 0, overflow: "hidden", borderTop: "1px solid rgba(0,0,0,0.06)", marginTop: 14 }}>
-          {[
-            { id: "takeoff", label: "TAKE OFF", badge: meas.length || null },
-            { id: "quote", label: "QUOTE", badge: qOpts.reduce(function(s,o){return s+o.items.length;},0) || null },
-            { id: "workorder", label: "WORK ORDER", badge: null },
-            { id: "jobs", label: "JOBS", badge: null },
-          ].map(function(t) {
-            var active = sec === t.id;
-            return (
-              <button key={t.id} onClick={function() { setSec(t.id); }}
-                style={{ flex: 1, padding: "10px 6px", border: "none", borderRight: "1px solid rgba(0,0,0,0.05)", cursor: "pointer", fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", background: active ? "rgba(255,255,255,0.5)" : "transparent", color: active ? C.accent : C.dim, transition: "all 0.15s ease", boxShadow: active ? "inset 0 -2px 0 "+C.accent : "none" }}>
-                {t.label}
-                {t.badge ? (<span style={{ display: "inline-block", marginLeft: 5, background: active ? C.accent : "rgba(0,0,0,0.08)", color: active ? "#fff" : C.textSec, fontSize: 10, fontWeight: 700, padding: "2px 6px", borderRadius: 6, minWidth: 18, textAlign: "center" }}>{t.badge}</span>) : null}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div>
-        {sec === "takeoff" && (<TakeOff measurements={meas} setMeasurements={setMeas} onSendToQuote={sendToQuote} onSendToWorkOrder={sendToWorkOrder} currentUser={currentUser} quoteOpts={qOpts} {...cp2} />)}
-        {sec === "quote" && (<QuoteBuilderSection quoteOpts={qOpts} setQuoteOpts={setQOpts} importedItems={ii} setImportedItems={setIi} currentUser={currentUser} measurements={meas} showProductInfo={showProductInfo} setShowProductInfo={setShowProductInfo} {...cp2} />)}
-        {sec === "workorder" && (<WorkOrderSection measurements={meas} quoteOpts={qOpts} custName={cn} custAddr={ca} currentUser={currentUser} jobAddr={ja} />)}
-        {sec === "jobs" && (
-          <div>
-            <SavedJobsPanel
-              measurements={meas} quoteOpts={qOpts} importedItems={ii}
-              setMeasurements={setMeas} setQuoteOpts={setQOpts} setImportedItems={setIi}
-              section={sec} setSection={setSec}
-              currentUser={currentUser}
-              {...cp2}
-            />
-            <div style={{ padding: "0 16px" }}>
-              <button onClick={handleNewJob}
-                style={{ width: "100%", padding: "12px 16px", borderRadius: 6, border: "1px solid " + C.borderLight, background: "transparent", color: C.text, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "'Inter', sans-serif", textTransform: "uppercase", letterSpacing: "0.06em" }}>
-                {"+ New Job"}
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
-
-    </div></div>
-  );
-}
-
+// Quote/takeoff module is lazy-loaded from src/features/takeoff/QuoteView.jsx.
 
 // ─── Main App ───
-const OFFICE_SESSION_KEY = "ist-office-session";
-const OFFICE_SESSION_TTL = 4 * 60 * 60 * 1000; // 4 hours
-
-function getSavedOfficeSession() {
-  try {
-    const raw = localStorage.getItem(OFFICE_SESSION_KEY);
-    if (!raw) return null;
-    const { name, ts } = JSON.parse(raw);
-    if (Date.now() - ts > OFFICE_SESSION_TTL) { localStorage.removeItem(OFFICE_SESSION_KEY); return null; }
-    return name;
-  } catch { return null; }
-}
-
-function saveOfficeSession(name) {
-  try { localStorage.setItem(OFFICE_SESSION_KEY, JSON.stringify({ name, ts: Date.now() })); } catch {}
-}
-
-function clearOfficeSession() {
-  try { localStorage.removeItem(OFFICE_SESSION_KEY); } catch {}
-}
-
 export default function App() {
   const savedSession = getSavedOfficeSession();
   const [loading, setLoading] = useState(true);
@@ -13891,7 +12271,45 @@ export default function App() {
       await writeInventoryEventsBestEffort(events, "admin-unload-dual-write", { truckId });
     }
   };
-  const handleAddJob = async (data) => { await addDoc(collection(db, "jobs"), data); };
+  const uploadScannedWorkOrderPhoto = async (jobId, scannedWorkOrderFile, scannedWorkOrderName) => {
+    const safeName = String(scannedWorkOrderName || scannedWorkOrderFile.name || "work-order.jpg").replace(/[^a-zA-Z0-9._-]/g, "_");
+    const filename = `${Date.now()}_work-order_${safeName}`;
+    const path = `jobs/${jobId}/photos/${filename}`;
+    let url = "";
+    let storageBacked = true;
+    try {
+      const sRef = storageRef(storage, path);
+      await uploadBytes(sRef, scannedWorkOrderFile, { contentType: scannedWorkOrderFile.type || "image/jpeg" });
+      url = await getDownloadURL(sRef);
+    } catch (err) {
+      storageBacked = false;
+      console.warn("Scanned work-order Storage upload unavailable; saving inline job-card photo", err);
+      const base64 = await readFileAsBase64(scannedWorkOrderFile);
+      url = `data:${scannedWorkOrderFile.type || "image/jpeg"};base64,${base64}`;
+    }
+    const photo = {
+      url,
+      filename,
+      storagePath: storageBacked ? path : "",
+      uploadedBy: adminName || "Office",
+      uploadedAt: new Date().toISOString(),
+      type: "workOrder",
+      label: "Scanned Work Order",
+    };
+    await updateDoc(doc(db, "jobs", jobId), { photos: arrayUnion(photo) });
+    return photo;
+  };
+
+  const handleAddJob = async (data) => {
+    const { scannedWorkOrderFile, scannedWorkOrderName, ...jobData } = data || {};
+    const jobRef = doc(collection(db, "jobs"));
+    await setDoc(jobRef, jobData);
+    if (scannedWorkOrderFile?.type?.startsWith("image/")) {
+      uploadScannedWorkOrderPhoto(jobRef.id, scannedWorkOrderFile, scannedWorkOrderName)
+        .catch((err) => console.warn("Scanned work-order photo upload failed after job creation", err));
+    }
+    return jobRef.id;
+  };
   const handleAddJobUpdate = async (data) => { await addDoc(collection(db, "jobUpdates"), { ...data, createdAt: serverTimestamp() }); };
   const handleDeleteJob = async (id) => {
     await deleteDoc(doc(db, "jobs", id));
@@ -14583,8 +13001,10 @@ export default function App() {
   };
   const handleLoadTruck = async (itemsLoaded, truckId) => {
     const occurredAt = new Date().toISOString();
-    const truckName = trucks.find((truck) => truck.id === truckId)?.name || null;
+    const truck = trucks.find((entry) => entry.id === truckId);
+    const truckName = truck?.vehicleName || truck?.members || truck?.name || null;
     const correlationKey = [truckId, "load", occurredAt].join("::");
+    const eventGroupId = ["truck-loadout-recount", truckId || "truck", occurredAt].join("::");
     const requestedTruckState = Object.fromEntries((itemsLoaded || []).map((m) => [m.itemId, Math.max(0, Math.round((parseFloat(m.qty) || 0) * 1000) / 1000)]));
     const { nextTruckState: updatedTruck, changes } = await runTruckLoadoutTransferTransaction({ truckId, requestedTruckState, occurredAt });
     const loadLogItems = {};
@@ -14623,20 +13043,26 @@ export default function App() {
         }).filter(Boolean),
       ];
       if (inventoryEvents.length > 0) {
+        const actor = {
+          actorId: crewSession?.memberId || null,
+          actorName: crewSession?.crewName || null,
+          actorRole: "crew",
+          source: "crew-dashboard",
+        };
         const decoratedEvents = inventoryEvents.map(event => ({
           ...event,
           occurredAt,
           effectiveDate: todayCST(),
-          actor: {
-            actorId: crewSession?.memberId || null,
-            actorName: crewSession?.crewName || null,
-            actorRole: "crew",
-            source: "crew-dashboard",
-          },
+          actor,
           refs: {
             ...(event.refs || {}),
             legacyCollection: event.metadata?.transferDirection === "return" ? "returnLog" : "loadLog",
             correlationKey,
+          },
+          metadata: {
+            ...(event.metadata || {}),
+            eventGroupId,
+            eventKind: "crew_loadout_recount_transfer",
           },
           legacy: {
             ...(event.legacy || {}),
@@ -14644,8 +13070,33 @@ export default function App() {
             truckInventoryState: updatedTruck,
           },
         }));
+        const snapshotEvents = adaptLegacyTruckInventoryToSnapshotEvents({
+          truckId,
+          truckName,
+          truckInventory: updatedTruck,
+          occurredAt,
+          actor,
+          legacyDocId: truckId,
+        }).map(event => ({
+          ...event,
+          effectiveDate: todayCST(),
+          refs: {
+            ...(event.refs || {}),
+            correlationKey,
+            snapshotKey: ["truck-loadout-recount", truckId || "truck", occurredAt].join("::"),
+          },
+          metadata: {
+            ...(event.metadata || {}),
+            eventGroupId,
+            eventKind: "crew_loadout_recount_snapshot",
+          },
+          legacy: {
+            ...(event.legacy || {}),
+            truckInventoryState: updatedTruck,
+          },
+        }));
         try {
-          await writeInventoryEvents(db, decoratedEvents, { writeSource: "truck-load-dual-write" });
+          await writeInventoryEvents(db, [...decoratedEvents, ...snapshotEvents], { writeSource: "truck-load-dual-write" });
         } catch (error) {
           console.warn("inventory dual-write skipped for truck load", { truckId, error });
         }
@@ -14764,7 +13215,11 @@ export default function App() {
       </div>
     </div>
   );
-  if (role === "admin" && adminView === "quotes") return <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />;
+  if (role === "admin" && adminView === "quotes") return (
+    <Suspense fallback={<div style={{ padding: 24, fontWeight: 800 }}>Loading quote builder…</div>}>
+      <QuoteView adminName={adminName} onBack={() => setAdminView("dispatch")} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); setAdminView("dispatch"); }} />
+    </Suspense>
+  );
   if (role === "admin") return <AdminDashboard adminName={adminName} trucks={trucks} jobs={jobs} updates={updates} jobUpdates={jobUpdates} tickets={tickets} activityLog={activityLog} pmUpdates={pmUpdates} members={members} inventory={inventory} inventoryItems={inventoryCatalog} inventoryEvents={inventoryEvents} truckInventory={truckInventory} truckSecondaryInventory={truckSecondaryInventory} derivedTruckInventory={derivedTruckInventory} truckInventoryParity={truckInventoryParity} warehouseInventoryParity={warehouseInventoryParity} jobUsageParityByJobId={jobUsageParityByJobId} jobUsageParitySummary={jobUsageParitySummary} returnLog={returnLog} loadLog={loadLog} tools={tools} toolCheckouts={toolCheckouts} employeeFlags={employeeFlags} truckDailyLogs={truckDailyLogs} consumables={consumables} diagnosticsState={diagnosticsState} onSaveConsumable={handleSaveConsumable} onDeleteConsumable={handleDeleteConsumable} onAddTool={handleAddTool} onEditTool={handleEditTool} onDeleteTool={handleDeleteTool} onCheckout={handleToolCheckout} onReturn={handleToolReturn} onSetFlag={handleSetEmployeeFlag} onAddTruck={handleAddTruck} onDeleteTruck={handleDeleteTruck} onReorderTruck={handleReorderTruck} onAddJob={handleAddJob} onEditJob={handleEditJob} onSaveJobMaterials={handleSaveJobMaterials} onDeleteJob={handleDeleteJob} onUpdateTicket={handleUpdateTicket} onSubmitTicket={handleSubmitTicket} onLogAction={handleLogAction} onSubmitPmUpdate={handleSubmitPmUpdate} onUpdateInventory={handleUpdateInventory} onSaveInventoryItem={handleSaveInventoryItem} onDeleteInventoryItem={handleDeleteInventoryItem} onAddJobUpdate={handleAddJobUpdate} onSubmitUpdate={handleSubmitUpdate} onCloseOutJob={handleCloseOutJob} onUpdateTruck={handleUpdateTruck} onAdminSetLoadout={handleAdminSetLoadout} onAdminUnload={handleAdminUnload} onLogout={() => { clearOfficeSession(); setAdminName(null); setRole(null); setLauncherDismissed(false); }} foamPartsInventory={foamPartsInventory} projectToolsInventory={projectToolsInventory} onUpdateFoamParts={handleUpdateFoamParts} onUpdateProjectTools={handleUpdateProjectTools} builders={builders} onAddBuilder={handleAddBuilder} onEditBuilder={handleEditBuilder} onDeleteBuilder={handleDeleteBuilder} suppliesCheckouts={suppliesCheckouts} onSaveTruckToolInventory={handleSaveTruckToolInventory} onSuppliesCheckout={handleSuppliesCheckout} />;
   return null;
 }

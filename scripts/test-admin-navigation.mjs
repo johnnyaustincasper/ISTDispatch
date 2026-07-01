@@ -11,6 +11,7 @@ const items = buildOfficeNavItems({ openChecklistShortageCount: 3, openTicketCou
 assert.deepEqual(items.map((item) => item.key), [
   "schedule",
   "calendar",
+  "reception",
   "inventory",
   "foamPricing",
   "tickets",

@@ -1205,66 +1205,64 @@ export const deriveWarehouseInventoryFromEvents = (legacyInventory = [], events 
   const warehouseEvents = (events || [])
     .filter((event) => (event?.location?.warehouseId || "main") === warehouseId)
     .sort(compareInventoryEvents);
-
-  const latestSnapshotEvent = [...warehouseEvents]
-    .filter((event) => WAREHOUSE_SNAPSHOT_EVENT_TYPES.has(event?.eventType))
-    .at(-1);
-  const latestSnapshotGroupKey = latestSnapshotEvent ? getSnapshotGroupKey(latestSnapshotEvent, `warehouse:${warehouseId}`) : null;
-  const latestSnapshotEvents = latestSnapshotGroupKey
-    ? warehouseEvents.filter((event) => (
-        WAREHOUSE_SNAPSHOT_EVENT_TYPES.has(event?.eventType)
-        && getSnapshotGroupKey(event, `warehouse:${warehouseId}`) === latestSnapshotGroupKey
-      ))
-    : [];
-  const latestSnapshotItemIds = new Set(
-    latestSnapshotEvents.map((event) => normalizeInventoryItemId(event?.item?.itemId)).filter(Boolean)
-  );
-  const postSnapshotDeltaItemIds = new Set(
-    latestSnapshotEvent
-      ? warehouseEvents
-          .filter((event) => compareInventoryEvents(event, latestSnapshotEvent) >= 0)
-          .filter((event) => !isDeltaAlreadyCapturedBySnapshot(event, latestSnapshotEvent))
-          .filter((event) => WAREHOUSE_DELTA_EVENT_TYPES.has(event?.eventType))
-          .map((event) => normalizeInventoryItemId(event?.item?.itemId))
-          .filter(Boolean)
-      : []
-  );
-
-  const hasLegacyBaseline = Object.keys(legacyState).length > 0;
-  const state = !latestSnapshotGroupKey
-    ? (hasLegacyBaseline ? { ...legacyState } : {})
-    : {};
-
+  const eventsByItemId = new Map();
   warehouseEvents.forEach((event) => {
-    if (!latestSnapshotGroupKey) {
-      if (!hasLegacyBaseline && WAREHOUSE_DELTA_EVENT_TYPES.has(event?.eventType)) {
-        applyInventoryEventToState(state, event);
-      }
-      return;
-    }
-    if (WAREHOUSE_SNAPSHOT_EVENT_TYPES.has(event?.eventType)) {
-      if (getSnapshotGroupKey(event, `warehouse:${warehouseId}`) !== latestSnapshotGroupKey) return;
-      applyInventoryEventToState(state, event);
-      return;
-    }
-    if (isDeltaAlreadyCapturedBySnapshot(event, latestSnapshotEvent)) return;
-    if (compareInventoryEvents(event, latestSnapshotEvent) < 0) return;
-    if (!WAREHOUSE_DELTA_EVENT_TYPES.has(event?.eventType)) return;
-    applyInventoryEventToState(state, event);
+    const itemId = normalizeInventoryItemId(event?.item?.itemId);
+    if (!itemId) return;
+    const bucket = eventsByItemId.get(itemId) || [];
+    bucket.push(event);
+    eventsByItemId.set(itemId, bucket);
   });
 
-  if (!latestSnapshotGroupKey && hasLegacyBaseline) {
-    replayDeltaEventsAgainstBaseline(state, warehouseEvents, WAREHOUSE_DELTA_EVENT_TYPES);
-  }
+  const itemIds = new Set([
+    ...Object.keys(legacyState),
+    ...eventsByItemId.keys(),
+  ]);
+  const hasLegacyBaseline = Object.keys(legacyState).length > 0;
+  const state = {};
 
-  if (latestSnapshotGroupKey) {
-    Object.entries(legacyState).forEach(([itemId, qty]) => {
-      if (state[itemId] !== undefined) return;
-      if (latestSnapshotItemIds.has(itemId)) return;
-      if (postSnapshotDeltaItemIds.has(itemId)) return;
+  itemIds.forEach((itemId) => {
+    const itemEvents = [...(eventsByItemId.get(itemId) || [])].sort(compareInventoryEvents);
+    const latestSnapshotEvent = [...itemEvents]
+      .filter((event) => WAREHOUSE_SNAPSHOT_EVENT_TYPES.has(event?.eventType))
+      .at(-1);
+
+    if (latestSnapshotEvent) {
+      const latestSnapshotGroupKey = getSnapshotGroupKey(latestSnapshotEvent, `warehouse:${warehouseId}`);
+      const itemState = {};
+      itemEvents.forEach((event) => {
+        if (WAREHOUSE_SNAPSHOT_EVENT_TYPES.has(event?.eventType)) {
+          if (compareInventoryEvents(event, latestSnapshotEvent) < 0) return;
+          if (getSnapshotGroupKey(event, `warehouse:${warehouseId}`) !== latestSnapshotGroupKey) return;
+          applyInventoryEventToState(itemState, event);
+          return;
+        }
+        if (!WAREHOUSE_DELTA_EVENT_TYPES.has(event?.eventType)) return;
+        if (compareInventoryEvents(event, latestSnapshotEvent) < 0) return;
+        if (isDeltaAlreadyCapturedBySnapshot(event, latestSnapshotEvent)) return;
+        applyInventoryEventToState(itemState, event);
+      });
+      const qty = roundQty(itemState[itemId] || 0);
       if (qty > 0) state[itemId] = qty;
+      return;
+    }
+
+    if (hasLegacyBaseline) {
+      const itemState = legacyState[itemId] > 0 ? { [itemId]: legacyState[itemId] } : {};
+      replayDeltaEventsAgainstBaseline(itemState, itemEvents, WAREHOUSE_DELTA_EVENT_TYPES);
+      const qty = roundQty(itemState[itemId] || 0);
+      if (qty > 0) state[itemId] = qty;
+      return;
+    }
+
+    const itemState = {};
+    itemEvents.forEach((event) => {
+      if (!WAREHOUSE_DELTA_EVENT_TYPES.has(event?.eventType)) return;
+      applyInventoryEventToState(itemState, event);
     });
-  }
+    const qty = roundQty(itemState[itemId] || 0);
+    if (qty > 0) state[itemId] = qty;
+  });
 
   return Object.entries(state).map(([itemId, qty]) => {
     const legacyRow = rowByItemId.get(itemId) || {};

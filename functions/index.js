@@ -117,7 +117,7 @@ exports.onJobUpdateCreated = onDocumentCreated('updates/{updateId}', async (even
 });
 
 // ── scanWorkOrder — GPT-4o mini vision extraction ─────────────────────────────
-exports.scanWorkOrder = onCall({ secrets: [OPENAI_KEY], timeoutSeconds: 30 }, async (request) => {
+exports.scanWorkOrder = onCall({ secrets: [OPENAI_KEY], timeoutSeconds: 120, memory: '1GiB' }, async (request) => {
   const { imageBase64, mimeType = 'image/jpeg' } = request.data || {};
   if (!imageBase64) throw new HttpsError('invalid-argument', 'imageBase64 is required');
 
@@ -142,11 +142,13 @@ If a field is unclear or not present, use null. Do not include any explanation o
     response = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       max_tokens: 500,
+      temperature: 0,
+      response_format: { type: 'json_object' },
       messages: [{
         role: 'user',
         content: [
           { type: 'text', text: prompt },
-          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'high' } },
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}`, detail: 'low' } },
         ],
       }],
     });

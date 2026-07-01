@@ -44,6 +44,7 @@ export default function MaterialsGrid({
   const formatQty = (item, qty) => isFoam(item.id) ? qty.toFixed(2) : String(qty);
   const formatUnit = (item) => isFoam(item.id) ? "bbl" : item.unit;
   const formatValue = (item, qty) => `$${((item.cost || 0) * qty).toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  const formatSqft = (value) => Number(value || 0).toLocaleString("en-US", { maximumFractionDigits: 2 });
 
   if (!allVisible.length) {
     return <div style={{ flex: 1, display: "grid", placeItems: "center", color: "#94a3b8", fontSize: 14, background: "#f8fafc" }}>No materials match those filters.</div>;
@@ -66,13 +67,17 @@ export default function MaterialsGrid({
                 const pcsItem = item.hasPieces ? inventoryItems.find(i => i.parentId === item.id) : null;
                 const pcsQty = pcsItem ? getQty(pcsItem.id) : 0;
                 const lineValue = formatValue(item, qty);
+                const sqftPerTube = Number(item.sqftPerTube || 0);
+                const totalSqft = sqftPerTube > 0 ? sqftPerTube * qty : 0;
                 return (
                   <div key={item.id} className="materials-board-row" style={{ minHeight: 0, display: "grid", gridTemplateColumns: "minmax(0,1fr) auto", alignItems: "center", gap: 4, padding: "2px 5px", borderBottom: idx < items.length - 1 ? "1px solid #edf2f7" : "none", background: status === "out" ? "#fff1f2" : status === "low" ? "#fffbeb" : "#fff" }}>
                     <div style={{ minWidth: 0 }}>
                       <div className="materials-item-name" title={item.name} style={{ fontSize: 11, fontWeight: 900, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", lineHeight: 1.05 }}>{shortName(item)}</div>
-                      <div className="materials-item-meta" style={{ display: "flex", gap: 3, alignItems: "center", minWidth: 0, marginTop: 1 }}>
+                      <div className="materials-item-meta" style={{ display: "flex", gap: 3, alignItems: "center", minWidth: 0, marginTop: 1, flexWrap: "wrap" }}>
                         <span style={{ fontSize: 8.5, fontWeight: 900, color: sc.badgeColor, lineHeight: 1 }}>{sc.label || "OK"}</span>
                         <span style={{ fontSize: 8.5, color: "#15803d", fontWeight: 900, lineHeight: 1 }}>{lineValue}</span>
+                        {sqftPerTube > 0 && <span title={`${formatSqft(sqftPerTube)} square feet per tube`} style={{ fontSize: 8.5, color: "#0369a1", fontWeight: 900, lineHeight: 1 }}>{formatSqft(sqftPerTube)} sf/tube</span>}
+                        {totalSqft > 0 && <span title={`${formatSqft(totalSqft)} total square feet on hand`} style={{ fontSize: 8.5, color: "#7c2d12", fontWeight: 900, lineHeight: 1 }}>{formatSqft(totalSqft)} sf</span>}
                         {pcsItem && pcsQty > 0 && <span style={{ fontSize: 8.5, color: "#4f46e5", fontWeight: 900, lineHeight: 1 }}>+{pcsQty}pc</span>}
                       </div>
                     </div>

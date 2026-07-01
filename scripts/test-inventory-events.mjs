@@ -105,6 +105,56 @@ test("truck loadout planning returns unloaded leftovers to warehouse", () => {
   ]);
 });
 
+test("truck loadout planning treats morning entry as full desired truck count", () => {
+  const plan = planTruckLoadoutTransfer({
+    currentTruckState: { blown_fg: 20, r13_15_8_t: 1 },
+    requestedTruckState: { blown_fg: 40 },
+    warehouseInventoryByItemId: { blown_fg: 200, r13_15_8_t: 10 },
+  });
+
+  assert.deepEqual(plan.nextTruckState, { blown_fg: 40 });
+  assert.deepEqual(plan.changes, [
+    {
+      itemId: "blown_fg",
+      beforeTruckQty: 20,
+      targetTruckQty: 40,
+      delta: 20,
+      transferDirection: "load",
+      transferQty: 20,
+      beforeWarehouseQty: 200,
+      afterWarehouseQty: 180,
+    },
+    {
+      itemId: "r13_15_8_t",
+      beforeTruckQty: 1,
+      targetTruckQty: 0,
+      delta: -1,
+      transferDirection: "return",
+      transferQty: 1,
+      beforeWarehouseQty: 10,
+      afterWarehouseQty: 11,
+    },
+  ]);
+});
+
+test("foam item ids stay distinct across Ambit, Enverge, and Accufoam", () => {
+  const events = [
+    "Ambit Open Cell B",
+    "Ambit Closed Cell A",
+    "Enverge Open Cell B",
+    "Enverge Closed Cell A",
+    "Accufoam B",
+  ].map((itemId) => buildInventoryEvent({
+    eventType: INVENTORY_EVENT_TYPES.warehouseAdjustment,
+    occurredAt: "2026-04-17T10:00:00.000Z",
+    item: { itemId, unit: "bbl" },
+    quantity: { delta: 1 },
+    location: { warehouseId: "main" },
+  }));
+
+  assert.deepEqual(events.map((event) => event.item.itemId), ["oc_b", "cc_a", "env_oc_b", "env_cc_a", "accufoam_b"]);
+});
+
 test("warehouse manual adjustment snapshot re-anchors projection to corrected legacy quantity", () => {
   const legacyInventory = [{ id: "row-blown", itemId: "blown_fg", qty: 42 }];
   const historicalTransfer = buildInventoryEvent({
@@ -137,6 +187,26 @@ test("warehouse manual adjustment snapshot re-anchors projection to corrected le
 
   const derived = deriveWarehouseInventoryFromEvents(legacyInventory, [historicalTransfer, manualAdjustment, manualSnapshot]);
   assert.equal(derived.find((row) => row.itemId === "blown_fg")?.qty, 42);
+});
+
+test("single-item warehouse snapshots do not zero unrelated warehouse materials", () => {
+  const legacyInventory = [
+    { id: "blown_fg_jm", itemId: "blown_fg_jm", qty: 178, unit: "bags" },
+    { id: "accufoam_a", itemId: "accufoam_a", qty: 0.98, unit: "bbl" },
+  ];
+  const eventGroupId = "manual-adjustment::accufoam_a::2026-04-19T12:00:00.000Z";
+  const [accufoamSnapshot] = buildInventorySnapshotEvents({
+    eventType: INVENTORY_EVENT_TYPES.warehouseSnapshot,
+    occurredAt: "2026-04-19T12:00:00.000Z",
+    location: { warehouseId: "main" },
+    items: [{ itemId: "accufoam_a", unit: "bbl", qty: 0.98 }],
+    refs: { snapshotKey: "warehouse-adjustment::accufoam_a::manual-adjustment-1" },
+    metadata: { eventGroupId, snapshotReason: "warehouse_manual_reanchor" },
+  });
+
+  const derived = deriveWarehouseInventoryFromEvents(legacyInventory, [accufoamSnapshot]);
+  assert.equal(derived.find((row) => row.itemId === "accufoam_a")?.qty, 0.98);
+  assert.equal(derived.find((row) => row.itemId === "blown_fg_jm")?.qty, 178);
 });
 
 test("inventory event write entries stamp deterministic ids without live wiring", () => {
